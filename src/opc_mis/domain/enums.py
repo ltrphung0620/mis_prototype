@@ -1,0 +1,290 @@
+"""Enumerations used by the Planner Skill domain."""
+
+from enum import StrEnum
+
+
+class SourceType(StrEnum):
+    """Origin of a piece of evidence."""
+
+    TEAM_PACK = "TEAM_PACK"
+    USER_INPUT = "USER_INPUT"
+    DERIVED = "DERIVED"
+
+
+class EvaluationScope(StrEnum):
+    """Requested initial assessment scopes."""
+
+    FINANCE = "FINANCE"
+    OPERATIONS = "OPERATIONS"
+    RISK = "RISK"
+
+
+class ReadinessStatus(StrEnum):
+    """Whether downstream initial assessment can start."""
+
+    READY = "READY"
+    READY_WITH_WARNINGS = "READY_WITH_WARNINGS"
+    BLOCKED = "BLOCKED"
+
+
+class CashflowScope(StrEnum):
+    """Relationship between cashflow data and an evaluation case."""
+
+    OPC_GLOBAL = "OPC_GLOBAL"
+    CASE_SPECIFIC = "CASE_SPECIFIC"
+    NOT_AVAILABLE = "NOT_AVAILABLE"
+
+
+class MissingSeverity(StrEnum):
+    """Severity of a missing-data request."""
+
+    BLOCKING = "BLOCKING"
+
+
+class MissingRequestStatus(StrEnum):
+    """Lifecycle state of a missing-data request."""
+
+    OPEN = "OPEN"
+    RESOLVED = "RESOLVED"
+
+
+class ComponentStatus(StrEnum):
+    """Allowed status returned by any business component."""
+
+    COMPLETED = "COMPLETED"
+    COMPLETED_WITH_WARNINGS = "COMPLETED_WITH_WARNINGS"
+    WAITING_FOR_INPUT = "WAITING_FOR_INPUT"
+    FAILED_SAFE = "FAILED_SAFE"
+
+
+class WorkflowStatus(StrEnum):
+    """Persisted workflow status owned by the Orchestrator."""
+
+    COMPLETED = "COMPLETED"
+    WAITING_FOR_INPUT = "WAITING_FOR_INPUT"
+    WAITING_FOR_APPROVAL = "WAITING_FOR_APPROVAL"
+    BLOCKED = "BLOCKED"
+    FAILED_SAFE = "FAILED_SAFE"
+
+
+class RunTaskType(StrEnum):
+    """Workflow task identifiers used in Planner's initial run plan."""
+
+    FINANCE_ASSESSMENT = "FINANCE_ASSESSMENT"
+    OPERATIONS_ASSESSMENT = "OPERATIONS_ASSESSMENT"
+    INITIAL_RISK_SCAN = "INITIAL_RISK_SCAN"
+
+
+class ArtifactType(StrEnum):
+    """Artifact types emitted by implemented business components."""
+
+    PLANNER_RESULT = "PLANNER_RESULT"
+    EVALUATION_CASE = "EVALUATION_CASE"
+    FINANCE_FACTS = "FINANCE_FACTS"
+    FINANCE_ASSESSMENT = "FINANCE_ASSESSMENT"
+    OPERATIONS_FACTS = "OPERATIONS_FACTS"
+    OPERATIONS_ASSESSMENT = "OPERATIONS_ASSESSMENT"
+
+
+class OperationsAssessmentStatus(StrEnum):
+    """Completeness of an Operations assessment without expressing risk."""
+
+    COMPLETE = "COMPLETE"
+    LIMITED_BY_EVIDENCE = "LIMITED_BY_EVIDENCE"
+
+
+class OperationsDataScope(StrEnum):
+    """Relationship of an operational fact to the current case."""
+
+    CASE_SPECIFIC = "CASE_SPECIFIC"
+    OPC_GLOBAL = "OPC_GLOBAL"
+    NOT_AVAILABLE = "NOT_AVAILABLE"
+
+
+class OperationsFactQuality(StrEnum):
+    """Evidence quality of a deterministic operational fact."""
+
+    VERIFIED = "VERIFIED"
+    LIMITED_BY_EVIDENCE = "LIMITED_BY_EVIDENCE"
+    NOT_AVAILABLE = "NOT_AVAILABLE"
+
+
+class OperationsUnit(StrEnum):
+    """Units allowed in Operations fact values."""
+
+    COUNT = "COUNT"
+    DAYS = "DAYS"
+    DATE = "DATE"
+    BOOLEAN = "BOOLEAN"
+    TEXT = "TEXT"
+    RATIO = "RATIO"
+
+
+class OperationsSourceStatusCategory(StrEnum):
+    """Neutral classification of exact order status values from TeamPack."""
+
+    COMPLETED_SOURCE_STATUS = "COMPLETED_SOURCE_STATUS"
+    ACTIVE_SOURCE_STATUS = "ACTIVE_SOURCE_STATUS"
+    PLANNED_SOURCE_STATUS = "PLANNED_SOURCE_STATUS"
+    SOURCE_PENDING_STATUS = "SOURCE_PENDING_STATUS"
+    SOURCE_FLAGGED_STATUS = "SOURCE_FLAGGED_STATUS"
+    UNCLASSIFIED_SOURCE_STATUS = "UNCLASSIFIED_SOURCE_STATUS"
+
+
+class OperationsMetric(StrEnum):
+    """Deterministic metrics produced by Operations."""
+
+    CONTRACT_START_DATE = "CONTRACT_START_DATE"
+    CONTRACT_END_DATE = "CONTRACT_END_DATE"
+    CONTRACT_DURATION_DAYS = "CONTRACT_DURATION_DAYS"
+    RELATED_ORDER_COUNT = "RELATED_ORDER_COUNT"
+    EARLIEST_ORDER_DATE = "EARLIEST_ORDER_DATE"
+    LATEST_ORDER_DUE_DATE = "LATEST_ORDER_DUE_DATE"
+    ORDER_SCHEDULE_SPAN_DAYS = "ORDER_SCHEDULE_SPAN_DAYS"
+    ORDER_OUTSIDE_CONTRACT_WINDOW_COUNT = "ORDER_OUTSIDE_CONTRACT_WINDOW_COUNT"
+    ORDER_INTERVAL_GAP_COUNT = "ORDER_INTERVAL_GAP_COUNT"
+    MAX_ORDER_INTERVAL_GAP_DAYS = "MAX_ORDER_INTERVAL_GAP_DAYS"
+    ORDER_INTERVAL_OVERLAP_COUNT = "ORDER_INTERVAL_OVERLAP_COUNT"
+    MAX_ORDER_INTERVAL_OVERLAP_DAYS = "MAX_ORDER_INTERVAL_OVERLAP_DAYS"
+    SOURCE_COMPLETED_ORDER_COUNT = "SOURCE_COMPLETED_ORDER_COUNT"
+    SOURCE_ACTIVE_ORDER_COUNT = "SOURCE_ACTIVE_ORDER_COUNT"
+    SOURCE_PLANNED_ORDER_COUNT = "SOURCE_PLANNED_ORDER_COUNT"
+    SOURCE_PENDING_ORDER_COUNT = "SOURCE_PENDING_ORDER_COUNT"
+    SOURCE_FLAGGED_ORDER_COUNT = "SOURCE_FLAGGED_ORDER_COUNT"
+    UNCLASSIFIED_ORDER_STATUS_COUNT = "UNCLASSIFIED_ORDER_STATUS_COUNT"
+    OPEN_PAST_DUE_ORDER_COUNT = "OPEN_PAST_DUE_ORDER_COUNT"
+    MAX_OPEN_PAST_DUE_DAYS = "MAX_OPEN_PAST_DUE_DAYS"
+    SOURCE_DELIVERY_NOTE_COUNT = "SOURCE_DELIVERY_NOTE_COUNT"
+    OPC_LATE_DELIVERY_PENALTY_RATE = "OPC_LATE_DELIVERY_PENALTY_RATE"
+
+
+class OperationsCalculation(StrEnum):
+    """Named deterministic calculation attached to operational facts."""
+
+    SOURCE_VALUE = "SOURCE_VALUE"
+    COUNT = "COUNT"
+    DATE_DIFFERENCE_INCLUSIVE = "DATE_DIFFERENCE_INCLUSIVE"
+    MIN_DATE = "MIN_DATE"
+    MAX_DATE = "MAX_DATE"
+    MAX = "MAX"
+    INTERVAL_GAP = "INTERVAL_GAP"
+    INTERVAL_OVERLAP = "INTERVAL_OVERLAP"
+
+
+class OperationsObservationCode(StrEnum):
+    """Neutral operational observations forwarded to Risk."""
+
+    SOURCE_FLAGGED_ORDER_STATUS_OBSERVED = "SOURCE_FLAGGED_ORDER_STATUS_OBSERVED"
+    SOURCE_PENDING_ORDER_STATUS_OBSERVED = "SOURCE_PENDING_ORDER_STATUS_OBSERVED"
+    ORDER_OUTSIDE_CONTRACT_WINDOW = "ORDER_OUTSIDE_CONTRACT_WINDOW"
+    OPEN_ORDER_PAST_DUE = "OPEN_ORDER_PAST_DUE"
+    ORDER_INTERVAL_GAP_OBSERVED = "ORDER_INTERVAL_GAP_OBSERVED"
+    ORDER_INTERVAL_OVERLAP_OBSERVED = "ORDER_INTERVAL_OVERLAP_OBSERVED"
+    UNSTRUCTURED_DELIVERY_NOTE_PRESENT = "UNSTRUCTURED_DELIVERY_NOTE_PRESENT"
+    NO_RELATED_ORDERS = "NO_RELATED_ORDERS"
+
+
+class FinanceAssessmentStatus(StrEnum):
+    """Completeness of a Finance assessment, without expressing risk."""
+
+    COMPLETE = "COMPLETE"
+    LIMITED_BY_EVIDENCE = "LIMITED_BY_EVIDENCE"
+
+
+class FinanceDataScope(StrEnum):
+    """Relationship of a finance fact to the current case."""
+
+    CASE_SPECIFIC = "CASE_SPECIFIC"
+    OPC_GLOBAL = "OPC_GLOBAL"
+    NOT_AVAILABLE = "NOT_AVAILABLE"
+
+
+class FinanceFactQuality(StrEnum):
+    """Evidence quality of a deterministic finance fact."""
+
+    VERIFIED = "VERIFIED"
+    LIMITED_BY_COVERAGE = "LIMITED_BY_COVERAGE"
+    NOT_AVAILABLE = "NOT_AVAILABLE"
+
+
+class FinanceNarrativeSource(StrEnum):
+    """How the non-authoritative finance narrative was composed."""
+
+    OPENAI = "OPENAI"
+    DETERMINISTIC_FALLBACK = "DETERMINISTIC_FALLBACK"
+
+
+class FinanceUnit(StrEnum):
+    """Units allowed in Finance fact values."""
+
+    VND = "VND"
+    RATIO = "RATIO"
+    COUNT = "COUNT"
+    BOOLEAN = "BOOLEAN"
+    TEXT = "TEXT"
+
+
+class FinanceMetric(StrEnum):
+    """Deterministic metrics produced by Finance."""
+
+    CONTRACT_VALUE = "CONTRACT_VALUE"
+    CONTRACT_GROSS_MARGIN_SOURCE = "CONTRACT_GROSS_MARGIN_SOURCE"
+    OPC_TARGET_GROSS_MARGIN = "OPC_TARGET_GROSS_MARGIN"
+    RELATED_ORDER_COUNT = "RELATED_ORDER_COUNT"
+    ORDER_REVENUE_TOTAL = "ORDER_REVENUE_TOTAL"
+    ORDER_ESTIMATED_COST_TOTAL = "ORDER_ESTIMATED_COST_TOTAL"
+    ORDER_GROSS_PROFIT = "ORDER_GROSS_PROFIT"
+    ORDER_GROSS_MARGIN = "ORDER_GROSS_MARGIN"
+    ORDER_COVERAGE_RATIO = "ORDER_COVERAGE_RATIO"
+    UNCOVERED_CONTRACT_VALUE = "UNCOVERED_CONTRACT_VALUE"
+    RELATED_INVOICE_COUNT = "RELATED_INVOICE_COUNT"
+    INVOICE_TOTAL = "INVOICE_TOTAL"
+    PAID_INVOICE_TOTAL = "PAID_INVOICE_TOTAL"
+    OPEN_INVOICE_TOTAL = "OPEN_INVOICE_TOTAL"
+    NOT_ISSUED_INVOICE_TOTAL = "NOT_ISSUED_INVOICE_TOTAL"
+    OUTSTANDING_ISSUED_RECEIVABLE = "OUTSTANDING_ISSUED_RECEIVABLE"
+    INVOICE_COVERAGE_RATIO = "INVOICE_COVERAGE_RATIO"
+    CASHFLOW_MONTH_COUNT = "CASHFLOW_MONTH_COUNT"
+    WORST_RESERVE_GAP = "WORST_RESERVE_GAP"
+    WORST_RESERVE_GAP_MONTH = "WORST_RESERVE_GAP_MONTH"
+    NEGATIVE_NET_CASHFLOW_MONTH_COUNT = "NEGATIVE_NET_CASHFLOW_MONTH_COUNT"
+
+
+class FinanceCalculation(StrEnum):
+    """Named deterministic calculation attached to derived Finance facts."""
+
+    SOURCE_VALUE = "SOURCE_VALUE"
+    COUNT = "COUNT"
+    SUM = "SUM"
+    DIFFERENCE = "DIFFERENCE"
+    SAFE_RATIO = "SAFE_RATIO"
+    MAX_NON_NEGATIVE_DIFFERENCE = "MAX_NON_NEGATIVE_DIFFERENCE"
+    MINIMUM_BY_VALUE = "MINIMUM_BY_VALUE"
+
+
+class FinanceObservationCode(StrEnum):
+    """Evidence observations forwarded to Risk without activating risk rules."""
+
+    MARGIN_BELOW_OPC_TARGET_OBSERVED = "MARGIN_BELOW_OPC_TARGET_OBSERVED"
+    CASH_RESERVE_SHORTFALL_OBSERVED = "CASH_RESERVE_SHORTFALL_OBSERVED"
+    NEGATIVE_NET_CASH_MOVEMENT_OBSERVED = "NEGATIVE_NET_CASH_MOVEMENT_OBSERVED"
+    ORDER_COVERAGE_INCOMPLETE = "ORDER_COVERAGE_INCOMPLETE"
+    RECEIVABLE_EXPOSURE_OBSERVED = "RECEIVABLE_EXPOSURE_OBSERVED"
+    PERFORMANCE_BOND_REQUIREMENT_OBSERVED = "PERFORMANCE_BOND_REQUIREMENT_OBSERVED"
+    TRANSACTION_LINKAGE_UNAVAILABLE = "TRANSACTION_LINKAGE_UNAVAILABLE"
+    CASHFLOW_ONLY_AVAILABLE_AT_OPC_LEVEL = "CASHFLOW_ONLY_AVAILABLE_AT_OPC_LEVEL"
+
+
+class ArtifactStatus(StrEnum):
+    """Persistence state of an artifact envelope."""
+
+    CREATED = "CREATED"
+
+
+class ValidationStatus(StrEnum):
+    """Validation outcome recorded on an artifact."""
+
+    PENDING = "PENDING"
+    VALID = "VALID"
+    VALID_WITH_WARNINGS = "VALID_WITH_WARNINGS"
+    BLOCKED = "BLOCKED"
