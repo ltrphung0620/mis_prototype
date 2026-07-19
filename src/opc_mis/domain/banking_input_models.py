@@ -1,4 +1,4 @@
-"""Domain contracts for immutable Banking amount-input intake."""
+"""Domain contracts for legacy, immutable Banking amount-gap intake."""
 
 from typing import Any
 
@@ -28,7 +28,7 @@ def _normalized_text(value: str) -> str:
 
 
 class BankingAmountInputSubmission(BaseModel):
-    """Typed human submission accepted by the Banking amount-input endpoint."""
+    """Typed legacy submission accepted only for an explicit pending amount gap."""
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 

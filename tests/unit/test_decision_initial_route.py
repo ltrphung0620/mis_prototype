@@ -14,9 +14,13 @@ from opc_mis.domain.enums import (
     ArtifactType,
     CashflowScope,
     ComponentStatus,
+    ContractRequirementType,
+    CurrencyCode,
     DecisionRouteOutcome,
     EvaluationScope,
     FinanceObservationCode,
+    RequirementAmountSemantics,
+    RequirementCertainty,
     RiskAssessmentStatus,
     RiskLevel,
     SourceType,
@@ -25,7 +29,7 @@ from opc_mis.domain.enums import (
 from opc_mis.domain.evidence import EvidenceRef
 from opc_mis.domain.finance_models import FinanceFacts, FinanceObservation
 from opc_mis.domain.operations_models import OperationsFacts
-from opc_mis.domain.planner_models import EvaluationCase
+from opc_mis.domain.planner_models import ContractRequirement, EvaluationCase
 from opc_mis.domain.risk_models import InitialRiskAssessment
 from opc_mis.infrastructure.persistence.memory_artifact_repository import (
     InMemoryArtifactRepository,
@@ -45,6 +49,37 @@ def evidence() -> EvidenceRef:
         record_id=CONTRACT_ID,
         field="payment_terms",
         display_value="Performance bond required",
+    )
+
+
+def amount_evidence() -> EvidenceRef:
+    return EvidenceRef(
+        evidence_id="EVD-PERFORMANCE-BOND-AMOUNT",
+        source_type=SourceType.TEAM_PACK,
+        sheet="10_CREDIT_PROFILE",
+        row_number=3,
+        record_id="CR-TEST",
+        field="requested_amount",
+        display_value=420_000_000,
+    )
+
+
+def contract_requirement(
+    certainty: RequirementCertainty,
+) -> ContractRequirement:
+    return ContractRequirement(
+        requirement_id="CREQ-PERFORMANCE-BOND",
+        requirement_type=ContractRequirementType.PERFORMANCE_BOND,
+        certainty=certainty,
+        requested_amount=420_000_000,
+        requested_amount_currency=CurrencyCode.VND,
+        amount_semantics=(
+            RequirementAmountSemantics.CREDIT_PROFILE_REQUESTED_AMOUNT
+        ),
+        credit_case_id="CR-TEST",
+        source_record_ids=(CONTRACT_ID, "CR-TEST"),
+        source_fields=("payment_terms", "requested_amount"),
+        evidence_ids=(evidence().evidence_id, amount_evidence().evidence_id),
     )
 
 
@@ -73,7 +108,14 @@ def envelope(
 
 def upstream_artifacts(
     observation_code: FinanceObservationCode | None,
+    requirement_certainty: RequirementCertainty | None = None,
 ) -> tuple[ArtifactEnvelope, ...]:
+    requirement = (
+        contract_requirement(requirement_certainty)
+        if requirement_certainty is not None
+        else None
+    )
+    case_evidence = (evidence(), amount_evidence()) if requirement is not None else ()
     case = EvaluationCase(
         evaluation_case_id=CASE_ID,
         dataset_id=DATASET_ID,
@@ -90,7 +132,8 @@ def upstream_artifacts(
         ),
         cashflow_scope=CashflowScope.OPC_GLOBAL,
         warnings=(),
-        evidence_refs=(),
+        evidence_refs=case_evidence,
+        contract_requirements=(requirement,) if requirement is not None else (),
     )
     observation = (
         FinanceObservation(
@@ -142,7 +185,11 @@ def upstream_artifacts(
         checkpoints=(),
     )
     return (
-        envelope(ArtifactType.EVALUATION_CASE, case.model_dump(mode="json")),
+        envelope(
+            ArtifactType.EVALUATION_CASE,
+            case.model_dump(mode="json"),
+            evidence_refs=case_evidence,
+        ),
         envelope(
             ArtifactType.FINANCE_FACTS,
             finance.model_dump(mode="json"),
@@ -162,9 +209,10 @@ def upstream_artifacts(
 
 async def execute_route(
     observation_code: FinanceObservationCode | None,
+    requirement_certainty: RequirementCertainty | None = None,
 ) -> tuple[DecisionInitialRoutePlanner, ExecutionContext, object]:
     repository = InMemoryArtifactRepository()
-    artifacts = upstream_artifacts(observation_code)
+    artifacts = upstream_artifacts(observation_code, requirement_certainty)
     for artifact in artifacts:
         await repository.save(artifact)
     component = DecisionInitialRoutePlanner(
@@ -186,9 +234,9 @@ async def execute_route(
     return component, context, await component.execute(context)
 
 
-def test_performance_bond_signal_routes_to_banking_without_action() -> None:
+def test_required_performance_bond_requirement_routes_without_action() -> None:
     _, _, result = asyncio.run(
-        execute_route(FinanceObservationCode.PERFORMANCE_BOND_REQUIREMENT_OBSERVED)
+        execute_route(None, RequirementCertainty.REQUIRED)
     )
 
     assert result.status is ComponentStatus.COMPLETED
@@ -200,14 +248,20 @@ def test_performance_bond_signal_routes_to_banking_without_action() -> None:
     assert result.route_plan.banking_need_types == ("PERFORMANCE_BOND",)
     assert result.route_plan.routing_reasons[0].evidence_ids == (
         "EVD-PERFORMANCE-BOND",
+        "EVD-PERFORMANCE-BOND-AMOUNT",
     )
+    reason = result.route_plan.routing_reasons[0]
+    assert reason.requirement_id == "CREQ-PERFORMANCE-BOND"
+    assert reason.credit_case_id == "CR-TEST"
+    assert reason.requested_amount == 420_000_000
+    assert reason.amount_evidence_ids == ("EVD-PERFORMANCE-BOND-AMOUNT",)
     assert result.action_commands == ()
     assert result.approval_signals == ()
 
 
-def test_text_does_not_route_without_the_exact_typed_signal() -> None:
+def test_finance_observation_does_not_route_without_planner_requirement() -> None:
     _, _, result = asyncio.run(
-        execute_route(FinanceObservationCode.MARGIN_BELOW_OPC_TARGET_OBSERVED)
+        execute_route(FinanceObservationCode.PERFORMANCE_BOND_REQUIREMENT_OBSERVED)
     )
 
     assert result.route_plan is not None
@@ -216,6 +270,59 @@ def test_text_does_not_route_without_the_exact_typed_signal() -> None:
         is DecisionRouteOutcome.DIRECT_INTERNAL_DECISION
     )
     assert result.route_plan.routing_reasons == ()
+
+
+def test_possible_requirement_does_not_route_as_required_banking_work() -> None:
+    _, _, result = asyncio.run(
+        execute_route(None, RequirementCertainty.POSSIBLE)
+    )
+
+    assert result.route_plan is not None
+    assert (
+        result.route_plan.route_outcome
+        is DecisionRouteOutcome.DIRECT_INTERNAL_DECISION
+    )
+
+
+def test_required_bond_without_credit_amount_fails_safe() -> None:
+    async def run() -> object:
+        repository = InMemoryArtifactRepository()
+        artifacts = list(upstream_artifacts(None, RequirementCertainty.REQUIRED))
+        case_artifact = artifacts[0]
+        case = EvaluationCase.model_validate(case_artifact.payload)
+        unresolved = ContractRequirement(
+            requirement_id="CREQ-UNRESOLVED-BOND",
+            requirement_type=ContractRequirementType.PERFORMANCE_BOND,
+            certainty=RequirementCertainty.REQUIRED,
+            source_record_ids=(CONTRACT_ID,),
+            source_fields=("payment_terms",),
+            evidence_ids=(evidence().evidence_id,),
+        )
+        case = case.model_copy(update={"contract_requirements": (unresolved,)})
+        artifacts[0] = case_artifact.model_copy(
+            update={"payload": case.model_dump(mode="json")}
+        )
+        for artifact in artifacts:
+            await repository.save(artifact)
+        component = DecisionInitialRoutePlanner(
+            context_loader=DecisionRouteContextLoader(artifacts=repository)
+        )
+        context = ExecutionContext(
+            evaluation_case_id=CASE_ID,
+            dataset_id=DATASET_ID,
+            workflow_run_id="RUN-UNRESOLVED-BOND",
+            input_artifact_ids=tuple(item.artifact_id for item in artifacts),
+            requested_scope=(EvaluationScope.RISK,),
+            component_input={"execution_mode": "INITIAL_ROUTE"},
+            current_node="DECISION_ROUTE_PLANNING",
+        )
+        return await component.execute(context)
+
+    result = asyncio.run(run())
+
+    assert result.status is ComponentStatus.FAILED_SAFE
+    assert result.artifacts == ()
+    assert "explicit credit-profile requested amount" in result.runtime_events[0].message
 
 
 def test_missing_authoritative_artifacts_waits_for_input() -> None:

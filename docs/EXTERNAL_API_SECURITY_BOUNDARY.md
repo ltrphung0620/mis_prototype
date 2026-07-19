@@ -232,3 +232,31 @@ Tài liệu này không khẳng định các nội dung sau đã được triể
 Các nội dung này cần được bổ sung và kiểm thử trước khi thay adapter mô phỏng bằng một external
 adapter có side effect thật.
 
+## 6. Decision-to-Document external-submission boundary
+
+The implemented Document-release path has a stricter terminal boundary than the simulated Banking
+precheck path. It never issues an `AuthorizedActionPermit` to a Document connector because no such
+connector exists.
+
+```text
+approved exact ACCEPT Decision Card with Document package
+  -> validated EXTERNAL_DOCUMENT_SUBMISSION_PROPOSAL
+  -> separate Governance request for SEND_DOCUMENT_TO_EXTERNAL_PARTNER
+  -> exact proposal authorization
+  -> READY_FOR_EXTERNAL_SUBMISSION
+     adapter_invoked = false
+     external_submission_performed = false
+     submission_receipt_created = false
+```
+
+The final-decision approval and the external-release approval are different requests and protect
+different subjects. The first binds the exact `DECISION_CARD`; the second binds the exact
+`EXTERNAL_DOCUMENT_SUBMISSION_PROPOSAL`. Each request also records the current checkpoint-registry
+artifact ID/version/input hash and the exact triggered checkpoint IDs. Superseding either the
+subject or policy scope invalidates authorization.
+
+`READY_FOR_EXTERNAL_SUBMISSION` is not a provider acknowledgment, delivery status, or receipt. A
+future real connector must start after this boundary and add its own permit, secure reference
+resolution, outbound minimization, transport controls, response/receipt validation, idempotency,
+retry, and reconciliation. See
+[Decision, Final Approval, and External-Release Readiness](DECISION_FINAL_APPROVAL_AND_RELEASE.md).

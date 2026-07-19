@@ -82,6 +82,11 @@ class BankingPrecheckReadinessSkill:
             identity_inputs={
                 "source_artifact_ids": readiness.source_artifact_ids,
                 "matrix_id": readiness.matrix_id,
+                "request_id": readiness_context.request.request_id,
+                "requested_amount": readiness_context.matrix.requested_amount,
+                "request_amount_evidence_ids": (
+                    readiness_context.request.amount_evidence_ids
+                ),
                 "supplement_id": readiness.supplement_id,
                 "mapping_version": self._policy.mapping_version,
                 "mapping_hash": self._policy.policy_hash,
@@ -164,7 +169,17 @@ class BankingPrecheckReadinessSkill:
             readiness_id=deterministic_id(
                 "BPR",
                 matrix.matrix_id,
-                context.supplement.supplement_id if context.supplement else None,
+                context.request_artifact.artifact_id,
+                context.request.request_id,
+                matrix.requested_amount,
+                matrix.requested_amount_currency,
+                context.request.amount_evidence_ids,
+                (
+                    context.supplement.supplement_id
+                    if context.request.requested_amount is None
+                    and context.supplement is not None
+                    else None
+                ),
                 self._policy.policy_hash,
                 tuple(
                     (item.option_id, item.status, item.failed_requirement_codes)
@@ -178,11 +193,7 @@ class BankingPrecheckReadinessSkill:
             supplement_id=(
                 context.supplement.supplement_id if context.supplement else None
             ),
-            requested_amount_currency=(
-                context.supplement.requested_amount_currency
-                if context.supplement is not None
-                else matrix.requested_amount_currency
-            ),
+            requested_amount_currency=matrix.requested_amount_currency,
             status=status,
             option_readiness=option_readiness,
             ready_option_ids=ready_option_ids,
@@ -326,7 +337,8 @@ class BankingPrecheckReadinessSkill:
                 context.matrix.matrix_id,
                 candidate.option_id,
                 precheck.api_id,
-                context.supplement.supplement_id if context.supplement else None,
+                context.request_artifact.artifact_id,
+                context.matrix.requested_amount,
                 status,
             ),
             option_id=candidate.option_id,
@@ -423,6 +435,40 @@ class BankingPrecheckReadinessSkill:
                 evidence=evidence,
             )
 
+        if source is BankingPrecheckFieldSource.BANKING_DISCOVERY_REQUEST:
+            request = context.request
+            source_evidence = common_sources
+            if request.requested_amount is not None:
+                source_evidence = self._unique_evidence(
+                    common_sources,
+                    self._evidence_by_ids(
+                        context.request_artifact,
+                        request.amount_evidence_ids,
+                    ),
+                )
+            return self._field_resolution(
+                context=context,
+                required_field=required_field,
+                status=(
+                    BankingPrecheckFieldStatus.RESOLVED
+                    if request.requested_amount is not None
+                    else BankingPrecheckFieldStatus.MISSING_INPUT
+                ),
+                source=source,
+                source_reference="BankingDiscoveryRequest.requested_amount",
+                source_artifact_id=context.request_artifact.artifact_id,
+                source_record_ids=(
+                    (request.requirement_id, request.credit_case_id)
+                    if request.requested_amount is not None
+                    and request.requirement_id is not None
+                    and request.credit_case_id is not None
+                    else ()
+                ),
+                source_evidence=source_evidence,
+                lineage=lineage,
+                evidence=evidence,
+            )
+
         profile_valid, profile_ids, profile_evidence = self._opc_profile_source(
             context,
             lineage,
@@ -499,7 +545,7 @@ class BankingPrecheckReadinessSkill:
                 f"Option {candidate.option_id} must contain one minimum-amount criterion."
             )
         criterion = matches[0]
-        if context.supplement is None:
+        if context.matrix.requested_amount is None:
             allowed = {BankingCriterionStatus.NOT_EVALUABLE}
         else:
             allowed = {
@@ -562,6 +608,7 @@ class BankingPrecheckReadinessSkill:
     ) -> dict[str, EvidenceRef]:
         artifacts: tuple[ArtifactEnvelope, ...] = (
             context.evaluation_case_artifact,
+            context.request_artifact,
             context.matrix_artifact,
             *(
                 (context.supplement_artifact,)

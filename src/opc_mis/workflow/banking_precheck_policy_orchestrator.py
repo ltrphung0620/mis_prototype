@@ -3,7 +3,7 @@
 from opc_mis.domain.approvals import ApprovalCheckpointSet
 from opc_mis.domain.artifacts import ArtifactEnvelope
 from opc_mis.domain.components import ExecutionContext
-from opc_mis.domain.enums import ArtifactType, ValidationStatus
+from opc_mis.domain.enums import ArtifactType, ProtectedAction, ValidationStatus
 from opc_mis.governance.approval_policy_registry import (
     ApprovalPolicyError,
     ApprovalPolicyRegistry,
@@ -129,7 +129,11 @@ class BankingPrecheckPolicyOrchestrator:
                 registry = ApprovalCheckpointSet.model_validate(artifact.payload)
             except ValueError:
                 continue
-            if not registry.policy_coverages:
+            if not registry.policy_coverages and not any(
+                checkpoint.protected_action
+                is ProtectedAction.CONFIRM_FINAL_CONTRACT_DECISION
+                for checkpoint in registry.checkpoints
+            ):
                 candidates.append(artifact)
         if not candidates:
             raise BankingPrecheckPolicyRegistrationError(

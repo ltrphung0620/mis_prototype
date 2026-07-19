@@ -1,0 +1,46 @@
+const BUSINESS_VALUE_LABELS: Readonly<Record<string, string>> = {
+  ACCEPT: "Chấp nhận hợp đồng",
+  NEGOTIATE_CONDITIONS_TO_ACCEPT: "Đàm phán điều kiện để chấp nhận",
+  DO_NOT_ACCEPT: "Không chấp nhận hợp đồng",
+  HIGH: "Cao",
+  MEDIUM: "Trung bình",
+  LOW: "Thấp",
+  NOT_EVALUABLE: "Chưa đủ cơ sở đánh giá",
+  DETECTED: "Đã phát hiện",
+  NOT_DETECTED: "Không phát hiện",
+  OPTIONS_READY: "Đã có phương án phù hợp để xem xét",
+  OPTIONS_READY_WITH_GAPS: "Đã có phương án nhưng còn thiếu dữ liệu",
+  NO_CONFIGURED_OPTIONS: "Không có phương án được cấu hình phù hợp",
+  WAITING_FOR_REQUEST: "Đang chờ yêu cầu khảo sát",
+  REQUEST_CREATED: "Đã tạo yêu cầu",
+  WAITING_FOR_ROUTE: "Đang chờ xác định tuyến xử lý",
+  FAILED_SAFE: "Đã dừng an toàn",
+  DIRECT_ROUTE: "Tuyến quyết định nội bộ trực tiếp",
+  BANKING_NO_VIABLE_OPTION: "Không có phương án ngân hàng khả thi",
+  BANKING_NO_PRECHECK_PATH: "Không có tuyến kiểm tra sơ bộ với ngân hàng phù hợp",
+  BANKING_PRECHECK_DECLINED: "Yêu cầu kiểm tra sơ bộ với ngân hàng không được phê duyệt",
+  BANKING_NON_ACTIONABLE: "Kết quả ngân hàng chưa đủ điều kiện xử lý tiếp",
+  CONDITIONAL_DOCUMENT_READY: "Hồ sơ có điều kiện đã được chuẩn bị",
+  FINAL_DECISION_ACCEPTED: "Đã chấp nhận hợp đồng",
+  NEGOTIATION_AUTHORIZED: "Đã cho phép tiến hành đàm phán",
+  CASE_CLOSED_NO_EXTERNAL_ACTION: "Đã đóng hồ sơ, không cần hành động bên ngoài",
+  NOT_INVOKED: "Không cần thực hiện",
+  PARTIALLY_READY: "Sẵn sàng một phần",
+  INPUT_REQUIRED: "Cần bổ sung dữ liệu",
+  NOT_CONFIGURED: "Chưa được cấu hình",
+  UNSUPPORTED_MAPPING: "Chưa hỗ trợ ánh xạ dữ liệu",
+  OPTION_REQUIREMENTS_NOT_MET: "Chưa đáp ứng điều kiện của phương án",
+  CONDITIONAL_PRECHECK: "Kiểm tra sơ bộ có điều kiện",
+  MISSING_EVIDENCE: "Còn thiếu tài liệu xác nhận",
+  NOT_ELIGIBLE: "Không đủ điều kiện",
+  NO_RECOMMENDATION: "Chưa có khuyến nghị",
+  SERVICE_UNAVAILABLE: "Dịch vụ hiện không khả dụng",
+};
+
+export function businessValueLabel(
+  value?: string | null,
+  fallback = "Trạng thái đã được hệ thống ghi nhận",
+): string {
+  if (!value) return "Chưa xác định";
+  return BUSINESS_VALUE_LABELS[value.toUpperCase()] ?? fallback;
+}

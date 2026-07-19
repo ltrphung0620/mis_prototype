@@ -239,6 +239,183 @@ def test_raw_document_package_cannot_create_approval_request(tmp_path: Path) -> 
     asyncio.run(execute())
 
 
+def test_final_decision_and_external_submission_use_separate_exact_approvals(
+    tmp_path: Path,
+) -> None:
+    async def execute() -> None:
+        now = datetime.now(UTC)
+        database = SQLiteDatabase(tmp_path / "separate-decision-release-approvals.db")
+        await database.initialize()
+        artifacts = SQLiteArtifactRepository(database)
+        requests = SQLiteApprovalRequestRepository(database)
+        events = SQLiteRuntimeEventRepository(database)
+        orchestrator = ApprovalOrchestrator(
+            artifacts=artifacts,
+            requests=requests,
+            case_workflows=SQLiteCaseWorkflowRepository(database),
+            events=events,
+            clock=lambda: now,
+        )
+        decision_card = envelope(
+            artifact_id="ART-DECISION-CARD",
+            artifact_type=ArtifactType.DECISION_CARD,
+            version=1,
+            input_hash="DECISION-CARD-HASH",
+            payload={"decision_card_id": "DCARD-TEST"},
+            now=now,
+        )
+        external_proposal = envelope(
+            artifact_id="ART-EXTERNAL-SUBMISSION-PROPOSAL",
+            artifact_type=ArtifactType.EXTERNAL_DOCUMENT_SUBMISSION_PROPOSAL,
+            version=1,
+            input_hash="EXTERNAL-PROPOSAL-HASH",
+            payload={"proposal_id": "EDSP-TEST"},
+            now=now,
+        )
+        await artifacts.save(decision_card)
+        await artifacts.save(external_proposal)
+        checkpoints = ApprovalCheckpointSet(
+            evaluation_case_id="CASE-TEST",
+            dataset_id="DATASET-TEST",
+            contract_id="CONTRACT-TEST",
+            checkpoints=(
+                ApprovalCheckpoint(
+                    checkpoint_id="ACP-FINAL-DECISION",
+                    evaluation_case_id="CASE-TEST",
+                    source_rule_id="FINAL-DECISION-POLICY",
+                    approval_type="FINAL_DECISION_FOUNDER_APPROVAL",
+                    trigger_event=(
+                        ApprovalTriggerEvent.FINAL_CONTRACT_DECISION_CONFIRMATION_REQUESTED
+                    ),
+                    protected_action=(
+                        ProtectedAction.CONFIRM_FINAL_CONTRACT_DECISION
+                    ),
+                    condition=ApprovalCondition(
+                        source_field="final_decision_confirmation_requested",
+                        operator=RuleOperator.EQUAL,
+                        threshold=True,
+                    ),
+                    evidence_ids=(),
+                ),
+                ApprovalCheckpoint(
+                    checkpoint_id="ACP-EXTERNAL-SUBMISSION",
+                    evaluation_case_id="CASE-TEST",
+                    source_rule_id="EXTERNAL-RELEASE-POLICY",
+                    approval_type="DOCUMENT_EXTERNAL_RELEASE_APPROVAL",
+                    trigger_event=(
+                        ApprovalTriggerEvent.DOCUMENT_EXTERNAL_RELEASE_REQUESTED
+                    ),
+                    protected_action=(
+                        ProtectedAction.SEND_DOCUMENT_TO_EXTERNAL_PARTNER
+                    ),
+                    condition=ApprovalCondition(
+                        source_field="document_sent_to_partner",
+                        operator=RuleOperator.EQUAL,
+                        threshold=True,
+                    ),
+                    evidence_ids=(),
+                ),
+            ),
+        )
+        await artifacts.save(
+            envelope(
+                artifact_id="ART-DECISION-RELEASE-POLICY",
+                artifact_type=ArtifactType.APPROVAL_CHECKPOINTS,
+                version=1,
+                input_hash="DECISION-RELEASE-POLICY-HASH",
+                payload=checkpoints.model_dump(mode="json"),
+                now=now,
+            )
+        )
+
+        decision_wait = await orchestrator.request_action(
+            ActionCommand(
+                action_type=ProtectedAction.CONFIRM_FINAL_CONTRACT_DECISION,
+                evaluation_case_id="CASE-TEST",
+                payload_artifact_id=decision_card.artifact_id,
+                requested_by="CASE_WORKFLOW_ORCHESTRATOR",
+                payload={
+                    "final_decision_confirmation_requested": True,
+                    "decision_card_id": "DCARD-TEST",
+                },
+            )
+        )
+        release_wait = await orchestrator.request_action(
+            ActionCommand(
+                action_type=ProtectedAction.SEND_DOCUMENT_TO_EXTERNAL_PARTNER,
+                evaluation_case_id="CASE-TEST",
+                payload_artifact_id=external_proposal.artifact_id,
+                requested_by="CASE_WORKFLOW_ORCHESTRATOR",
+                payload={
+                    "document_sent_to_partner": True,
+                    "proposal_id": "EDSP-TEST",
+                },
+            )
+        )
+
+        assert decision_wait.gate_status is ApprovalGateStatus.WAITING_FOR_APPROVAL
+        assert release_wait.gate_status is ApprovalGateStatus.WAITING_FOR_APPROVAL
+        assert decision_wait.approval_request is not None
+        assert release_wait.approval_request is not None
+        assert decision_wait.approval_request.request_id != (
+            release_wait.approval_request.request_id
+        )
+        assert decision_wait.approval_request.subject_artifact_id == (
+            decision_card.artifact_id
+        )
+        assert release_wait.approval_request.subject_artifact_id == (
+            external_proposal.artifact_id
+        )
+        assert decision_wait.approval_request.checkpoint_ids == (
+            "ACP-FINAL-DECISION",
+        )
+        assert release_wait.approval_request.checkpoint_ids == (
+            "ACP-EXTERNAL-SUBMISSION",
+        )
+
+        decision_approved = await orchestrator.decide(
+            request_id=decision_wait.approval_request.request_id,
+            decision=ApprovalDecision.APPROVE,
+            decided_by="FOUNDER",
+            reason="HUMAN_REVIEW_COMPLETED",
+        )
+        release_approved = await orchestrator.decide(
+            request_id=release_wait.approval_request.request_id,
+            decision=ApprovalDecision.APPROVE,
+            decided_by="FOUNDER",
+            reason="HUMAN_REVIEW_COMPLETED",
+        )
+        audit_events = (
+            *(await events.list_after(
+                decision_wait.approval_request.workflow_run_id, 0
+            )),
+            *(await events.list_after(
+                release_wait.approval_request.workflow_run_id, 0
+            )),
+        )
+        await database.close()
+
+        assert decision_approved.action_authorized is True
+        assert release_approved.action_authorized is True
+        assert decision_approved.approval_request is not None
+        assert release_approved.approval_request is not None
+        assert decision_approved.approval_request.status is (
+            ApprovalRequestStatus.APPROVED
+        )
+        assert release_approved.approval_request.status is (
+            ApprovalRequestStatus.APPROVED
+        )
+        assert not any(
+            item.event_type in {
+                "EXTERNAL_SUBMISSION_PERFORMED",
+                "EXTERNAL_SUBMISSION_RECEIPT_CREATED",
+            }
+            for item in audit_events
+        )
+
+    asyncio.run(execute())
+
+
 def test_legacy_pending_document_approval_expires_before_authorization(
     tmp_path: Path,
 ) -> None:

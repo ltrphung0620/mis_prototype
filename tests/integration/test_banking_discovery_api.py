@@ -52,15 +52,23 @@ def run_case(client: TestClient, contract_id: str) -> dict[str, object]:
     raise AssertionError("Banking workflow did not reach a terminal state.")
 
 
-def test_con004_banking_matrix_is_deterministic_and_does_not_infer_credit_data(
+def test_con004_banking_matrix_uses_exact_planner_credit_amount_before_approval(
     banking_client: TestClient,
 ) -> None:
     before = compute_sha256(TEAM_PACK)
     summary = run_case(banking_client, "CON-004")
-    assert summary["status"] == "WAITING_FOR_INPUT"
-    assert summary["current_stage"] == "DECISION_POST_BANKING_REVIEW"
-    assert summary["banking_precheck_readiness_status"] == "INPUT_REQUIRED"
-    assert summary["decision_post_banking_outcome"] == "BANKING_INPUT_REQUIRED"
+    assert summary["status"] == "WAITING_FOR_APPROVAL"
+    assert summary["current_stage"] == "WAITING_FOR_APPROVAL"
+    assert summary["blocked_action"] == "SUBMIT_BANKING_PRECHECK"
+    assert summary["banking_precheck_readiness_status"] == "READY"
+    assert summary["decision_post_banking_outcome"] == "BANKING_PRECHECK_READY"
+    assert summary["banking_input_supplement_id"] is None
+    assert summary["pending_missing_data_ids"] == []
+    assert len(summary["pending_approval_ids"]) == 1
+    assert summary["banking_precheck_result_set_id"] is None
+    assert summary["banking_precheck_outcomes"] == []
+    assert summary["banking_precheck_execution_mode"] is None
+    assert summary["banking_precheck_external_bank_submission"] is None
     case_id = summary["evaluation_case_id"]
     path = f"/api/cases/{case_id}/banking/internal-discovery"
 
@@ -71,14 +79,14 @@ def test_con004_banking_matrix_is_deterministic_and_does_not_infer_credit_data(
     assert first.json() == second.json()
     payload = first.json()
     assert payload["status"] == "COMPLETED"
-    assert payload["component_status"] == "COMPLETED_WITH_WARNINGS"
+    assert payload["component_status"] == "COMPLETED"
     assert payload["current_node"] == "BANKING_INTERNAL_OPTIONS_READY"
-    assert payload["discovery_status"] == "OPTIONS_READY_WITH_GAPS"
+    assert payload["discovery_status"] == "OPTIONS_READY"
 
     matrix = payload["option_matrix"]
-    assert matrix["requested_amount"] is None
+    assert matrix["requested_amount"] == 420_000_000
     assert matrix["requested_amount_currency"] == "VND"
-    assert matrix["explicit_credit_case_ids"] == []
+    assert matrix["explicit_credit_case_ids"] == ["CR-002"]
     assert matrix["precheck_executed"] is False
     assert len(matrix["candidates"]) == 1
     candidate = matrix["candidates"][0]
@@ -87,13 +95,17 @@ def test_con004_banking_matrix_is_deterministic_and_does_not_infer_credit_data(
     minimum_check = next(
         item for item in candidate["criteria"] if item["code"] == "MINIMUM_AMOUNT"
     )
-    assert minimum_check["status"] == "NOT_EVALUABLE"
+    assert minimum_check["status"] == "PASS"
+    credit_check = next(
+        item
+        for item in candidate["criteria"]
+        if item["code"] == "EXPLICIT_CREDIT_PROFILE_RELATIONSHIP"
+    )
+    assert credit_check["status"] == "PASS"
     assert candidate["precheck"]["api_id"] == "API-002"
     assert candidate["precheck"]["status"] == "MOCK_AVAILABLE_NOT_EXECUTED"
     assert candidate["precheck"]["precheck_executed"] is False
-    assert {item["code"] for item in matrix["data_gaps"]} == {
-        "REQUESTED_AMOUNT_UNAVAILABLE"
-    }
+    assert matrix["data_gaps"] == []
     assert matrix["allowed_option_combinations"] == []
     assert payload["option_advice"]["status"] == "NOT_INVOKED"
     assert payload["option_advice"]["source"] == "NOT_INVOKED"
@@ -104,11 +116,18 @@ def test_con004_banking_matrix_is_deterministic_and_does_not_infer_credit_data(
         "BANKING_OPTION_ADVICE",
     }
     serialized = json.dumps(payload, ensure_ascii=False)
-    assert "CR-002" not in serialized
-    assert "420000000" not in serialized
-    assert banking_client.get(
+    assert "CR-002" in serialized
+    assert "420000000" in serialized
+    approval_requests = banking_client.get(
         f"/api/cases/{case_id}/approval-requests"
-    ).json() == []
+    ).json()
+    assert len(approval_requests) == 1
+    approval = approval_requests[0]
+    assert approval["request_id"] == summary["pending_approval_ids"][0]
+    assert approval["status"] == "PENDING"
+    assert approval["command"]["action_type"] == "SUBMIT_BANKING_PRECHECK"
+    assert approval["command"]["payload"]["requested_amount"] == 420_000_000
+    assert approval["command"]["payload"]["requested_amount_currency"] == "VND"
     assert compute_sha256(TEAM_PACK) == before
 
 

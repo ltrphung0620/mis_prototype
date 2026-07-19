@@ -27,6 +27,14 @@ dev = [
 [tool.setuptools.packages.find]
 where = ["src"]
 
+[tool.setuptools.package-data]
+"opc_mis.api" = [
+    "static/react/*.html",
+    "static/react/assets/*.css",
+    "static/react/assets/*.js",
+    "static/react/assets/*.svg",
+]
+
 [tool.pytest.ini_options]
 pythonpath = ["src"]
 testpaths = ["tests"]

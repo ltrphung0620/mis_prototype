@@ -2,15 +2,26 @@
 
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    StrictInt,
+    field_validator,
+    model_validator,
+)
 
 from opc_mis.domain.artifacts import ArtifactEnvelope
 from opc_mis.domain.components import ComponentResult
 from opc_mis.domain.enums import (
     CashflowScope,
     ComponentStatus,
+    ContractRequirementType,
+    CurrencyCode,
     EvaluationScope,
     ReadinessStatus,
+    RequirementAmountSemantics,
+    RequirementCertainty,
     RunTaskType,
     WorkflowStatus,
 )
@@ -92,6 +103,37 @@ class DataReadiness(BaseModel):
     validation_notes: tuple[str, ...]
 
 
+class ContractRequirement(BaseModel):
+    """Typed requirement, its exact credit reference, and any usable requested amount."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    requirement_id: str
+    requirement_type: ContractRequirementType
+    certainty: RequirementCertainty
+    requested_amount: StrictInt | None = Field(default=None, gt=0)
+    requested_amount_currency: CurrencyCode = CurrencyCode.VND
+    amount_semantics: RequirementAmountSemantics | None = None
+    credit_case_id: str | None = None
+    source_record_ids: tuple[str, ...] = Field(min_length=1)
+    source_fields: tuple[str, ...] = Field(min_length=1)
+    evidence_ids: tuple[str, ...] = Field(min_length=1)
+
+    @model_validator(mode="after")
+    def validate_amount_lineage(self) -> "ContractRequirement":
+        """Keep an amount inseparable from its exact credit-profile provenance."""
+        has_amount = self.requested_amount is not None
+        if has_amount != (self.amount_semantics is not None):
+            raise ValueError("requested_amount and amount_semantics must be present together")
+        if has_amount and self.credit_case_id is None:
+            raise ValueError("requested_amount requires an exact credit_case_id")
+        if len(self.source_record_ids) != len(self.source_fields):
+            raise ValueError("source_record_ids and source_fields must have equal length")
+        if len(set(self.evidence_ids)) != len(self.evidence_ids):
+            raise ValueError("evidence_ids must be unique")
+        return self
+
+
 class EvaluationCase(BaseModel):
     """Standardized, traceable case without workflow-owned state."""
 
@@ -109,6 +151,7 @@ class EvaluationCase(BaseModel):
     cashflow_scope: CashflowScope
     warnings: tuple[PlannerWarning, ...]
     evidence_refs: tuple[EvidenceRef, ...]
+    contract_requirements: tuple[ContractRequirement, ...] = ()
 
 
 class RunPlan(BaseModel):

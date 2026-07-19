@@ -5,6 +5,11 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from opc_mis.domain.decision_models import (
+    DecisionAnalysisSource,
+    DecisionConfidence,
+    DecisionRecommendation,
+)
 from opc_mis.domain.document_models import (
     DocumentPackageReadiness,
     DocumentRequirementCode,
@@ -21,9 +26,13 @@ from opc_mis.domain.enums import (
     DecisionPostPrecheckOutcome,
     DecisionRouteOutcome,
     EvaluationScope,
+    FinalRiskAssessmentStatus,
+    FinalRiskControlCode,
+    MajorExceptionStatus,
     ProtectedAction,
     ProviderEligibilityStatus,
     ProviderGuaranteeDecision,
+    RiskLevel,
     ValidationStatus,
     WorkflowNodeStatus,
     WorkflowStatus,
@@ -32,6 +41,7 @@ from opc_mis.domain.internal_decision_package_models import (
     InternalDecisionAssemblyPath,
     InternalDecisionPackageReadiness,
 )
+from opc_mis.domain.post_decision_models import PostDecisionOutcome
 from opc_mis.domain.workflow import WorkflowNode
 
 
@@ -49,6 +59,7 @@ class CaseWorkflowRun(BaseModel):
     current_stage: str
     requested_scope: tuple[EvaluationScope, ...]
     as_of_date: date | None = None
+    run_request_id: str | None = None
     pending_request_ids: tuple[str, ...] = ()
     resume_stage: str | None = None
     blocked_action: ProtectedAction | None = None
@@ -176,6 +187,26 @@ class WorkflowRunSummary(BaseModel):
     internal_decision_source_artifact_ids: tuple[str, ...] = ()
     internal_decision_governance_reference_ids: tuple[str, ...] = ()
     internal_decision_package_ready: bool = False
+    final_risk_assessment_id: str | None = None
+    final_risk_status: FinalRiskAssessmentStatus | None = None
+    final_residual_risk_level: RiskLevel | None = None
+    final_major_exception: MajorExceptionStatus | None = None
+    final_unresolved_approval_gate_ids: tuple[str, ...] = ()
+    final_required_control_codes: tuple[FinalRiskControlCode, ...] = ()
+    ai_decision_analysis_id: str | None = None
+    ai_decision_analysis_source: DecisionAnalysisSource | None = None
+    decision_card_id: str | None = None
+    decision_recommendation: DecisionRecommendation | None = None
+    decision_confidence: DecisionConfidence | None = None
+    decision_condition_ids: tuple[str, ...] = ()
+    decision_selected_negotiation_strategy_ids: tuple[str, ...] = ()
+    decision_selected_option_ids: tuple[str, ...] = ()
+    post_decision_update_id: str | None = None
+    post_decision_outcome: PostDecisionOutcome | None = None
+    external_document_submission_proposal_id: str | None = None
+    external_submission_authorized: bool = False
+    ready_for_external_submission: bool = False
+    external_submission_performed: bool = False
     pending_approval_ids: tuple[str, ...] = ()
     pending_missing_data_ids: tuple[str, ...] = ()
     resume_stage: str | None = None

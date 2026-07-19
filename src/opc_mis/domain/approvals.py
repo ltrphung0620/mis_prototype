@@ -250,6 +250,18 @@ class ApprovalRequest(BaseModel):
             )
         ):
             raise ValueError("Banking precheck control requires exact policy coverage")
+        if (
+            self.command.action_type
+            in {
+                ProtectedAction.CONFIRM_FINAL_CONTRACT_DECISION,
+                ProtectedAction.SEND_DOCUMENT_TO_EXTERNAL_PARTNER,
+            }
+            and self.status is not ApprovalRequestStatus.EXPIRED
+            and not all(item is not None for item in policy_identity)
+        ):
+            raise ValueError(
+                "Decision and external-submission controls require exact policy lineage"
+            )
         return self
 
 

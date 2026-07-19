@@ -33,6 +33,7 @@ from opc_mis.domain.enums import (
     CurrencyCode,
     DecisionCapability,
     DecisionHandoffMode,
+    RequirementAmountSemantics,
     WorkflowStatus,
 )
 from opc_mis.domain.missing_data import MissingDataRequest
@@ -132,8 +133,12 @@ class BankingDiscoveryRequest(BaseModel):
     execution_mode: DecisionHandoffMode
     requested_capability: DecisionCapability
     need_types: tuple[BankingNeedType, ...] = Field(min_length=1)
-    requested_amount: None = None
+    requirement_id: str | None = Field(default=None, min_length=1)
+    credit_case_id: str | None = Field(default=None, min_length=1)
+    requested_amount: StrictInt | None = Field(default=None, gt=0)
     requested_amount_currency: CurrencyCode = CurrencyCode.VND
+    amount_semantics: RequirementAmountSemantics | None = None
+    amount_evidence_ids: tuple[str, ...] = ()
     constraints: tuple[str, ...] = Field(default=(), max_length=0)
     source_route_artifact_id: str
     source_route_plan_id: str
@@ -145,6 +150,40 @@ class BankingDiscoveryRequest(BaseModel):
     def default_request_currency(cls, value: object) -> object:
         """Read legacy null artifacts using the canonical VND convention."""
         return CurrencyCode.VND if value is None else value
+
+    @model_validator(mode="after")
+    def validate_requested_amount_source(self) -> "BankingDiscoveryRequest":
+        """Require complete, evidence-backed metadata whenever an amount is present."""
+        if self.requested_amount_currency is not CurrencyCode.VND:
+            raise ValueError("Banking discovery currently supports VND only")
+        if len(set(self.need_types)) != len(self.need_types):
+            raise ValueError("need_types must be unique")
+        if len(set(self.source_artifact_ids)) != len(self.source_artifact_ids):
+            raise ValueError("source_artifact_ids must be unique")
+        if self.source_route_artifact_id not in self.source_artifact_ids:
+            raise ValueError("source route artifact must be included in source_artifact_ids")
+        if len(set(self.evidence_ids)) != len(self.evidence_ids):
+            raise ValueError("evidence_ids must be unique")
+        if len(set(self.amount_evidence_ids)) != len(self.amount_evidence_ids):
+            raise ValueError("amount_evidence_ids must be unique")
+
+        amount_binding = (
+            self.requested_amount is not None,
+            self.requirement_id is not None,
+            self.credit_case_id is not None,
+            self.amount_semantics is not None,
+            bool(self.amount_evidence_ids),
+        )
+        if any(amount_binding) and not all(amount_binding):
+            raise ValueError(
+                "requested amount, requirement, credit case, semantics, and evidence "
+                "must be present together"
+            )
+        if self.requested_amount is not None and len(self.need_types) != 1:
+            raise ValueError("one requested amount must bind to exactly one need type")
+        if not set(self.amount_evidence_ids).issubset(self.evidence_ids):
+            raise ValueError("amount evidence must be included in request evidence")
+        return self
 
 
 class BankingInputSupplement(BaseModel):

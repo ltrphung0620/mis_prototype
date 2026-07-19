@@ -39,15 +39,18 @@ from opc_mis.domain.enums import (
     BankingPrecheckStatus,
     CashflowScope,
     ComponentStatus,
+    ContractRequirementType,
     CurrencyCode,
     DecisionCapability,
     DecisionHandoffMode,
     EvaluationScope,
+    RequirementAmountSemantics,
+    RequirementCertainty,
     SourceType,
     ValidationStatus,
 )
 from opc_mis.domain.evidence import EvidenceRef
-from opc_mis.domain.planner_models import EvaluationCase
+from opc_mis.domain.planner_models import ContractRequirement, EvaluationCase
 from opc_mis.domain.team_pack import SheetRegistry
 from opc_mis.governance.evidence_validator import EvidenceValidator
 from opc_mis.infrastructure.persistence.memory_artifact_repository import (
@@ -69,6 +72,21 @@ BASE_EVIDENCE = EvidenceRef(
     field="payment_terms",
     display_value="Performance bond requirement",
 )
+
+
+def _amount_evidence(amount: int) -> EvidenceRef:
+    return EvidenceRef(
+        evidence_id=f"EVD-CREDIT-REQUESTED-AMOUNT-{amount}",
+        source_type=SourceType.TEAM_PACK,
+        sheet=SheetRegistry.CREDIT_PROFILES.sheet_name,
+        row_number=2,
+        record_id="CREDIT-UNRELATED",
+        field="requested_amount",
+        display_value=amount,
+    )
+
+
+AMOUNT_EVIDENCE = _amount_evidence(420_000_000)
 
 
 def _record(sheet: str, row: int, record_id: str, values: dict[str, object]) -> DatasetRecord:
@@ -140,7 +158,9 @@ def _handling_rule() -> DatasetRecord:
     )
 
 
-def _unrelated_credit_profile() -> DatasetRecord:
+def _unrelated_credit_profile(
+    requested_amount: int = 420_000_000,
+) -> DatasetRecord:
     return _record(
         SheetRegistry.CREDIT_PROFILES.sheet_name,
         2,
@@ -149,7 +169,7 @@ def _unrelated_credit_profile() -> DatasetRecord:
             "credit_case_id": "CREDIT-UNRELATED",
             "company_id": "COMPANY-X",
             "request_type": "Guarantee",
-            "requested_amount": 420000000.0,
+            "requested_amount": requested_amount,
             "tenor": "Twelve months",
             "collateral_or_basis": f"Description mentions {CONTRACT_ID}",
             "eligibility_score": 80.0,
@@ -159,7 +179,11 @@ def _unrelated_credit_profile() -> DatasetRecord:
     )
 
 
-def _snapshot(product_count: int) -> DatasetSnapshot:
+def _snapshot(
+    product_count: int,
+    *,
+    requested_amount: int = 420_000_000,
+) -> DatasetSnapshot:
     products = tuple(
         _product(product_id, row)
         for row, product_id in enumerate(("PRODUCT-ALPHA", "PRODUCT-BETA")[:product_count], 2)
@@ -172,7 +196,9 @@ def _snapshot(product_count: int) -> DatasetSnapshot:
         SheetRegistry.BANK_PRODUCTS.sheet_name: list(products),
         SheetRegistry.API_CATALOG.sheet_name: list(apis),
         SheetRegistry.API_HANDLING_RULES.sheet_name: [_handling_rule()],
-        SheetRegistry.CREDIT_PROFILES.sheet_name: [_unrelated_credit_profile()],
+        SheetRegistry.CREDIT_PROFILES.sheet_name: [
+            _unrelated_credit_profile(requested_amount)
+        ],
     }
     indexes = {
         sheet: {record.record_id: [record] for record in sheet_records}
@@ -218,9 +244,7 @@ def _policy(product_count: int, *, allow_combination: bool = False) -> BankingCa
                 precheck_field_sources_by_api={
                     api_id: {
                         "contract_id": BankingPrecheckFieldSource.EVALUATION_CASE,
-                        "amount": (
-                            BankingPrecheckFieldSource.BANKING_INPUT_SUPPLEMENT
-                        ),
+                        "amount": BankingPrecheckFieldSource.BANKING_DISCOVERY_REQUEST,
                         "company_profile": BankingPrecheckFieldSource.OPC_PROFILE,
                     }
                     for api_id in api_ids
@@ -232,7 +256,13 @@ def _policy(product_count: int, *, allow_combination: bool = False) -> BankingCa
     )
 
 
-def _case(*, related_credit_case_ids: tuple[str, ...] = ()) -> EvaluationCase:
+def _case(
+    *,
+    related_credit_case_ids: tuple[str, ...] = (),
+    requested_amount: int = 420_000_000,
+) -> EvaluationCase:
+    amount_evidence = _amount_evidence(requested_amount)
+    has_amount_requirement = "CREDIT-UNRELATED" in related_credit_case_ids
     return EvaluationCase(
         evaluation_case_id=CASE_ID,
         dataset_id=DATASET_ID,
@@ -249,11 +279,38 @@ def _case(*, related_credit_case_ids: tuple[str, ...] = ()) -> EvaluationCase:
         ),
         cashflow_scope=CashflowScope.NOT_AVAILABLE,
         warnings=(),
-        evidence_refs=(BASE_EVIDENCE,),
+        evidence_refs=(
+            BASE_EVIDENCE,
+            *((amount_evidence,) if has_amount_requirement else ()),
+        ),
+        contract_requirements=(
+            (
+                ContractRequirement(
+                    requirement_id="REQ-PERFORMANCE-BOND",
+                    requirement_type=ContractRequirementType.PERFORMANCE_BOND,
+                    certainty=RequirementCertainty.REQUIRED,
+                    requested_amount=requested_amount,
+                    requested_amount_currency=CurrencyCode.VND,
+                    amount_semantics=(
+                        RequirementAmountSemantics.CREDIT_PROFILE_REQUESTED_AMOUNT
+                    ),
+                    credit_case_id="CREDIT-UNRELATED",
+                    source_record_ids=(CONTRACT_ID, "CREDIT-UNRELATED"),
+                    source_fields=("payment_terms", "requested_amount"),
+                    evidence_ids=(
+                        BASE_EVIDENCE.evidence_id,
+                        amount_evidence.evidence_id,
+                    ),
+                ),
+            )
+            if has_amount_requirement
+            else ()
+        ),
     )
 
 
-def _request() -> BankingDiscoveryRequest:
+def _request(*, amount: int | None = 420_000_000) -> BankingDiscoveryRequest:
+    amount_is_present = amount is not None
     return BankingDiscoveryRequest(
         request_id="BANKING-REQUEST-TEST",
         evaluation_case_id=CASE_ID,
@@ -262,13 +319,26 @@ def _request() -> BankingDiscoveryRequest:
         execution_mode=DecisionHandoffMode.BANKING_DISCOVERY,
         requested_capability=DecisionCapability.BANKING_INTERNAL_DISCOVERY,
         need_types=(BankingNeedType.PERFORMANCE_BOND,),
-        requested_amount=None,
-        requested_amount_currency=None,
+        requirement_id=("REQ-PERFORMANCE-BOND" if amount_is_present else None),
+        credit_case_id=("CREDIT-UNRELATED" if amount_is_present else None),
+        requested_amount=amount,
+        requested_amount_currency=CurrencyCode.VND,
+        amount_semantics=(
+            RequirementAmountSemantics.CREDIT_PROFILE_REQUESTED_AMOUNT
+            if amount_is_present
+            else None
+        ),
+        amount_evidence_ids=(
+            (_amount_evidence(amount).evidence_id,) if amount_is_present else ()
+        ),
         constraints=(),
         source_route_artifact_id="ARTIFACT-ROUTE",
         source_route_plan_id="ROUTE-PLAN-TEST",
         source_artifact_ids=("ARTIFACT-ROUTE", "ARTIFACT-EVALUATION-CASE"),
-        evidence_ids=(BASE_EVIDENCE.evidence_id,),
+        evidence_ids=(
+            BASE_EVIDENCE.evidence_id,
+            *((_amount_evidence(amount).evidence_id,) if amount_is_present else ()),
+        ),
     )
 
 
@@ -316,22 +386,32 @@ async def _run_discovery(
     *,
     product_count: int,
     allow_combination: bool = False,
-    related_credit_case_ids: tuple[str, ...] = (),
+    related_credit_case_ids: tuple[str, ...] = ("CREDIT-UNRELATED",),
+    amount: int | None = 420_000_000,
 ) -> tuple[object, BankingCatalogPolicy]:
     datasets = InMemoryDatasetRepository()
     artifacts = InMemoryArtifactRepository()
-    await datasets.register(_snapshot(product_count))
+    await datasets.register(
+        _snapshot(product_count, requested_amount=amount or 420_000_000)
+    )
+    evaluation_case = _case(
+        related_credit_case_ids=related_credit_case_ids,
+        requested_amount=amount or 420_000_000,
+    )
     case_artifact = _envelope(
         artifact_id="ARTIFACT-EVALUATION-CASE",
         artifact_type=ArtifactType.EVALUATION_CASE,
-        payload=_case(
-            related_credit_case_ids=related_credit_case_ids
-        ).model_dump(mode="json"),
+        payload=evaluation_case.model_dump(mode="json"),
+        evidence_refs=evaluation_case.evidence_refs,
     )
     request_artifact = _envelope(
         artifact_id="ARTIFACT-BANKING-REQUEST",
         artifact_type=ArtifactType.BANKING_DISCOVERY_REQUEST,
-        payload=_request().model_dump(mode="json"),
+        payload=_request(amount=amount).model_dump(mode="json"),
+        evidence_refs=(
+            BASE_EVIDENCE,
+            *((_amount_evidence(amount),) if amount is not None else ()),
+        ),
     )
     await artifacts.save(case_artifact)
     await artifacts.save(request_artifact)
@@ -353,14 +433,12 @@ def test_discovery_uses_only_explicit_relationships_and_never_executes_precheck(
     result, policy = asyncio.run(_run_discovery(product_count=1))
     matrix = result.option_matrix
 
-    assert result.status is ComponentStatus.COMPLETED_WITH_WARNINGS
-    assert result.discovery_status is BankingDiscoveryStatus.OPTIONS_READY_WITH_GAPS
+    assert result.status is ComponentStatus.COMPLETED
+    assert result.discovery_status is BankingDiscoveryStatus.OPTIONS_READY
     assert matrix is not None
-    assert matrix.explicit_credit_case_ids == ()
+    assert matrix.explicit_credit_case_ids == ("CREDIT-UNRELATED",)
     assert len(matrix.candidates) == 1
-    assert {gap.code for gap in matrix.data_gaps} == {
-        BankingDataGapCode.REQUESTED_AMOUNT_UNAVAILABLE,
-    }
+    assert matrix.data_gaps == ()
     candidate = matrix.candidates[0]
     amount_check = next(
         item for item in candidate.criteria if item.code is BankingCriterionCode.MINIMUM_AMOUNT
@@ -370,8 +448,9 @@ def test_discovery_uses_only_explicit_relationships_and_never_executes_precheck(
         for item in candidate.criteria
         if item.code is BankingCriterionCode.EXPLICIT_CREDIT_PROFILE_RELATIONSHIP
     )
-    assert amount_check.status is BankingCriterionStatus.NOT_EVALUABLE
-    assert credit_check.status is BankingCriterionStatus.NOT_EVALUABLE
+    assert amount_check.status is BankingCriterionStatus.PASS
+    assert credit_check.status is BankingCriterionStatus.PASS
+    assert matrix.requested_amount == 420_000_000
     assert matrix.requested_amount_currency is CurrencyCode.VND
     assert candidate.minimum_amount_currency is CurrencyCode.VND
     assert candidate.precheck is not None
@@ -397,7 +476,7 @@ def test_discovery_uses_only_explicit_relationships_and_never_executes_precheck(
     assert all(report.status is ValidationStatus.VALID for report in reports)
 
 
-def test_discovery_uses_a_credit_profile_only_when_planner_selected_its_id() -> None:
+def test_discovery_retains_exact_request_amount_evidence() -> None:
     result, _ = asyncio.run(
         _run_discovery(
             product_count=1,
@@ -418,6 +497,36 @@ def test_discovery_uses_a_credit_profile_only_when_planner_selected_its_id() -> 
     )
     assert credit_check.status is BankingCriterionStatus.PASS
     assert credit_check.evidence_ids
+    assert AMOUNT_EVIDENCE.evidence_id in matrix.evidence_ids
+    amount_check = next(
+        item
+        for item in matrix.candidates[0].criteria
+        if item.code is BankingCriterionCode.MINIMUM_AMOUNT
+    )
+    assert AMOUNT_EVIDENCE.evidence_id in amount_check.evidence_ids
+
+
+def test_discovery_reports_gap_only_for_legacy_request_without_amount() -> None:
+    result, _ = asyncio.run(
+        _run_discovery(
+            product_count=1,
+            related_credit_case_ids=(),
+            amount=None,
+        )
+    )
+    matrix = result.option_matrix
+
+    assert matrix is not None
+    assert matrix.requested_amount is None
+    assert {item.code for item in matrix.data_gaps} == {
+        BankingDataGapCode.REQUESTED_AMOUNT_UNAVAILABLE
+    }
+    amount_check = next(
+        item
+        for item in matrix.candidates[0].criteria
+        if item.code is BankingCriterionCode.MINIMUM_AMOUNT
+    )
+    assert amount_check.status is BankingCriterionStatus.NOT_EVALUABLE
 
 
 class _MustNotRunAdvisor:

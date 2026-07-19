@@ -1,7 +1,7 @@
 """Resolve an authorized Banking precheck request from explicit proposal bindings."""
 
 from opc_mis.domain.artifacts import ArtifactEnvelope
-from opc_mis.domain.banking_models import BankingInputSupplement
+from opc_mis.domain.banking_models import BankingDiscoveryRequest
 from opc_mis.domain.banking_precheck_execution_models import (
     AuthorizedActionPermit,
     BankingCompanyProfileField,
@@ -47,10 +47,10 @@ class BankingPrecheckRequestResolver:
         *,
         proposal_artifact: ArtifactEnvelope,
         evaluation_case_artifact: ArtifactEnvelope,
-        supplement_artifact: ArtifactEnvelope,
+        discovery_request_artifact: ArtifactEnvelope,
         proposal: BankingPrecheckSubmissionProposal,
         evaluation_case: EvaluationCase,
-        supplement: BankingInputSupplement,
+        discovery_request: BankingDiscoveryRequest,
         opc_profile_records: tuple[DatasetRecord, ...],
         authorization: AuthorizedActionPermit,
     ) -> tuple[BankingPrecheckRequest, ...]:
@@ -58,10 +58,10 @@ class BankingPrecheckRequestResolver:
         self._validate_context(
             proposal_artifact=proposal_artifact,
             evaluation_case_artifact=evaluation_case_artifact,
-            supplement_artifact=supplement_artifact,
+            discovery_request_artifact=discovery_request_artifact,
             proposal=proposal,
             evaluation_case=evaluation_case,
-            supplement=supplement,
+            discovery_request=discovery_request,
             authorization=authorization,
         )
         profile_by_id = self._profile_index(opc_profile_records)
@@ -74,10 +74,10 @@ class BankingPrecheckRequestResolver:
                 candidate=candidate,
                 proposal_artifact=proposal_artifact,
                 evaluation_case_artifact=evaluation_case_artifact,
-                supplement_artifact=supplement_artifact,
+                discovery_request_artifact=discovery_request_artifact,
                 proposal=proposal,
                 evaluation_case=evaluation_case,
-                supplement=supplement,
+                discovery_request=discovery_request,
                 profile_by_id=profile_by_id,
                 approved_evidence_by_id=approved_evidence_by_id,
                 authorization=authorization,
@@ -95,16 +95,19 @@ class BankingPrecheckRequestResolver:
         *,
         proposal_artifact: ArtifactEnvelope,
         evaluation_case_artifact: ArtifactEnvelope,
-        supplement_artifact: ArtifactEnvelope,
+        discovery_request_artifact: ArtifactEnvelope,
         proposal: BankingPrecheckSubmissionProposal,
         evaluation_case: EvaluationCase,
-        supplement: BankingInputSupplement,
+        discovery_request: BankingDiscoveryRequest,
         authorization: AuthorizedActionPermit,
     ) -> None:
         expected_types = (
             (proposal_artifact, ArtifactType.BANKING_PRECHECK_SUBMISSION_PROPOSAL),
             (evaluation_case_artifact, ArtifactType.EVALUATION_CASE),
-            (supplement_artifact, ArtifactType.BANKING_INPUT_SUPPLEMENT),
+            (
+                discovery_request_artifact,
+                ArtifactType.BANKING_DISCOVERY_REQUEST,
+            ),
         )
         if any(
             artifact.artifact_type is not artifact_type
@@ -112,7 +115,8 @@ class BankingPrecheckRequestResolver:
             for artifact, artifact_type in expected_types
         ):
             raise BankingPrecheckRequestResolutionError(
-                "Precheck execution requires validated proposal, case, and supplement artifacts."
+                "Precheck execution requires validated proposal, case, and discovery-request "
+                "artifacts."
             )
         if proposal_artifact.payload != proposal.model_dump(mode="json"):
             raise BankingPrecheckRequestResolutionError(
@@ -122,9 +126,11 @@ class BankingPrecheckRequestResolver:
             raise BankingPrecheckRequestResolutionError(
                 "The evaluation case payload does not match its persisted envelope."
             )
-        if supplement_artifact.payload != supplement.model_dump(mode="json"):
+        if discovery_request_artifact.payload != discovery_request.model_dump(
+            mode="json"
+        ):
             raise BankingPrecheckRequestResolutionError(
-                "The Banking supplement payload does not match its persisted envelope."
+                "The Banking discovery request does not match its persisted envelope."
             )
         if (
             authorization.protected_action
@@ -147,28 +153,90 @@ class BankingPrecheckRequestResolver:
             evaluation_case.dataset_id,
             evaluation_case.contract_id,
         ) != expected_identity or (
-            supplement.evaluation_case_id,
-            supplement.dataset_id,
-            supplement.contract_id,
+            discovery_request.evaluation_case_id,
+            discovery_request.dataset_id,
+            discovery_request.contract_id,
         ) != expected_identity:
             raise BankingPrecheckRequestResolutionError(
-                "Proposal, evaluation case, and Banking supplement identities disagree."
+                "Proposal, evaluation case, and Banking discovery-request identities "
+                "disagree."
             )
         if (
-            proposal.requested_amount != supplement.requested_amount
+            discovery_request.request_id != proposal.banking_request_id
+            or discovery_request.requested_amount is None
+            or discovery_request.requirement_id is None
+            or discovery_request.credit_case_id
+            not in evaluation_case.related_credit_case_ids
+            or proposal.requested_amount != discovery_request.requested_amount
             or proposal.requested_amount_currency
-            is not supplement.requested_amount_currency
+            is not discovery_request.requested_amount_currency
             or proposal.requested_amount_currency is not CurrencyCode.VND
         ):
             raise BankingPrecheckRequestResolutionError(
-                "Approved proposal amount does not match the explicit VND supplement."
+                "Approved proposal amount does not match the evidence-backed VND "
+                "Banking discovery request."
+            )
+        requirements = tuple(
+            item
+            for item in evaluation_case.contract_requirements
+            if item.requirement_id == discovery_request.requirement_id
+        )
+        if len(requirements) != 1:
+            raise BankingPrecheckRequestResolutionError(
+                "The approved request amount lacks one exact EvaluationCase contract "
+                "requirement."
+            )
+        requirement = requirements[0]
+        if (
+            len(discovery_request.need_types) != 1
+            or requirement.requirement_type.value
+            != discovery_request.need_types[0].value
+            or requirement.credit_case_id != discovery_request.credit_case_id
+            or requirement.requested_amount != discovery_request.requested_amount
+            or requirement.requested_amount_currency
+            is not discovery_request.requested_amount_currency
+            or requirement.amount_semantics is not discovery_request.amount_semantics
+            or not set(discovery_request.amount_evidence_ids).issubset(
+                requirement.evidence_ids
+            )
+        ):
+            raise BankingPrecheckRequestResolutionError(
+                "The approved request amount does not match its EvaluationCase contract "
+                "requirement."
             )
         if (
             evaluation_case_artifact.artifact_id not in proposal.source_artifact_ids
-            or supplement_artifact.artifact_id not in proposal.source_artifact_ids
+            or discovery_request_artifact.artifact_id
+            not in proposal.source_artifact_ids
         ):
             raise BankingPrecheckRequestResolutionError(
                 "Approved proposal is missing exact case or amount artifact lineage."
+            )
+        request_evidence_by_id = {
+            item.evidence_id: item
+            for item in discovery_request_artifact.evidence_refs
+        }
+        case_evidence_by_id = {
+            item.evidence_id: item
+            for item in evaluation_case_artifact.evidence_refs
+        }
+        if (
+            not discovery_request.amount_evidence_ids
+            or not set(discovery_request.amount_evidence_ids).issubset(
+                request_evidence_by_id
+            )
+        ):
+            raise BankingPrecheckRequestResolutionError(
+                "The Banking discovery request lacks exact amount evidence lineage."
+            )
+        if any(
+            case_evidence_by_id.get(evidence_id)
+            != request_evidence_by_id[evidence_id]
+            for evidence_id in discovery_request.amount_evidence_ids
+        ):
+            raise BankingPrecheckRequestResolutionError(
+                "The EvaluationCase artifact does not retain the exact approved amount "
+                "evidence."
             )
         if (
             proposal.precheck_executed
@@ -227,10 +295,10 @@ class BankingPrecheckRequestResolver:
         candidate: BankingPrecheckSubmissionCandidate,
         proposal_artifact: ArtifactEnvelope,
         evaluation_case_artifact: ArtifactEnvelope,
-        supplement_artifact: ArtifactEnvelope,
+        discovery_request_artifact: ArtifactEnvelope,
         proposal: BankingPrecheckSubmissionProposal,
         evaluation_case: EvaluationCase,
-        supplement: BankingInputSupplement,
+        discovery_request: BankingDiscoveryRequest,
         profile_by_id: dict[str, DatasetRecord],
         approved_evidence_by_id: dict[str, EvidenceRef],
         authorization: AuthorizedActionPermit,
@@ -253,10 +321,20 @@ class BankingPrecheckRequestResolver:
         self._validate_artifact_binding(
             amount_binding,
             field="amount",
-            source=BankingPrecheckFieldSource.BANKING_INPUT_SUPPLEMENT,
-            source_reference="BankingInputSupplement.requested_amount",
-            artifact_id=supplement_artifact.artifact_id,
-            record_ids=(supplement.supplement_id,),
+            source=BankingPrecheckFieldSource.BANKING_DISCOVERY_REQUEST,
+            source_reference="BankingDiscoveryRequest.requested_amount",
+            artifact_id=discovery_request_artifact.artifact_id,
+            record_ids=(
+                discovery_request.requirement_id,
+                discovery_request.credit_case_id,
+            ),
+        )
+        self._validate_amount_evidence(
+            binding=amount_binding,
+            proposal=proposal,
+            discovery_request_artifact=discovery_request_artifact,
+            discovery_request=discovery_request,
+            approved_evidence_by_id=approved_evidence_by_id,
         )
         if (
             profile_binding.required_field != "company_profile"
@@ -300,8 +378,8 @@ class BankingPrecheckRequestResolver:
             api_provider=candidate.api_provider,
             api_method=candidate.api_method,
             api_endpoint=candidate.api_endpoint,
-            requested_amount=supplement.requested_amount,
-            requested_amount_currency=supplement.requested_amount_currency,
+            requested_amount=discovery_request.requested_amount,
+            requested_amount_currency=discovery_request.requested_amount_currency,
             company_profile=company_profile,
         )
         return BankingPrecheckRequest(
@@ -323,8 +401,8 @@ class BankingPrecheckRequestResolver:
             api_provider=candidate.api_provider,
             api_method=candidate.api_method,
             api_endpoint=candidate.api_endpoint,
-            requested_amount=supplement.requested_amount,
-            requested_amount_currency=supplement.requested_amount_currency,
+            requested_amount=discovery_request.requested_amount,
+            requested_amount_currency=discovery_request.requested_amount_currency,
             company_profile=company_profile,
             request_hash=request_hash,
             idempotency_key=banking_precheck_idempotency_key(
@@ -455,6 +533,73 @@ class BankingPrecheckRequestResolver:
                 )
             )
         return tuple(profile_fields)
+
+    @staticmethod
+    def _validate_amount_evidence(
+        *,
+        binding: BankingPrecheckFieldBindingReference,
+        proposal: BankingPrecheckSubmissionProposal,
+        discovery_request_artifact: ArtifactEnvelope,
+        discovery_request: BankingDiscoveryRequest,
+        approved_evidence_by_id: dict[str, EvidenceRef],
+    ) -> None:
+        """Verify the approved amount binding retains the exact request evidence."""
+        if len(binding.evidence_ids) != 1:
+            raise BankingPrecheckRequestResolutionError(
+                "The approved amount binding must have one readiness resolution."
+            )
+        resolution = approved_evidence_by_id.get(binding.evidence_ids[0])
+        expected_display = {
+            "status": "RESOLVED",
+            "source": BankingPrecheckFieldSource.BANKING_DISCOVERY_REQUEST.value,
+            "source_reference": "BankingDiscoveryRequest.requested_amount",
+        }
+        if (
+            resolution is None
+            or resolution.source_type is not SourceType.DERIVED
+            or resolution.sheet != "BANKING_PRECHECK_READINESS"
+            or resolution.record_id != proposal.matrix_id
+            or resolution.field != "amount"
+            or resolution.display_value != expected_display
+        ):
+            raise BankingPrecheckRequestResolutionError(
+                "The approved amount binding lacks exact discovery-request readiness "
+                "lineage."
+            )
+        if not discovery_request.amount_evidence_ids or not set(
+            discovery_request.amount_evidence_ids
+        ).issubset(resolution.source_evidence_ids):
+            raise BankingPrecheckRequestResolutionError(
+                "The approved amount binding does not retain all discovery-request "
+                "amount evidence."
+            )
+        request_evidence_by_id = {
+            item.evidence_id: item
+            for item in discovery_request_artifact.evidence_refs
+        }
+        if len(discovery_request.amount_evidence_ids) != 1:
+            raise BankingPrecheckRequestResolutionError(
+                "The Banking discovery request must bind one exact amount evidence item."
+            )
+        for evidence_id in discovery_request.amount_evidence_ids:
+            request_evidence = request_evidence_by_id.get(evidence_id)
+            approved_evidence = approved_evidence_by_id.get(evidence_id)
+            if (
+                request_evidence is None
+                or approved_evidence is None
+                or request_evidence != approved_evidence
+                or request_evidence.source_type is not SourceType.TEAM_PACK
+                or request_evidence.sheet
+                != SheetRegistry.CREDIT_PROFILES.sheet_name
+                or request_evidence.record_id != discovery_request.credit_case_id
+                or request_evidence.field != "requested_amount"
+                or request_evidence.display_value
+                != discovery_request.requested_amount
+            ):
+                raise BankingPrecheckRequestResolutionError(
+                    "The approved amount lineage does not match the persisted Banking "
+                    "discovery request evidence."
+                )
 
     @staticmethod
     def _same_json_scalar(actual: object, expected: object) -> bool:

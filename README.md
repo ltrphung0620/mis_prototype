@@ -24,6 +24,16 @@ assembles a deterministic `INTERNAL_DECISION_PACKAGE` from the exact validated e
 no-viable-option, no-precheck-path, rejected-precheck, and non-actionable-precheck branches converge
 on the same assembly phase without requiring Document preparation.
 
+After `INTERNAL_DECISION_PACKAGE_READY`, Workflow runs deterministic Final Risk, builds an exact
+Decision scenario, invokes OpenAI only for bounded structured composition, applies deterministic
+guards and Evidence Validator, and persists `AI_DECISION_ANALYSIS` plus a Founder-facing
+`DECISION_CARD`. An approvable Card pauses at the separate final-decision gate. Founder approval
+creates a deterministic `POST_DECISION_UPDATE`; `NOT_EVALUABLE` instead stops safely at
+`DECISION_CARD_READY` without an approval request. An approved `ACCEPT` Card with a masked Document
+package creates an exact `EXTERNAL_DOCUMENT_SUBMISSION_PROPOSAL` and a second Governance approval
+request. The terminal boundary is `READY_FOR_EXTERNAL_SUBMISSION`: no connector is invoked, no
+document is sent, and no receipt is created.
+
 `BANKING_PRECHECK_READY` means only that the evidence required for a later external precheck is
 ready. `BANKING_PRECHECK_SUBMISSION_AUTHORIZED` is an internal authorization transition, not the
 terminal result. Phase B1 executes only a deterministic simulation: its results have
@@ -37,10 +47,11 @@ Document preparation is internal only. A complete `DOCUMENT_RELEASE_PACKAGE` rem
 unauthorized internal Decision input with `document_external_release_performed = false`.
 `INTERNAL_DECISION_PACKAGE` is an evidence dossier, not a recommendation, Decision Card,
 bank-option selection, approval request, or release authorization. The registered
-`SEND_DOCUMENT_TO_EXTERNAL_PARTNER` checkpoint stays dormant. A later Decision policy must create
-an evidence-bound recommendation/proposal for Founder review; only that later proposal may become
-the subject of a protected external-release action. That recommendation/proposal and the external
-connector are not implemented yet.
+`SEND_DOCUMENT_TO_EXTERNAL_PARTNER` checkpoint stays dormant until the implemented Decision flow
+has an approved `ACCEPT` Card with that exact package and persists an
+`EXTERNAL_DOCUMENT_SUBMISSION_PROPOSAL`. Governance then evaluates a new approval request bound to
+that proposal; the earlier final-decision approval is not release authorization. Even after
+authorization, the prototype stops at readiness and has no external connector or delivery receipt.
 The release candidate preserves provider condition codes, aggregated evidence limitations and a
 reference-only per-document manifest. An opaque document reference and caller-declared SHA-256
 bind metadata only: the prototype does not verify repository existence, file contents, signatures
@@ -82,6 +93,21 @@ artifacts, or change workflow state.
 
 ## Swagger API
 
+The Founder dashboard is a React/Vite application bundled into the Python package. Rebuild it
+after changing `frontend/`:
+
+```powershell
+Set-Location frontend
+npm.cmd ci
+npm.cmd test
+npm.cmd run build
+Set-Location ..
+```
+
+The browser uses same-origin FastAPI endpoints. It never receives the OpenAI API key and never
+calls OpenAI directly; OpenAI composition remains behind the server-side business-component
+adapters.
+
 ```powershell
 .\.venv\Scripts\python.exe -m uvicorn opc_mis.app:app `
   --env-file .env `
@@ -90,6 +116,14 @@ artifacts, or change workflow state.
 ```
 
 Open `http://127.0.0.1:8000/docs` and use:
+
+The Founder dashboard is available at `http://127.0.0.1:8000/dashboard`. It uses the same real API
+and durable Master Workflow as Swagger: the contract selector comes from the server-configured
+TeamPack, progress is polled from workflow summaries/events, assessment buttons open validated
+artifacts, and Governance pauses open the applicable Founder approval or evidence-metadata form.
+The OpenAI badge reports server configuration only; each artifact remains authoritative about
+whether its narrative/analysis used OpenAI or a deterministic fallback. No API key is sent to the
+browser.
 
 This prototype API and artifact-inspection surface does not implement authentication or RBAC. Run
 it only in a trusted local environment; labels such as `AUTHORIZED_STAFF` and `FOUNDER` are workflow
@@ -121,9 +155,9 @@ roles, not authenticated principals.
 - `GET /api/cases/{evaluation_case_id}/approval-checkpoints` to inspect future approval gates;
 - `POST /api/cases/{evaluation_case_id}/protected-actions/{action_type}` to evaluate a proposed
   protected action; include the Master `workflow_run_id` to pause/resume that same durable run.
-  `SUBMIT_BANKING_PRECHECK` is reserved for its automatic validated proposal flow.
-  `SEND_DOCUMENT_TO_EXTERNAL_PARTNER` cannot be injected here and remains dormant until a future
-  validated Decision proposal exists;
+  `SUBMIT_BANKING_PRECHECK`, `CONFIRM_FINAL_CONTRACT_DECISION`, and
+  `SEND_DOCUMENT_TO_EXTERNAL_PARTNER` are reserved for their automatic validated proposal/Card
+  flows and cannot be injected by a public client;
 - `GET /api/cases/{evaluation_case_id}/approval-requests` to inspect pending/resolved requests;
 - `POST /api/approval-requests/{request_id}/decision` to approve or reject a paused action;
 - `GET /api/cases/{evaluation_case_id}/artifacts` to inspect validated case artifacts;
@@ -175,8 +209,10 @@ read the exact pending signed-contract request and submit reference metadata:
 URLs, arbitrary reference text, or client-controlled `provided_by`. The `DOCREF-<UUIDv4>` value is
 still caller-declared metadata in this prototype and is not repository-verified. After
 auto-resume, inspect `DOCUMENT_RELEASE_PACKAGE` as the masked Document input and
-`INTERNAL_DECISION_PACKAGE` as the converged evidence dossier. No Founder request is created merely
-because either package is ready, and no external release is authorized or performed.
+`INTERNAL_DECISION_PACKAGE` as the converged evidence dossier. Neither package readiness alone
+creates a Founder request. Workflow first completes Final Risk and a validated Decision Card; only
+an approvable Card activates the final-decision gate, and only a later approved `ACCEPT` route with
+that package can activate the separate external-release gate. No external send is performed.
 
 The server reads `data/input/MISTalent2026_OPC_AgenticAI_TeamPack_v3.xlsx` by default. Override it
 with `OPC_MIS_TEAM_PACK_PATH` and optionally set `OPC_MIS_DATASET_ID`.
@@ -189,6 +225,12 @@ configuration with `BANKING_CATALOG_POLICY_PATH`. Simulated precheck scenarios a
 `BANKING_PROMPT_PATH` configure optional advisory prose. OpenAI is not called unless the
 deterministic matrix contains at least two candidates, and it is never used to produce or interpret
 the Phase B1 precheck result.
+
+Decision composition uses the server-owned `config/prompts/decision_analysis.md` and
+`config/decision/decision_governance_policy.json`; override them with `DECISION_PROMPT_PATH` and
+`DECISION_GOVERNANCE_POLICY_PATH`, and version the prompt with `DECISION_PROMPT_VERSION`. With
+OpenAI disabled or unavailable, Decision uses the deterministic fallback, which may return only
+`NOT_EVALUABLE`. Prompt/model/configuration identity participates in analysis reuse checks.
 
 Document masking policy is server-owned at `config/data_protection/masking_policy.json`; override
 it with `MASKING_POLICY_PATH`. Configure `OPC_MIS_MASKING_HMAC_KEY_BASE64` with Base64-encoded secret
@@ -252,4 +294,7 @@ the `BANKING_PRECHECK_READY` handoff boundary. See [Document Skill](docs/DOCUMEN
 conditional handoff, missing-document resume, data masking, and the internal Decision handoff. See
 [Internal Decision Package](docs/INTERNAL_DECISION_PACKAGE.md) for convergence paths, evidence
 lineage, deterministic identity, readiness behavior, and its strict no-decision/no-release
-boundary.
+boundary. See
+[Decision, Final Approval, and External-Release Readiness](docs/DECISION_FINAL_APPROVAL_AND_RELEASE.md)
+for the implemented post-`FINAL_RISK_READY` graph, exact approval bindings, `NOT_EVALUABLE`
+behavior, responsibility split, and no-send terminal boundary.

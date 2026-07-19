@@ -5,6 +5,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 from numbers import Real
 
+from opc_mis.business.skills.planner.contract_requirement_resolver import (
+    ContractRequirementResolver,
+)
 from opc_mis.business.skills.planner.requirement_registry import RequirementFailure
 from opc_mis.domain.dataset import DatasetRecord, DatasetSnapshot
 from opc_mis.domain.enums import (
@@ -13,7 +16,12 @@ from opc_mis.domain.enums import (
 )
 from opc_mis.domain.evidence import EvidenceRef
 from opc_mis.domain.lineage import LineageFactory, deterministic_id
-from opc_mis.domain.planner_models import EvaluationCase, PlannerRequest, PlannerWarning
+from opc_mis.domain.planner_models import (
+    ContractRequirement,
+    EvaluationCase,
+    PlannerRequest,
+    PlannerWarning,
+)
 from opc_mis.domain.team_pack import SheetRegistry
 from opc_mis.domain.validation import valid_identifier
 
@@ -33,6 +41,7 @@ class CaseBuildOutcome:
     invoices: tuple[DatasetRecord, ...]
     services: tuple[DatasetRecord, ...]
     credit_profiles: tuple[DatasetRecord, ...]
+    contract_requirements: tuple[ContractRequirement, ...]
     selected_records: tuple[DatasetRecord, ...]
     failures: tuple[RequirementFailure, ...]
     warnings: tuple[PlannerWarning, ...]
@@ -51,6 +60,15 @@ def _is_number(value: object) -> bool:
 
 class CaseBuilder:
     """Build a case using exact ID relationships; never read the workbook directly."""
+
+    def __init__(
+        self,
+        *,
+        contract_requirement_resolver: ContractRequirementResolver | None = None,
+    ) -> None:
+        self._contract_requirement_resolver = (
+            contract_requirement_resolver or ContractRequirementResolver()
+        )
 
     def build(
         self,
@@ -239,9 +257,18 @@ class CaseBuilder:
                 )
         services = tuple(services_list)
 
-        credit_profiles = self._explicit_credit_profiles(
-            dataset, contract.record_id, lineage, evidence
+        requirement_resolution = self._contract_requirement_resolver.resolve(
+            dataset=dataset,
+            contract=contract,
+            orders=orders,
+            evaluation_case_id=case_id,
+            lineage=lineage,
         )
+        credit_profiles = requirement_resolution.credit_profiles
+        contract_requirements = requirement_resolution.requirements
+        failures.extend(requirement_resolution.failures)
+        warnings.extend(requirement_resolution.warnings)
+        evidence.extend(requirement_resolution.evidence_refs)
         self._append_warnings(
             request,
             dataset,
@@ -249,6 +276,7 @@ class CaseBuilder:
             contract,
             orders,
             invoices,
+            credit_profiles,
             warnings,
         )
 
@@ -296,6 +324,7 @@ class CaseBuilder:
                 cashflow_scope=cashflow_scope,
                 warnings=tuple(warnings),
                 evidence_refs=case_evidence,
+                contract_requirements=contract_requirements,
             )
 
         return CaseBuildOutcome(
@@ -310,6 +339,7 @@ class CaseBuilder:
             invoices=invoices,
             services=services,
             credit_profiles=credit_profiles,
+            contract_requirements=contract_requirements,
             selected_records=selected_records,
             failures=tuple(failures),
             warnings=tuple(warnings),
@@ -351,31 +381,13 @@ class CaseBuilder:
             invoices=invoices,
             services=services,
             credit_profiles=credit_profiles,
+            contract_requirements=(),
             selected_records=selected,
             failures=tuple(failures),
             warnings=tuple(warnings),
             evidence_refs=_unique_evidence(evidence),
             validation_notes=tuple(validation_notes),
         )
-
-    def _explicit_credit_profiles(
-        self,
-        dataset: DatasetSnapshot,
-        contract_id: str,
-        lineage: LineageFactory,
-        evidence: list[EvidenceRef],
-    ) -> tuple[DatasetRecord, ...]:
-        headers = dataset.headers.get(SheetRegistry.CREDIT_PROFILES.sheet_name, ())
-        if "contract_id" not in headers:
-            return ()
-        matches = tuple(
-            record
-            for record in dataset.records(SheetRegistry.CREDIT_PROFILES)
-            if record.values.get("contract_id") == contract_id
-        )
-        for match in matches:
-            evidence.append(lineage.record_field(match, "credit_case_id"))
-        return matches
 
     def _append_warnings(
         self,
@@ -385,6 +397,7 @@ class CaseBuilder:
         contract: DatasetRecord,
         orders: tuple[DatasetRecord, ...],
         invoices: tuple[DatasetRecord, ...],
+        credit_profiles: tuple[DatasetRecord, ...],
         warnings: list[PlannerWarning],
     ) -> None:
         contract_id_evidence = lineage.record_field(contract, "contract_id")
@@ -498,6 +511,7 @@ class CaseBuilder:
         if (
             EvaluationScope.FINANCE in request.evaluation_scope
             and dataset.records(SheetRegistry.CREDIT_PROFILES)
+            and not credit_profiles
             and "contract_id" not in credit_headers
         ):
             header_evidence = lineage.sheet_headers(
@@ -516,8 +530,8 @@ class CaseBuilder:
                     target_record=contract.record_id,
                     field="related_credit_case_ids",
                     reason=(
-                        "Credit profiles have no structured contract_id; Planner did not infer a "
-                        "relationship from descriptive text."
+                        "Credit profiles have no structured contract_id and no profile passed "
+                        "the strict canonical contract-token relationship rule."
                     ),
                     evidence_refs=(header_evidence, derived),
                 )

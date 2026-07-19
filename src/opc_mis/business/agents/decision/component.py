@@ -5,7 +5,10 @@ from opc_mis.business.agents.decision.context_loader import (
     DecisionRouteContextLoader,
     DecisionRouteMissingArtifacts,
 )
-from opc_mis.business.agents.decision.route_policy import InitialRoutePolicy
+from opc_mis.business.agents.decision.route_policy import (
+    InitialRoutePolicy,
+    InitialRoutePolicyError,
+)
 from opc_mis.domain.artifacts import ArtifactDraft
 from opc_mis.domain.components import ExecutionContext
 from opc_mis.domain.decision_route_models import (
@@ -81,7 +84,10 @@ class DecisionInitialRoutePlanner:
             )
         except DecisionRouteContextError as exc:
             return self._failed_safe(str(exc))
-        policy_result = self._policy.evaluate(route_context)
+        try:
+            policy_result = self._policy.evaluate(route_context)
+        except InitialRoutePolicyError as exc:
+            return self._failed_safe(str(exc))
         checkpoint_ids = tuple(
             item.checkpoint_id
             for item in route_context.approval_checkpoints.checkpoints
@@ -116,6 +122,7 @@ class DecisionInitialRoutePlanner:
         evidence_by_id = {
             item.evidence_id: item
             for artifact in (
+                route_context.evaluation_case_artifact,
                 route_context.finance_facts_artifact,
                 route_context.approval_checkpoints_artifact,
             )
@@ -143,6 +150,9 @@ class DecisionInitialRoutePlanner:
                 "required_capabilities": plan.required_capabilities,
                 "routing_reason_ids": tuple(
                     item.reason_id for item in plan.routing_reasons
+                ),
+                "routing_requirement_ids": tuple(
+                    item.requirement_id for item in plan.routing_reasons
                 ),
                 "conditional_approval_checkpoint_ids": checkpoint_ids,
                 "source_artifact_ids": plan.source_artifact_ids,

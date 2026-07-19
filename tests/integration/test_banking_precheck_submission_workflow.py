@@ -75,37 +75,23 @@ def test_proposal_pauses_for_human_then_persists_non_binding_results(
 ) -> None:
     created = _start(client)
     workflow_run_id = str(created["workflow_run_id"])
-    amount_wait = _wait_for_pause_or_completion(client, workflow_run_id)
-    assert amount_wait["status"] == "WAITING_FOR_INPUT"
-    assert amount_wait["current_stage"] == "DECISION_POST_BANKING_REVIEW"
-
-    evaluation_case_id = str(amount_wait["evaluation_case_id"])
-    missing_request_ids = amount_wait["pending_missing_data_ids"]
-    assert isinstance(missing_request_ids, list)
-    assert len(missing_request_ids) == 1
-    amount_payload = {
-        "workflow_run_id": workflow_run_id,
-        "missing_request_id": missing_request_ids[0],
-        "requested_amount": 350_000_000,
-        "requested_amount_currency": "VND",
-        "evidence_note": "Amount confirmed for governed precheck proposal test.",
-    }
-    spoofed_identity = client.post(
-        f"/api/cases/{evaluation_case_id}/banking/input-supplements",
-        json={**amount_payload, "provided_by": "FOUNDER"},
-    )
-    assert spoofed_identity.status_code == 422
-
-    submitted = client.post(
-        f"/api/cases/{evaluation_case_id}/banking/input-supplements",
-        json=amount_payload,
-    )
-    assert submitted.status_code == 202
-    assert submitted.json()["supplement"]["provider"] == "AUTHORIZED_STAFF"
-
     approval_wait = _wait_for_pause_or_completion(client, workflow_run_id)
     assert approval_wait["status"] == "WAITING_FOR_APPROVAL"
     assert approval_wait["current_stage"] == "WAITING_FOR_APPROVAL"
+
+    evaluation_case_id = str(approval_wait["evaluation_case_id"])
+    assert approval_wait["pending_missing_data_ids"] == []
+    override_attempt = client.post(
+        f"/api/cases/{evaluation_case_id}/banking/input-supplements",
+        json={
+            "workflow_run_id": workflow_run_id,
+            "missing_request_id": "MDR-NOT-OPEN",
+            "requested_amount": 350_000_000,
+            "requested_amount_currency": "VND",
+            "evidence_note": "Attempted amount override must be rejected.",
+        },
+    )
+    assert override_attempt.status_code == 409
     assert (
         approval_wait["resume_stage"]
         == "BANKING_PRECHECK_SUBMISSION_PROPOSAL"
@@ -156,7 +142,7 @@ def test_proposal_pauses_for_human_then_persists_non_binding_results(
     assert approval_request["command"]["payload"] == {
         "precheck_submission_requested": True,
         "api_ids": ["API-002"],
-        "requested_amount": 350_000_000,
+        "requested_amount": 420_000_000,
         "requested_amount_currency": "VND",
     }
     checkpoint_payload = client.get(
@@ -182,6 +168,10 @@ def test_proposal_pauses_for_human_then_persists_non_binding_results(
     coverages = checkpoint_payload["policy_coverages"]
     assert [item["api_ids"] for item in coverages] == [["API-002"]]
     assert coverages[0]["requires_human_approval"] is True
+    assert not any(
+        item["artifact_type"] == "BANKING_INPUT_SUPPLEMENT"
+        for item in artifacts
+    )
 
     duplicate_wait = _start(client)
     assert duplicate_wait["workflow_run_id"] == workflow_run_id
@@ -220,7 +210,7 @@ def test_proposal_pauses_for_human_then_persists_non_binding_results(
         "CONDITIONAL"
     ]
     assert document_wait["banking_precheck_supported_amounts"] == [
-        350_000_000
+        420_000_000
     ]
     assert document_wait["banking_precheck_currencies"] == ["VND"]
     assert document_wait["banking_precheck_required_document_codes"] == [[
@@ -302,7 +292,7 @@ def test_proposal_pauses_for_human_then_persists_non_binding_results(
     assert result_set["documents_prepared"] is False
     result = result_set["results"][0]
     assert result["outcome"] == "CONDITIONAL_PRECHECK"
-    assert result["supported_amount"] == 350_000_000
+    assert result["supported_amount"] == 420_000_000
     assert result["currency"] == "VND"
     assert result["eligibility_status"] == "ELIGIBLE"
     assert result["guarantee_decision"] == "CONDITIONAL"
@@ -435,26 +425,9 @@ def test_api_policy_approval_can_be_rejected_without_blocking_the_case() -> None
     with TestClient(app) as client:
         created = _start(client, as_of_date="2026-07-17")
         workflow_run_id = str(created["workflow_run_id"])
-        amount_wait = _wait_for_pause_or_completion(client, workflow_run_id)
-        evaluation_case_id = str(amount_wait["evaluation_case_id"])
-        missing_request_id = str(amount_wait["pending_missing_data_ids"][0])
-
-        accepted = client.post(
-            f"/api/cases/{evaluation_case_id}/banking/input-supplements",
-            json={
-                "workflow_run_id": workflow_run_id,
-                "missing_request_id": missing_request_id,
-                "requested_amount": 300_000_000,
-                "requested_amount_currency": "VND",
-                "evidence_note": (
-                    "Exact catalog minimum keeps RR-005 untriggered while API-002 "
-                    "still requires Founder approval."
-                ),
-            },
-        )
-        assert accepted.status_code == 202
         approval_wait = _wait_for_pause_or_completion(client, workflow_run_id)
         assert approval_wait["status"] == "WAITING_FOR_APPROVAL"
+        evaluation_case_id = str(approval_wait["evaluation_case_id"])
 
         requests = client.get(
             f"/api/cases/{evaluation_case_id}/approval-requests"
@@ -476,8 +449,10 @@ def test_api_policy_approval_can_be_rejected_without_blocking_the_case() -> None
             if item["protected_action"] == "SUBMIT_BANKING_PRECHECK"
             and item["source_rule_id"] == "RR-005"
         )
-        assert triggered == {api_checkpoint["checkpoint_id"]}
-        assert amount_checkpoint["checkpoint_id"] not in triggered
+        assert triggered == {
+            api_checkpoint["checkpoint_id"],
+            amount_checkpoint["checkpoint_id"],
+        }
         rejected = client.post(
             f"/api/approval-requests/{requests[0]['request_id']}/decision",
             json={
@@ -490,7 +465,9 @@ def test_api_policy_approval_can_be_rejected_without_blocking_the_case() -> None
         assert rejected.json()["gate_status"] == "REJECTED"
         continued = _wait_for_pause_or_completion(client, workflow_run_id)
         assert continued["status"] == "COMPLETED"
-        assert continued["current_stage"] == "INTERNAL_DECISION_PACKAGE_READY"
+        assert continued["current_stage"] == "DECISION_CARD_READY"
+        assert continued["decision_recommendation"] == "NOT_EVALUABLE"
+        assert continued["pending_approval_ids"] == []
         assert continued["internal_decision_package_ready"] is True
         assert continued["internal_decision_assembly_path"] == (
             "BANKING_PRECHECK_DECLINED"
@@ -510,7 +487,7 @@ def test_api_policy_approval_can_be_rejected_without_blocking_the_case() -> None
             if item["artifact_type"]
             == "BANKING_PRECHECK_SUBMISSION_PROPOSAL"
         )
-        assert proposal["requested_amount"] == 300_000_000
+        assert proposal["requested_amount"] == 420_000_000
         assert "approval_required" not in proposal
         assert proposal["precheck_executed"] is False
         assert proposal["submission_executed"] is False
@@ -559,20 +536,8 @@ def test_explicit_precheck_evidence_gap_persists_result_then_pauses(
     with TestClient(app) as client:
         created = _start(client, as_of_date="2026-07-19")
         workflow_run_id = str(created["workflow_run_id"])
-        amount_wait = _wait_for_pause_or_completion(client, workflow_run_id)
-        evaluation_case_id = str(amount_wait["evaluation_case_id"])
-        accepted = client.post(
-            f"/api/cases/{evaluation_case_id}/banking/input-supplements",
-            json={
-                "workflow_run_id": workflow_run_id,
-                "missing_request_id": amount_wait["pending_missing_data_ids"][0],
-                "requested_amount": 350_000_000,
-                "requested_amount_currency": "VND",
-                "evidence_note": "Amount confirmed for missing-evidence routing test.",
-            },
-        )
-        assert accepted.status_code == 202
         approval_wait = _wait_for_pause_or_completion(client, workflow_run_id)
+        evaluation_case_id = str(approval_wait["evaluation_case_id"])
         approval_id = approval_wait["pending_approval_ids"][0]
         approved = client.post(
             f"/api/approval-requests/{approval_id}/decision",
@@ -721,21 +686,9 @@ def test_changed_opc_profile_fails_before_adapter_invocation(
     with TestClient(app) as client:
         created = _start(client, as_of_date="2026-07-18")
         workflow_run_id = str(created["workflow_run_id"])
-        amount_wait = _wait_for_pause_or_completion(client, workflow_run_id)
-        evaluation_case_id = str(amount_wait["evaluation_case_id"])
-        submitted = client.post(
-            f"/api/cases/{evaluation_case_id}/banking/input-supplements",
-            json={
-                "workflow_run_id": workflow_run_id,
-                "missing_request_id": amount_wait["pending_missing_data_ids"][0],
-                "requested_amount": 350_000_000,
-                "requested_amount_currency": "VND",
-                "evidence_note": "Amount confirmed for stale profile preflight test.",
-            },
-        )
-        assert submitted.status_code == 202
         approval_wait = _wait_for_pause_or_completion(client, workflow_run_id)
         assert approval_wait["status"] == "WAITING_FOR_APPROVAL"
+        evaluation_case_id = str(approval_wait["evaluation_case_id"])
 
         artifacts = client.get(
             f"/api/cases/{evaluation_case_id}/artifacts"

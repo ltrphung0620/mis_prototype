@@ -36,7 +36,8 @@ BANKING_PRECHECK_RESULT_SET (SIMULATED_NON_BINDING)
 
 Document Skill itself stops at the internal package-ready boundary. Master Workflow may then
 assemble `INTERNAL_DECISION_PACKAGE`; that downstream artifact is an evidence dossier only. The
-final Decision recommendation/proposal, real VietinBank call, and external send remain
+implemented downstream Decision flow may later reference the exact package after Final Risk. That
+does not expand Document's boundary: the real VietinBank call and external send remain
 unimplemented.
 
 ## 1. Decision-to-Document handoff
@@ -241,7 +242,7 @@ tokenization. Plain hashing, Base64, encryption alone and LLM rewriting are not 
 See [Data Masking Policy](DATA_MASKING_POLICY.md) and
 [Data Masking Algorithms](DATA_MASKING_ALGORITHMS.md) for the threat model and formulae.
 
-## 7. Dormant Governance checkpoint and future Decision trigger
+## 7. Dormant checkpoint and implemented downstream Decision trigger
 
 Creating `DOCUMENT_RELEASE_PACKAGE` does not propose an external release. Workflow persists it as
 an internal input, then may assemble the Internal Decision Package without creating an
@@ -258,12 +259,18 @@ dormant while only `DOCUMENT_RELEASE_PACKAGE` exists. Approval for
 `SUBMIT_BANKING_PRECHECK` cannot be reused for a later document send.
 
 Internal Decision Package assembly preserves the validated release package and its masking proof,
-but still does not activate `SEND_DOCUMENT_TO_EXTERNAL_PARTNER`. A later Decision phase must
-produce an exact evidence-bound recommendation/proposal and present the proposed option to the
-Founder. Only that later validated proposal may activate the checkpoint; neither the raw release
-package nor the Internal Decision Package is an external-release approval subject by itself. The
-final Decision recommendation/proposal, authorization-to-connector transition, actual send,
-provider receipt, retry and delivery reconciliation are not implemented.
+but still does not activate `SEND_DOCUMENT_TO_EXTERNAL_PARTNER`. The downstream Decision phase now
+builds an evidence-bound Card and presents an approvable recommendation to the Founder. Only an
+approved `ACCEPT` Card that preserves this exact package may produce an
+`EXTERNAL_DOCUMENT_SUBMISSION_PROPOSAL`; only that validated proposal activates the separate
+Document-send checkpoint. Neither the raw release package nor the Internal Decision Package is an
+external-release approval subject by itself, and the final-decision approval cannot be reused as
+release approval.
+
+After the separate proposal approval, Workflow stops at `READY_FOR_EXTERNAL_SUBMISSION`. The
+authorization-to-real-connector transition, actual send, provider receipt, retry and delivery
+reconciliation remain unimplemented. See
+[Decision, Final Approval, and External-Release Readiness](DECISION_FINAL_APPROVAL_AND_RELEASE.md).
 
 ## 8. Responsibility boundary
 

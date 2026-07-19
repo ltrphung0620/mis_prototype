@@ -43,6 +43,13 @@ from opc_mis.domain.case_workflow_models import (
     WorkflowRunSummary,
 )
 from opc_mis.domain.commands import ActionCommand
+from opc_mis.domain.decision_models import (
+    AIDecisionAnalysis,
+    DecisionAnalysisExecutionResult,
+    DecisionCard,
+    DecisionCardExecutionResult,
+    DecisionRecommendation,
+)
 from opc_mis.domain.decision_post_banking_models import (
     DecisionPostBankingExecutionResult,
     DecisionPostBankingReview,
@@ -83,6 +90,10 @@ from opc_mis.domain.enums import (
     WorkflowNodeStatus,
     WorkflowStatus,
 )
+from opc_mis.domain.final_risk_models import (
+    FinalRiskAssessment,
+    FinalRiskExecutionResult,
+)
 from opc_mis.domain.finance_models import FinanceExecutionResult
 from opc_mis.domain.internal_decision_package_models import (
     InternalDecisionAssemblyPath,
@@ -92,6 +103,16 @@ from opc_mis.domain.internal_decision_package_models import (
 from opc_mis.domain.lineage import deterministic_id
 from opc_mis.domain.operations_models import OperationsExecutionResult
 from opc_mis.domain.planner_models import PlannerExecutionResult
+from opc_mis.domain.post_decision_models import (
+    ExternalDocumentSubmissionProposal,
+    ExternalDocumentSubmissionProposalExecutionResult,
+    ExternalSubmissionReadinessExecutionResult,
+    PostDecisionOutcome,
+    PostDecisionUpdate,
+    PostDecisionUpdateExecutionResult,
+    external_document_release_action_payload,
+    final_decision_action_payload,
+)
 from opc_mis.domain.risk_models import RiskExecutionResult
 from opc_mis.domain.workflow import WorkflowNode
 from opc_mis.ports.approval_request_repository import ApprovalRequestRepository
@@ -222,6 +243,59 @@ class AutomaticWorkflowServices(Protocol):
         input_artifact_ids: tuple[str, ...],
         approval_request_id: str | None = None,
     ) -> InternalDecisionPackageExecutionResult: ...
+
+    async def final_risk_check(
+        self,
+        *,
+        evaluation_case_id: str,
+        workflow_run_id: str,
+        internal_decision_package_artifact_id: str,
+    ) -> FinalRiskExecutionResult: ...
+
+    @property
+    def decision_analysis_configuration_hash(self) -> str: ...
+
+    async def decision_analysis(
+        self,
+        *,
+        evaluation_case_id: str,
+        workflow_run_id: str,
+        final_risk_artifact_id: str,
+    ) -> DecisionAnalysisExecutionResult: ...
+
+    async def decision_card(
+        self,
+        *,
+        evaluation_case_id: str,
+        workflow_run_id: str,
+        analysis_artifact_id: str,
+    ) -> DecisionCardExecutionResult: ...
+
+    async def post_decision_update(
+        self,
+        *,
+        evaluation_case_id: str,
+        workflow_run_id: str,
+        decision_card_artifact_id: str,
+        approval_request_id: str,
+    ) -> PostDecisionUpdateExecutionResult: ...
+
+    async def external_document_submission_proposal(
+        self,
+        *,
+        evaluation_case_id: str,
+        workflow_run_id: str,
+        post_decision_update_artifact_id: str,
+    ) -> ExternalDocumentSubmissionProposalExecutionResult: ...
+
+    async def external_submission_readiness(
+        self,
+        *,
+        evaluation_case_id: str,
+        workflow_run_id: str,
+        proposal_artifact_id: str,
+        approval_request_id: str,
+    ) -> ExternalSubmissionReadinessExecutionResult: ...
 
     async def request_workflow_protected_action(
         self,
@@ -1101,9 +1175,650 @@ class CaseWorkflowOrchestrator:
                 "external_action_performed": False,
             },
         )
-        await self._complete(
+        await self._run_final_risk_check(
+            run=run,
+            package_artifact=package_artifact,
+        )
+
+    async def _run_final_risk_check(
+        self,
+        *,
+        run: CaseWorkflowRun,
+        package_artifact: ArtifactEnvelope,
+    ) -> None:
+        """Run Final Risk from one ready package, then finish at its own milestone."""
+        if run.evaluation_case_id is None:  # pragma: no cover - package guard
+            raise RuntimeError("Final Risk Check requires an evaluation case ID.")
+        run = await self._require_run(run.workflow_run_id)
+        run = await self._save_run(
             run,
-            WorkflowNode.INTERNAL_DECISION_PACKAGE_READY,
+            status=WorkflowStatus.RUNNING,
+            current_stage=WorkflowNode.FINAL_RISK_CHECK.value,
+            pending_request_ids=(),
+            failure_reason=None,
+        )
+        identity_inputs = (
+            package_artifact.artifact_id,
+            package_artifact.version,
+            package_artifact.input_hash,
+        )
+        expected_hash = self._node_input_hash(
+            run,
+            WorkflowNode.FINAL_RISK_CHECK,
+            identity_inputs,
+        )
+        existing = await self._workflows.get_node(
+            run.workflow_run_id,
+            WorkflowNode.FINAL_RISK_CHECK.value,
+        )
+        should_finish_node = not (
+            self._node_completed(existing)
+            and existing is not None
+            and existing.input_hash == expected_hash
+        )
+        node = (
+            await self._start_node(
+                run,
+                WorkflowNode.FINAL_RISK_CHECK,
+                identity_inputs=identity_inputs,
+            )
+            if should_finish_node
+            else existing
+        )
+        if node is None:  # pragma: no cover - guarded by branch above
+            raise RuntimeError("Final Risk Check node was not initialized.")
+
+        result = await self._services.final_risk_check(
+            evaluation_case_id=run.evaluation_case_id,
+            workflow_run_id=run.workflow_run_id,
+            internal_decision_package_artifact_id=package_artifact.artifact_id,
+        )
+        if should_finish_node:
+            await self._finish_node(
+                node,
+                self._result_node_status(result.status, result.component_status),
+                result.generated_artifacts,
+                waiting_for=(),
+                failure_reason="; ".join(result.validation_errors) or None,
+            )
+        if result.status is not WorkflowStatus.COMPLETED:
+            await self._fail(
+                run,
+                WorkflowNode.FINAL_RISK_CHECK,
+                "Final Risk Check failed safely: "
+                + "; ".join(result.validation_errors),
+            )
+            return
+
+        assessments = tuple(
+            item
+            for item in result.generated_artifacts
+            if item.artifact_type is ArtifactType.FINAL_RISK_ASSESSMENT
+            and item.validation_status
+            in {ValidationStatus.VALID, ValidationStatus.VALID_WITH_WARNINGS}
+        )
+        if len(assessments) != 1 or result.assessment is None:
+            await self._fail(
+                run,
+                WorkflowNode.FINAL_RISK_CHECK,
+                "Final Risk Check did not return one exact validated assessment.",
+            )
+            return
+        assessment_artifact = assessments[0]
+        assessment = FinalRiskAssessment.model_validate(
+            assessment_artifact.payload
+        )
+        if (
+            assessment != result.assessment
+            or assessment_artifact.input_artifact_ids
+            != (package_artifact.artifact_id,)
+            or assessment.internal_decision_package_artifact_id
+            != package_artifact.artifact_id
+            or assessment.internal_decision_package_artifact_version
+            != package_artifact.version
+            or assessment.internal_decision_package_input_hash
+            != package_artifact.input_hash
+        ):
+            await self._fail(
+                run,
+                WorkflowNode.FINAL_RISK_CHECK,
+                "Final Risk output differs from its exact Internal Decision Package input.",
+            )
+            return
+
+        prior_events = await self._events.list_after(run.workflow_run_id, 0)
+        event_already_recorded = any(
+            item.event_type == "FINAL_RISK_CHECK_COMPLETED"
+            and item.node is WorkflowNode.FINAL_RISK_READY
+            and item.metadata.get("assessment_artifact_id")
+            == assessment_artifact.artifact_id
+            for item in prior_events
+        )
+        if not event_already_recorded:
+            await self._event(
+                run,
+                "FINAL_RISK_CHECK_COMPLETED",
+                WorkflowNode.FINAL_RISK_READY,
+                {
+                    "assessment_id": assessment.assessment_id,
+                    "assessment_artifact_id": assessment_artifact.artifact_id,
+                    "source_internal_decision_package_artifact_id": (
+                        package_artifact.artifact_id
+                    ),
+                    "assessment_status": assessment.assessment_status.value,
+                    "residual_risk_level": assessment.residual_risk_level.value,
+                    "major_exception_status": (
+                        assessment.major_exception_status.value
+                    ),
+                    "unresolved_approval_gate_count": len(
+                        assessment.unresolved_approval_gates
+                    ),
+                    "required_control_count": len(
+                        assessment.required_controls
+                    ),
+                    "approval_requested": False,
+                    "external_action_performed": False,
+                },
+            )
+        await self._run_decision_card_flow(
+            run=run,
+            final_risk_artifact=assessment_artifact,
+        )
+
+    async def _run_decision_card_flow(
+        self,
+        *,
+        run: CaseWorkflowRun,
+        final_risk_artifact: ArtifactEnvelope,
+    ) -> None:
+        """Compose one guarded Card, then trigger its dedicated Founder gate."""
+        if run.evaluation_case_id is None:  # pragma: no cover - Final Risk guard
+            raise RuntimeError("Decision Card requires an evaluation case ID.")
+        run = await self._require_run(run.workflow_run_id)
+        run = await self._save_run(
+            run,
+            status=WorkflowStatus.RUNNING,
+            current_stage=WorkflowNode.DECISION_CARD_COMPOSITION.value,
+            pending_request_ids=(),
+            failure_reason=None,
+        )
+        identity_inputs = (
+            final_risk_artifact.artifact_id,
+            final_risk_artifact.version,
+            final_risk_artifact.input_hash,
+            self._services.decision_analysis_configuration_hash,
+        )
+        expected_hash = self._node_input_hash(
+            run,
+            WorkflowNode.DECISION_CARD_COMPOSITION,
+            identity_inputs,
+        )
+        existing = await self._workflows.get_node(
+            run.workflow_run_id,
+            WorkflowNode.DECISION_CARD_COMPOSITION.value,
+        )
+        should_finish_node = not (
+            self._node_completed(existing)
+            and existing is not None
+            and existing.input_hash == expected_hash
+        )
+        node = (
+            await self._start_node(
+                run,
+                WorkflowNode.DECISION_CARD_COMPOSITION,
+                identity_inputs=identity_inputs,
+            )
+            if should_finish_node
+            else existing
+        )
+        if node is None:  # pragma: no cover
+            raise RuntimeError("Decision Card node was not initialized.")
+        analysis_result = await self._services.decision_analysis(
+            evaluation_case_id=run.evaluation_case_id,
+            workflow_run_id=run.workflow_run_id,
+            final_risk_artifact_id=final_risk_artifact.artifact_id,
+        )
+        analysis_artifacts = tuple(
+            item
+            for item in analysis_result.generated_artifacts
+            if item.artifact_type is ArtifactType.AI_DECISION_ANALYSIS
+            and item.validation_status
+            in {ValidationStatus.VALID, ValidationStatus.VALID_WITH_WARNINGS}
+        )
+        if (
+            analysis_result.status is not WorkflowStatus.COMPLETED
+            or analysis_result.analysis is None
+            or len(analysis_artifacts) != 1
+        ):
+            if should_finish_node:
+                await self._finish_node(
+                    node,
+                    WorkflowNodeStatus.FAILED_SAFE,
+                    analysis_result.generated_artifacts,
+                    failure_reason="; ".join(analysis_result.validation_errors)
+                    or "Decision analysis did not return one exact artifact.",
+                )
+            await self._fail(
+                run,
+                WorkflowNode.DECISION_CARD_COMPOSITION,
+                "Decision analysis failed safely: "
+                + "; ".join(analysis_result.validation_errors),
+            )
+            return
+        analysis_artifact = analysis_artifacts[0]
+        card_result = await self._services.decision_card(
+            evaluation_case_id=run.evaluation_case_id,
+            workflow_run_id=run.workflow_run_id,
+            analysis_artifact_id=analysis_artifact.artifact_id,
+        )
+        card_artifacts = tuple(
+            item
+            for item in card_result.generated_artifacts
+            if item.artifact_type is ArtifactType.DECISION_CARD
+            and item.validation_status
+            in {ValidationStatus.VALID, ValidationStatus.VALID_WITH_WARNINGS}
+        )
+        if (
+            card_result.status is not WorkflowStatus.COMPLETED
+            or card_result.decision_card is None
+            or len(card_artifacts) != 1
+        ):
+            if should_finish_node:
+                await self._finish_node(
+                    node,
+                    WorkflowNodeStatus.FAILED_SAFE,
+                    (*analysis_result.generated_artifacts, *card_result.generated_artifacts),
+                    failure_reason="; ".join(card_result.validation_errors)
+                    or "Decision Card did not return one exact artifact.",
+                )
+            await self._fail(
+                run,
+                WorkflowNode.DECISION_CARD_COMPOSITION,
+                "Decision Card failed safely: "
+                + "; ".join(card_result.validation_errors),
+            )
+            return
+        card_artifact = card_artifacts[0]
+        card = DecisionCard.model_validate(card_artifact.payload)
+        if (
+            card != card_result.decision_card
+            or card_artifact.input_artifact_ids != (analysis_artifact.artifact_id,)
+            or card.ai_analysis_artifact.artifact_id != analysis_artifact.artifact_id
+            or card.final_risk_artifact.artifact_id != final_risk_artifact.artifact_id
+        ):
+            await self._fail(
+                run,
+                WorkflowNode.DECISION_CARD_COMPOSITION,
+                "Decision Card differs from its exact analysis and Final Risk inputs.",
+            )
+            return
+        if should_finish_node:
+            component_status = (
+                ComponentStatus.COMPLETED_WITH_WARNINGS
+                if ComponentStatus.COMPLETED_WITH_WARNINGS
+                in {analysis_result.component_status, card_result.component_status}
+                else ComponentStatus.COMPLETED
+            )
+            await self._finish_node(
+                node,
+                self._component_node_status(component_status),
+                (*analysis_result.generated_artifacts, *card_result.generated_artifacts),
+            )
+        prior_events = await self._events.list_after(run.workflow_run_id, 0)
+        if not any(
+            item.event_type == "DECISION_CARD_READY"
+            and item.metadata.get("decision_card_artifact_id")
+            == card_artifact.artifact_id
+            for item in prior_events
+        ):
+            await self._event(
+                run,
+                "DECISION_CARD_READY",
+                WorkflowNode.DECISION_CARD_READY,
+                {
+                    "decision_card_id": card.decision_card_id,
+                    "decision_card_artifact_id": card_artifact.artifact_id,
+                    "recommendation": card.recommendation.value,
+                    "condition_count": len(card.conditions),
+                    "founder_decision_recorded": False,
+                    "approval_requested": False,
+                    "external_action_performed": False,
+                },
+            )
+        if card.recommendation is DecisionRecommendation.NOT_EVALUABLE:
+            await self._event(
+                run,
+                "DECISION_NOT_EVALUABLE",
+                WorkflowNode.DECISION_CARD_READY,
+                {
+                    "decision_card_artifact_id": card_artifact.artifact_id,
+                    "reason": "No approvable recommendation passed deterministic guardrails.",
+                },
+            )
+            await self._complete(run, WorkflowNode.DECISION_CARD_READY)
+            return
+        run = await self._save_run(
+            run,
+            status=WorkflowStatus.RUNNING,
+            current_stage=WorkflowNode.FINAL_DECISION_APPROVAL.value,
+            pending_request_ids=(),
+            failure_reason=None,
+        )
+        approval_result = await self._services.request_workflow_protected_action(
+            command=ActionCommand(
+                action_type=ProtectedAction.CONFIRM_FINAL_CONTRACT_DECISION,
+                evaluation_case_id=run.evaluation_case_id,
+                payload_artifact_id=card_artifact.artifact_id,
+                requested_by="CASE_WORKFLOW_ORCHESTRATOR",
+                payload=final_decision_action_payload(card),
+            ),
+            workflow_run_id=run.workflow_run_id,
+        )
+        if approval_result.action_authorized:
+            approval = approval_result.approval_request
+            if (
+                approval is None
+                or approval.status is not ApprovalRequestStatus.APPROVED
+            ):
+                await self._fail(
+                    run,
+                    WorkflowNode.FINAL_DECISION_APPROVAL,
+                    "Final Decision requires an exact affirmative Founder approval.",
+                )
+                return
+            refreshed = await self._require_run(run.workflow_run_id)
+            refreshed = await self._save_run(
+                refreshed,
+                status=WorkflowStatus.RUNNING,
+                current_stage=WorkflowNode.POST_DECISION_UPDATE.value,
+                pending_request_ids=(),
+                failure_reason=None,
+            )
+            await self._event(
+                refreshed,
+                "FINAL_DECISION_AUTHORIZED",
+                WorkflowNode.FINAL_DECISION_APPROVAL,
+                {
+                    "approval_request_id": approval.request_id,
+                    "decision_card_artifact_id": card_artifact.artifact_id,
+                    "recommendation": card.recommendation.value,
+                },
+            )
+            await self._run_post_decision_update(
+                run=refreshed,
+                card_artifact=card_artifact,
+                approval_request_id=approval.request_id,
+            )
+            return
+        refreshed = await self._require_run(run.workflow_run_id)
+        if refreshed.status in {
+            WorkflowStatus.WAITING_FOR_APPROVAL,
+            WorkflowStatus.WAITING_FOR_INPUT,
+            WorkflowStatus.COMPLETED,
+            WorkflowStatus.BLOCKED,
+        }:
+            return
+        await self._fail(
+            refreshed,
+            WorkflowNode.FINAL_DECISION_APPROVAL,
+            "Final Decision was neither authorized nor paused by Governance.",
+        )
+
+    async def _run_post_decision_update(
+        self,
+        *,
+        run: CaseWorkflowRun,
+        card_artifact: ArtifactEnvelope,
+        approval_request_id: str,
+    ) -> None:
+        """Persist the approved outcome and route its exact deterministic branch."""
+        if run.evaluation_case_id is None:  # pragma: no cover
+            raise RuntimeError("Post-decision update requires an evaluation case.")
+        node = await self._start_node(
+            run,
+            WorkflowNode.POST_DECISION_UPDATE,
+            identity_inputs=(card_artifact.artifact_id, approval_request_id),
+        )
+        result = await self._services.post_decision_update(
+            evaluation_case_id=run.evaluation_case_id,
+            workflow_run_id=run.workflow_run_id,
+            decision_card_artifact_id=card_artifact.artifact_id,
+            approval_request_id=approval_request_id,
+        )
+        await self._finish_node(
+            node,
+            self._result_node_status(result.status, result.component_status),
+            result.generated_artifacts,
+            failure_reason="; ".join(result.validation_errors) or None,
+        )
+        updates = tuple(
+            item
+            for item in result.generated_artifacts
+            if item.artifact_type is ArtifactType.POST_DECISION_UPDATE
+            and item.validation_status
+            in {ValidationStatus.VALID, ValidationStatus.VALID_WITH_WARNINGS}
+        )
+        if (
+            result.status is not WorkflowStatus.COMPLETED
+            or result.update is None
+            or len(updates) != 1
+        ):
+            await self._fail(
+                run,
+                WorkflowNode.POST_DECISION_UPDATE,
+                "Post-decision update failed safely: "
+                + "; ".join(result.validation_errors),
+            )
+            return
+        update_artifact = updates[0]
+        update = PostDecisionUpdate.model_validate(update_artifact.payload)
+        if (
+            update != result.update
+            or update_artifact.input_artifact_ids != (card_artifact.artifact_id,)
+            or update.decision_card_artifact.artifact_id
+            != card_artifact.artifact_id
+        ):
+            await self._fail(
+                run,
+                WorkflowNode.POST_DECISION_UPDATE,
+                "Post-decision update differs from its exact approved Card.",
+            )
+            return
+        await self._event(
+            run,
+            "POST_DECISION_UPDATE_COMPLETED",
+            WorkflowNode.POST_DECISION_UPDATE,
+            {
+                "update_id": update.update_id,
+                "update_artifact_id": update_artifact.artifact_id,
+                "outcome": update.outcome.value,
+                "external_document_release_required": (
+                    update.external_document_release_required
+                ),
+            },
+        )
+        if update.outcome is PostDecisionOutcome.NEGOTIATION_AUTHORIZED:
+            await self._complete(run, WorkflowNode.NEGOTIATION_IN_PROGRESS)
+            return
+        if update.outcome is PostDecisionOutcome.CASE_CLOSED_NO_EXTERNAL_ACTION:
+            await self._complete(run, WorkflowNode.FINAL_DECISION_NOT_ACCEPTED)
+            return
+        if not update.external_document_release_required:
+            await self._complete(run, WorkflowNode.FINAL_DECISION_ACCEPTED)
+            return
+        await self._run_external_submission_proposal(
+            run=run,
+            update_artifact=update_artifact,
+        )
+
+    async def _run_external_submission_proposal(
+        self,
+        *,
+        run: CaseWorkflowRun,
+        update_artifact: ArtifactEnvelope,
+    ) -> None:
+        """Create a governed proposal and stop at connector-safe readiness."""
+        if run.evaluation_case_id is None:  # pragma: no cover
+            raise RuntimeError("External submission proposal requires a case.")
+        run = await self._save_run(
+            run,
+            status=WorkflowStatus.RUNNING,
+            current_stage=(
+                WorkflowNode.EXTERNAL_DOCUMENT_SUBMISSION_PROPOSAL.value
+            ),
+            pending_request_ids=(),
+            failure_reason=None,
+        )
+        node = await self._start_node(
+            run,
+            WorkflowNode.EXTERNAL_DOCUMENT_SUBMISSION_PROPOSAL,
+            identity_inputs=(
+                update_artifact.artifact_id,
+                update_artifact.version,
+                update_artifact.input_hash,
+            ),
+        )
+        result = await self._services.external_document_submission_proposal(
+            evaluation_case_id=run.evaluation_case_id,
+            workflow_run_id=run.workflow_run_id,
+            post_decision_update_artifact_id=update_artifact.artifact_id,
+        )
+        await self._finish_node(
+            node,
+            self._result_node_status(result.status, result.component_status),
+            result.generated_artifacts,
+            failure_reason="; ".join(result.validation_errors) or None,
+        )
+        proposals = tuple(
+            item
+            for item in result.generated_artifacts
+            if item.artifact_type
+            is ArtifactType.EXTERNAL_DOCUMENT_SUBMISSION_PROPOSAL
+            and item.validation_status
+            in {ValidationStatus.VALID, ValidationStatus.VALID_WITH_WARNINGS}
+        )
+        if (
+            result.status is not WorkflowStatus.COMPLETED
+            or result.proposal is None
+            or len(proposals) != 1
+        ):
+            await self._fail(
+                run,
+                WorkflowNode.EXTERNAL_DOCUMENT_SUBMISSION_PROPOSAL,
+                "External submission proposal failed safely: "
+                + "; ".join(result.validation_errors),
+            )
+            return
+        proposal_artifact = proposals[0]
+        proposal = ExternalDocumentSubmissionProposal.model_validate(
+            proposal_artifact.payload
+        )
+        expected_proposal_inputs = proposal.source_artifact_ids
+        if (
+            proposal != result.proposal
+            or proposal_artifact.input_artifact_ids != expected_proposal_inputs
+            or expected_proposal_inputs[0] != update_artifact.artifact_id
+            or proposal.post_decision_update_artifact.artifact_id
+            != update_artifact.artifact_id
+        ):
+            await self._fail(
+                run,
+                WorkflowNode.EXTERNAL_DOCUMENT_SUBMISSION_PROPOSAL,
+                "External submission proposal differs from its exact approved update.",
+            )
+            return
+        approval_result = await self._services.request_workflow_protected_action(
+            command=ActionCommand(
+                action_type=ProtectedAction.SEND_DOCUMENT_TO_EXTERNAL_PARTNER,
+                evaluation_case_id=run.evaluation_case_id,
+                payload_artifact_id=proposal_artifact.artifact_id,
+                requested_by="CASE_WORKFLOW_ORCHESTRATOR",
+                payload=external_document_release_action_payload(proposal),
+            ),
+            workflow_run_id=run.workflow_run_id,
+        )
+        if approval_result.action_authorized:
+            approval = approval_result.approval_request
+            if (
+                approval is None
+                or approval.status is not ApprovalRequestStatus.APPROVED
+            ):
+                await self._fail(
+                    run,
+                    WorkflowNode.EXTERNAL_DOCUMENT_SUBMISSION_PROPOSAL,
+                    "External submission requires exact affirmative authorization.",
+                )
+                return
+            refreshed = await self._require_run(run.workflow_run_id)
+            readiness_node = await self._start_node(
+                refreshed,
+                WorkflowNode.READY_FOR_EXTERNAL_SUBMISSION,
+                identity_inputs=(
+                    proposal_artifact.artifact_id,
+                    approval.request_id,
+                ),
+            )
+            readiness_result = await self._services.external_submission_readiness(
+                evaluation_case_id=run.evaluation_case_id,
+                workflow_run_id=run.workflow_run_id,
+                proposal_artifact_id=proposal_artifact.artifact_id,
+                approval_request_id=approval.request_id,
+            )
+            await self._finish_node(
+                readiness_node,
+                self._result_node_status(
+                    readiness_result.status,
+                    readiness_result.component_status,
+                ),
+                readiness_result.generated_artifacts,
+                failure_reason="; ".join(readiness_result.validation_errors)
+                or None,
+            )
+            readiness = readiness_result.readiness
+            if (
+                readiness_result.status is not WorkflowStatus.COMPLETED
+                or readiness is None
+                or readiness_result.generated_artifacts
+                or readiness.adapter_invoked
+                or readiness.submission_receipt_created
+                or readiness.external_submission_performed
+            ):
+                await self._fail(
+                    refreshed,
+                    WorkflowNode.READY_FOR_EXTERNAL_SUBMISSION,
+                    "External readiness failed or claimed an unsupported connector action.",
+                )
+                return
+            await self._event(
+                refreshed,
+                "READY_FOR_EXTERNAL_SUBMISSION",
+                WorkflowNode.READY_FOR_EXTERNAL_SUBMISSION,
+                {
+                    "readiness_id": readiness.readiness_id,
+                    "proposal_artifact_id": proposal_artifact.artifact_id,
+                    "approval_request_id": approval.request_id,
+                    "recipient": proposal.recipient,
+                    "external_submission_performed": False,
+                    "submission_receipt_created": False,
+                },
+            )
+            await self._complete(
+                refreshed,
+                WorkflowNode.READY_FOR_EXTERNAL_SUBMISSION,
+            )
+            return
+        refreshed = await self._require_run(run.workflow_run_id)
+        if refreshed.status in {
+            WorkflowStatus.WAITING_FOR_APPROVAL,
+            WorkflowStatus.WAITING_FOR_INPUT,
+            WorkflowStatus.COMPLETED,
+            WorkflowStatus.BLOCKED,
+        }:
+            return
+        await self._fail(
+            refreshed,
+            WorkflowNode.EXTERNAL_DOCUMENT_SUBMISSION_PROPOSAL,
+            "External submission was neither authorized nor paused by Governance.",
         )
 
     async def _internal_decision_source_artifacts(
@@ -1297,10 +2012,29 @@ class CaseWorkflowOrchestrator:
         document_evidence_supplement_ids: tuple[str, ...] = ()
         document_pending_codes = ()
         internal_decision_package_id: str | None = None
+        internal_package: InternalDecisionPackage | None = None
         internal_decision_assembly_path: InternalDecisionAssemblyPath | None = None
         internal_decision_package_readiness = None
         internal_decision_source_artifact_ids: tuple[str, ...] = ()
         internal_decision_governance_reference_ids: tuple[str, ...] = ()
+        final_risk_assessment_id: str | None = None
+        final_risk_status = None
+        final_residual_risk_level = None
+        final_major_exception = None
+        final_unresolved_approval_gate_ids: tuple[str, ...] = ()
+        final_required_control_codes = ()
+        ai_decision_analysis_id: str | None = None
+        ai_decision_analysis_source = None
+        decision_card_id: str | None = None
+        decision_recommendation = None
+        decision_confidence = None
+        decision_condition_ids: tuple[str, ...] = ()
+        decision_selected_negotiation_strategy_ids: tuple[str, ...] = ()
+        decision_selected_option_ids: tuple[str, ...] = ()
+        post_decision_update_id: str | None = None
+        post_decision_outcome: PostDecisionOutcome | None = None
+        external_document_submission_proposal_id: str | None = None
+        external_submission_authorized = False
         pending_approvals: tuple[str, ...] = ()
         if run.evaluation_case_id is not None:
             artifacts = await self._artifacts.list_by_case(run.evaluation_case_id)
@@ -1521,7 +2255,7 @@ class CaseWorkflowOrchestrator:
                     key=lambda item: (item.version, item.artifact_id),
                 )
             )
-            internal_package_artifact = self._latest(
+            internal_package_artifact = self._latest_validated(
                 artifacts, ArtifactType.INTERNAL_DECISION_PACKAGE
             )
             if internal_package_artifact is not None:
@@ -1537,6 +2271,150 @@ class CaseWorkflowOrchestrator:
                 internal_decision_governance_reference_ids = (
                     internal_package.governance_reference_ids
                 )
+            final_risk_artifact = self._latest_validated(
+                artifacts, ArtifactType.FINAL_RISK_ASSESSMENT
+            )
+            if (
+                final_risk_artifact is not None
+                and internal_package_artifact is not None
+                and internal_package is not None
+            ):
+                final_risk = FinalRiskAssessment.model_validate(
+                    final_risk_artifact.payload
+                )
+                final_risk_is_current = (
+                    final_risk_artifact.input_artifact_ids
+                    == (internal_package_artifact.artifact_id,)
+                    and final_risk.internal_decision_package_artifact_id
+                    == internal_package_artifact.artifact_id
+                    and final_risk.internal_decision_package_artifact_version
+                    == internal_package_artifact.version
+                    and final_risk.internal_decision_package_input_hash
+                    == internal_package_artifact.input_hash
+                    and final_risk.internal_decision_package_id
+                    == internal_package.package_id
+                )
+                if final_risk_is_current:
+                    final_risk_assessment_id = final_risk.assessment_id
+                    final_risk_status = final_risk.assessment_status
+                    final_residual_risk_level = final_risk.residual_risk_level
+                    final_major_exception = final_risk.major_exception_status
+                    final_unresolved_approval_gate_ids = (
+                        final_risk.unresolved_approval_gate_ids
+                    )
+                    final_required_control_codes = tuple(
+                        dict.fromkeys(
+                            item.code for item in final_risk.required_controls
+                        )
+                    )
+            analysis_artifact = self._latest_validated(
+                artifacts, ArtifactType.AI_DECISION_ANALYSIS
+            )
+            analysis: AIDecisionAnalysis | None = None
+            if analysis_artifact is not None and final_risk_artifact is not None:
+                candidate_analysis = AIDecisionAnalysis.model_validate(
+                    analysis_artifact.payload
+                )
+                if (
+                    analysis_artifact.input_artifact_ids
+                    == (final_risk_artifact.artifact_id,)
+                    and candidate_analysis.final_risk_artifact.artifact_id
+                    == final_risk_artifact.artifact_id
+                ):
+                    analysis = candidate_analysis
+                    ai_decision_analysis_id = analysis.analysis_id
+                    ai_decision_analysis_source = analysis.source
+            decision_card_artifact = self._latest_validated(
+                artifacts, ArtifactType.DECISION_CARD
+            )
+            decision_card: DecisionCard | None = None
+            if decision_card_artifact is not None and analysis_artifact is not None:
+                candidate_card = DecisionCard.model_validate(
+                    decision_card_artifact.payload
+                )
+                if (
+                    decision_card_artifact.input_artifact_ids
+                    == (analysis_artifact.artifact_id,)
+                    and candidate_card.ai_analysis_artifact.artifact_id
+                    == analysis_artifact.artifact_id
+                ):
+                    decision_card = candidate_card
+                    decision_card_id = decision_card.decision_card_id
+                    decision_recommendation = decision_card.recommendation
+                    decision_confidence = decision_card.confidence
+                    decision_condition_ids = tuple(
+                        item.condition_id for item in decision_card.conditions
+                    )
+                    decision_selected_negotiation_strategy_ids = (
+                        decision_card.selected_negotiation_strategy_ids
+                    )
+                    decision_selected_option_ids = (
+                        decision_card.selected_option_ids
+                    )
+            post_update_artifact = self._latest_validated(
+                artifacts, ArtifactType.POST_DECISION_UPDATE
+            )
+            post_update: PostDecisionUpdate | None = None
+            if post_update_artifact is not None and decision_card_artifact is not None:
+                candidate_update = PostDecisionUpdate.model_validate(
+                    post_update_artifact.payload
+                )
+                if (
+                    post_update_artifact.input_artifact_ids
+                    == (decision_card_artifact.artifact_id,)
+                    and candidate_update.decision_card_artifact.artifact_id
+                    == decision_card_artifact.artifact_id
+                ):
+                    post_update = candidate_update
+                    post_decision_update_id = post_update.update_id
+                    post_decision_outcome = post_update.outcome
+            external_proposal_artifact = self._latest_validated(
+                artifacts,
+                ArtifactType.EXTERNAL_DOCUMENT_SUBMISSION_PROPOSAL,
+            )
+            if external_proposal_artifact is not None and post_update_artifact is not None:
+                candidate_external_proposal = (
+                    ExternalDocumentSubmissionProposal.model_validate(
+                        external_proposal_artifact.payload
+                    )
+                )
+                proposal_sources = candidate_external_proposal.source_artifact_ids
+                release_reference = (
+                    candidate_external_proposal.document_release_package.artifact
+                )
+                release_artifact = next(
+                    (
+                        item
+                        for item in artifacts
+                        if item.artifact_id == release_reference.artifact_id
+                        and item.artifact_type
+                        is ArtifactType.DOCUMENT_RELEASE_PACKAGE
+                        and item.version == release_reference.version
+                        and item.input_hash == release_reference.input_hash
+                        and item.validation_status
+                        in {
+                            ValidationStatus.VALID,
+                            ValidationStatus.VALID_WITH_WARNINGS,
+                        }
+                    ),
+                    None,
+                )
+                if (
+                    external_proposal_artifact.input_artifact_ids
+                    == proposal_sources
+                    and proposal_sources[0] == post_update_artifact.artifact_id
+                    and decision_card_artifact is not None
+                    and proposal_sources[1] == decision_card_artifact.artifact_id
+                    and release_artifact is not None
+                    and proposal_sources[2] == release_artifact.artifact_id
+                    and candidate_external_proposal.post_decision_update_artifact.artifact_id
+                    == post_update_artifact.artifact_id
+                    and candidate_external_proposal.decision_card_artifact.artifact_id
+                    == decision_card_artifact.artifact_id
+                ):
+                    external_document_submission_proposal_id = (
+                        candidate_external_proposal.proposal_id
+                    )
             requests = await self._approvals.list_by_case(run.evaluation_case_id)
             pending_approvals = tuple(
                 item.request_id
@@ -1544,6 +2422,21 @@ class CaseWorkflowOrchestrator:
                 if item.workflow_run_id == run.workflow_run_id
                 and item.status.value == "PENDING"
             )
+            if external_document_submission_proposal_id is not None:
+                external_submission_authorized = any(
+                    item.workflow_run_id == run.workflow_run_id
+                    and item.status is ApprovalRequestStatus.APPROVED
+                    and item.command.action_type
+                    is ProtectedAction.SEND_DOCUMENT_TO_EXTERNAL_PARTNER
+                    and external_proposal_artifact is not None
+                    and item.subject_artifact_id
+                    == external_proposal_artifact.artifact_id
+                    and item.subject_artifact_version
+                    == external_proposal_artifact.version
+                    and item.subject_input_hash
+                    == external_proposal_artifact.input_hash
+                    for item in requests
+                )
         return WorkflowRunSummary(
             workflow_run_id=run.workflow_run_id,
             evaluation_case_id=run.evaluation_case_id,
@@ -1644,11 +2537,8 @@ class CaseWorkflowOrchestrator:
             document_release_package_ready=bool(document_release_package_ids),
             ready_for_internal_decision=(
                 internal_decision_package_id is not None
-                and run.status is WorkflowStatus.COMPLETED
-                and run.current_stage
-                == WorkflowNode.INTERNAL_DECISION_PACKAGE_READY.value
             ),
-            document_release_authorized=False,
+            document_release_authorized=external_submission_authorized,
             document_external_release_performed=False,
             internal_decision_package_id=internal_decision_package_id,
             internal_decision_assembly_path=internal_decision_assembly_path,
@@ -1663,10 +2553,38 @@ class CaseWorkflowOrchestrator:
             ),
             internal_decision_package_ready=(
                 internal_decision_package_id is not None
-                and run.status is WorkflowStatus.COMPLETED
-                and run.current_stage
-                == WorkflowNode.INTERNAL_DECISION_PACKAGE_READY.value
             ),
+            final_risk_assessment_id=final_risk_assessment_id,
+            final_risk_status=final_risk_status,
+            final_residual_risk_level=final_residual_risk_level,
+            final_major_exception=final_major_exception,
+            final_unresolved_approval_gate_ids=(
+                final_unresolved_approval_gate_ids
+            ),
+            final_required_control_codes=final_required_control_codes,
+            ai_decision_analysis_id=ai_decision_analysis_id,
+            ai_decision_analysis_source=ai_decision_analysis_source,
+            decision_card_id=decision_card_id,
+            decision_recommendation=decision_recommendation,
+            decision_confidence=decision_confidence,
+            decision_condition_ids=decision_condition_ids,
+            decision_selected_negotiation_strategy_ids=(
+                decision_selected_negotiation_strategy_ids
+            ),
+            decision_selected_option_ids=decision_selected_option_ids,
+            post_decision_update_id=post_decision_update_id,
+            post_decision_outcome=post_decision_outcome,
+            external_document_submission_proposal_id=(
+                external_document_submission_proposal_id
+            ),
+            external_submission_authorized=external_submission_authorized,
+            ready_for_external_submission=(
+                run.status is WorkflowStatus.COMPLETED
+                and run.current_stage
+                == WorkflowNode.READY_FOR_EXTERNAL_SUBMISSION.value
+                and external_submission_authorized
+            ),
+            external_submission_performed=False,
             pending_approval_ids=pending_approvals,
             pending_missing_data_ids=run.pending_request_ids,
             resume_stage=run.resume_stage,
@@ -2405,8 +3323,16 @@ class CaseWorkflowOrchestrator:
             run.workflow_run_id, WorkflowNode.BANKING_DISCOVERY_HANDOFF.value
         )
         artifacts = await self._artifacts.list_by_case(run.evaluation_case_id)
+        case_artifact = self._latest(artifacts, ArtifactType.EVALUATION_CASE)
         route_artifact = self._latest(artifacts, ArtifactType.DECISION_ROUTE_PLAN)
         identity_inputs = (
+            (
+                case_artifact.artifact_id,
+                case_artifact.version,
+                case_artifact.input_hash,
+            )
+            if case_artifact is not None
+            else None,
             (
                 route_artifact.artifact_id,
                 route_artifact.version,
@@ -2557,13 +3483,21 @@ class CaseWorkflowOrchestrator:
         matrix_artifact = self._latest(
             artifacts, ArtifactType.BANKING_OPTION_MATRIX
         )
+        request_artifact = self._latest(
+            artifacts, ArtifactType.BANKING_DISCOVERY_REQUEST
+        )
         supplement_artifact = self._latest(
             artifacts, ArtifactType.BANKING_INPUT_SUPPLEMENT
         )
         identity_inputs = (
             *(
                 item.artifact_id
-                for item in (case_artifact, matrix_artifact, supplement_artifact)
+                for item in (
+                    case_artifact,
+                    request_artifact,
+                    matrix_artifact,
+                    supplement_artifact,
+                )
                 if item is not None
             ),
             self._services.banking_policy_hash,
@@ -3160,7 +4094,11 @@ class CaseWorkflowOrchestrator:
                 checkpoint_set = ApprovalCheckpointSet.model_validate(artifact.payload)
             except ValueError:
                 continue
-            if not checkpoint_set.policy_coverages:
+            if not checkpoint_set.policy_coverages and not any(
+                item.protected_action
+                is ProtectedAction.CONFIRM_FINAL_CONTRACT_DECISION
+                for item in checkpoint_set.checkpoints
+            ):
                 candidates.append(artifact)
         return max(candidates, key=lambda item: item.version, default=None)
 

@@ -36,6 +36,7 @@ from opc_mis.domain.banking_precheck_submission_models import (
     BankingPrecheckSubmissionProposal,
 )
 from opc_mis.domain.data_classification_models import ClassificationDecision
+from opc_mis.domain.decision_models import AIDecisionAnalysis, DecisionCard
 from opc_mis.domain.decision_post_banking_models import DecisionPostBankingReview
 from opc_mis.domain.decision_post_precheck_models import (
     DecisionPostPrecheckReview,
@@ -75,17 +76,25 @@ from opc_mis.domain.enums import (
     DecisionHandoffMode,
     DecisionPostBankingOutcome,
     DecisionRouteOutcome,
+    FinalRiskControlCode,
+    MajorExceptionStatus,
     MissingRequestStatus,
     MissingSeverity,
     ProtectedAction,
     ProviderEligibilityStatus,
     ProviderGuaranteeDecision,
+    RequirementAmountSemantics,
     RiskLevel,
     RiskScope,
+    RiskSeverity,
     SourceType,
     ValidationStatus,
 )
 from opc_mis.domain.evidence import EvidenceRef
+from opc_mis.domain.final_risk_models import (
+    FinalRiskAssessment,
+    final_risk_assessment_id,
+)
 from opc_mis.domain.finance_models import FinanceAssessment, FinanceFacts
 from opc_mis.domain.internal_decision_package_models import (
     InternalDecisionPackage,
@@ -105,6 +114,12 @@ from opc_mis.domain.masking_models import (
     masking_policy_document_sha256,
 )
 from opc_mis.domain.operations_models import OperationsAssessment, OperationsFacts
+from opc_mis.domain.planner_models import EvaluationCase
+from opc_mis.domain.post_decision_models import (
+    ExternalDocumentSubmissionProposal,
+    PostDecisionUpdate,
+    approval_business_identity,
+)
 from opc_mis.domain.risk_models import (
     InitialRiskAssessment,
     RiskPreScan,
@@ -196,7 +211,11 @@ class EvidenceValidator:
         if not any("unknown sources" in error for error in blocking_errors):
             checks.append("LINEAGE_DERIVED_SOURCES_EXIST")
 
-        if draft.artifact_type is ArtifactType.FINANCE_FACTS:
+        if draft.artifact_type is ArtifactType.EVALUATION_CASE:
+            self._validate_evaluation_case(
+                draft, evidence_ids, checks, blocking_errors
+            )
+        elif draft.artifact_type is ArtifactType.FINANCE_FACTS:
             self._validate_finance_facts(draft, evidence_ids, checks, blocking_errors)
         elif draft.artifact_type is ArtifactType.FINANCE_ASSESSMENT:
             self._validate_finance_assessment(draft, checks, blocking_errors)
@@ -306,6 +325,29 @@ class EvidenceValidator:
             self._validate_internal_decision_package(
                 draft, evidence_ids, checks, blocking_errors
             )
+        elif draft.artifact_type is ArtifactType.FINAL_RISK_ASSESSMENT:
+            self._validate_final_risk_assessment(
+                draft, evidence_ids, checks, blocking_errors
+            )
+        elif draft.artifact_type is ArtifactType.AI_DECISION_ANALYSIS:
+            self._validate_ai_decision_analysis(
+                draft, evidence_ids, checks, blocking_errors
+            )
+        elif draft.artifact_type is ArtifactType.DECISION_CARD:
+            self._validate_decision_card(
+                draft, evidence_ids, checks, blocking_errors
+            )
+        elif draft.artifact_type is ArtifactType.POST_DECISION_UPDATE:
+            self._validate_post_decision_update(
+                draft, evidence_ids, checks, blocking_errors
+            )
+        elif (
+            draft.artifact_type
+            is ArtifactType.EXTERNAL_DOCUMENT_SUBMISSION_PROPOSAL
+        ):
+            self._validate_external_document_submission_proposal(
+                draft, evidence_ids, checks, blocking_errors
+            )
 
         if blocking_errors:
             status = ValidationStatus.BLOCKED
@@ -319,6 +361,160 @@ class EvidenceValidator:
             blocking_errors=tuple(blocking_errors),
             warnings=tuple(warnings),
         )
+
+    @staticmethod
+    def _validate_evaluation_case(
+        draft: ArtifactDraft,
+        evidence_ids: set[str],
+        checks: list[str],
+        errors: list[str],
+    ) -> None:
+        """Validate Planner requirement identity and exact credit-amount lineage."""
+        try:
+            evaluation_case = EvaluationCase.model_validate(draft.payload)
+        except ValueError as exc:
+            errors.append(f"Invalid EVALUATION_CASE schema: {exc}")
+            return
+        if evaluation_case.evaluation_case_id != draft.evaluation_case_id:
+            errors.append("EVALUATION_CASE identity does not match its draft.")
+        requirement_ids = tuple(
+            requirement.requirement_id
+            for requirement in evaluation_case.contract_requirements
+        )
+        if len(set(requirement_ids)) != len(requirement_ids):
+            errors.append("EVALUATION_CASE contains duplicate contract requirement IDs.")
+        related_credit_ids = set(evaluation_case.related_credit_case_ids)
+        evidence_by_id = {item.evidence_id: item for item in draft.evidence_refs}
+        for requirement in evaluation_case.contract_requirements:
+            if not set(requirement.evidence_ids).issubset(evidence_ids):
+                errors.append(
+                    f"Contract requirement {requirement.requirement_id} references "
+                    "unknown evidence."
+                )
+                continue
+            for record_id, field in zip(
+                requirement.source_record_ids,
+                requirement.source_fields,
+                strict=True,
+            ):
+                source_matches = tuple(
+                    evidence_by_id[evidence_id]
+                    for evidence_id in requirement.evidence_ids
+                    if evidence_id in evidence_by_id
+                    and evidence_by_id[evidence_id].source_type
+                    is SourceType.TEAM_PACK
+                    and evidence_by_id[evidence_id].record_id == record_id
+                    and evidence_by_id[evidence_id].field == field
+                )
+                if len(source_matches) != 1:
+                    errors.append(
+                        f"Contract requirement {requirement.requirement_id} lacks "
+                        f"one exact source for {record_id}.{field}."
+                    )
+            if requirement.credit_case_id is None:
+                continue
+            if requirement.credit_case_id not in related_credit_ids:
+                errors.append(
+                    f"Contract requirement {requirement.requirement_id} references an "
+                    "unselected credit profile."
+                )
+                continue
+            relationship_matches = tuple(
+                evidence_by_id[evidence_id]
+                for evidence_id in requirement.evidence_ids
+                if evidence_id in evidence_by_id
+                and evidence_by_id[evidence_id].source_type is SourceType.DERIVED
+                and evidence_by_id[evidence_id].sheet
+                == SheetRegistry.CREDIT_PROFILES.sheet_name
+                and evidence_by_id[evidence_id].record_id
+                == requirement.credit_case_id
+                and evidence_by_id[evidence_id].field
+                == "contract_requirement_relationship"
+                and evidence_by_id[evidence_id].display_value
+                == {
+                    "contract_id": evaluation_case.contract_id,
+                    "credit_case_id": requirement.credit_case_id,
+                }
+            )
+            if len(relationship_matches) != 1:
+                errors.append(
+                    f"Contract requirement {requirement.requirement_id} lacks one exact "
+                    "contract-to-credit relationship evidence item."
+                )
+            else:
+                relationship_sources = set(
+                    relationship_matches[0].source_evidence_ids
+                )
+                contract_sources = {
+                    evidence_id
+                    for evidence_id in requirement.evidence_ids
+                    if evidence_id in evidence_by_id
+                    and evidence_by_id[evidence_id].source_type
+                    is SourceType.TEAM_PACK
+                    and evidence_by_id[evidence_id].sheet
+                    == SheetRegistry.CONTRACTS.sheet_name
+                    and evidence_by_id[evidence_id].record_id
+                    == evaluation_case.contract_id
+                    and evidence_by_id[evidence_id].field == "contract_id"
+                }
+                collateral_sources = {
+                    evidence_id
+                    for evidence_id in requirement.evidence_ids
+                    if evidence_id in evidence_by_id
+                    and evidence_by_id[evidence_id].source_type
+                    is SourceType.TEAM_PACK
+                    and evidence_by_id[evidence_id].sheet
+                    == SheetRegistry.CREDIT_PROFILES.sheet_name
+                    and evidence_by_id[evidence_id].record_id
+                    == requirement.credit_case_id
+                    and evidence_by_id[evidence_id].field == "collateral_or_basis"
+                }
+                if (
+                    len(contract_sources) != 1
+                    or len(collateral_sources) != 1
+                    or relationship_sources
+                    != contract_sources | collateral_sources
+                ):
+                    errors.append(
+                        f"Contract requirement {requirement.requirement_id} relationship "
+                        "does not derive exactly from contract_id and collateral_or_basis."
+                    )
+            if requirement.requested_amount is None:
+                continue
+            if requirement.requested_amount_currency is not CurrencyCode.VND:
+                errors.append(
+                    f"Contract requirement {requirement.requirement_id} amount is not VND."
+                )
+            if (
+                requirement.amount_semantics
+                is not RequirementAmountSemantics.CREDIT_PROFILE_REQUESTED_AMOUNT
+            ):
+                errors.append(
+                    f"Contract requirement {requirement.requirement_id} changes the "
+                    "credit-profile requested-amount semantics."
+                )
+            amount_matches = tuple(
+                evidence_by_id[evidence_id]
+                for evidence_id in requirement.evidence_ids
+                if evidence_id in evidence_by_id
+                and evidence_by_id[evidence_id].source_type is SourceType.TEAM_PACK
+                and evidence_by_id[evidence_id].sheet
+                == SheetRegistry.CREDIT_PROFILES.sheet_name
+                and evidence_by_id[evidence_id].record_id
+                == requirement.credit_case_id
+                and evidence_by_id[evidence_id].field == "requested_amount"
+                and EvidenceValidator._same_json_scalar(
+                    evidence_by_id[evidence_id].display_value,
+                    requirement.requested_amount,
+                )
+            )
+            if len(amount_matches) != 1:
+                errors.append(
+                    f"Contract requirement {requirement.requirement_id} lacks one exact "
+                    "10_CREDIT_PROFILE.requested_amount evidence item."
+                )
+        if not errors:
+            checks.append("EVALUATION_CASE_REQUIREMENT_LINEAGE_VALID")
 
     @staticmethod
     def _validate_finance_facts(
@@ -812,6 +1008,32 @@ class EvidenceValidator:
             for reason in plan.routing_reasons
         ):
             errors.append("DECISION_ROUTE_PLAN reason has an unknown source artifact.")
+        evidence_by_id = {item.evidence_id: item for item in draft.evidence_refs}
+        for reason in plan.routing_reasons:
+            if not set(reason.amount_evidence_ids).issubset(reason.evidence_ids):
+                errors.append(
+                    f"Decision route reason {reason.reason_id} has undeclared amount evidence."
+                )
+                continue
+            amount_matches = tuple(
+                evidence_by_id[evidence_id]
+                for evidence_id in reason.amount_evidence_ids
+                if evidence_id in evidence_by_id
+                and evidence_by_id[evidence_id].source_type is SourceType.TEAM_PACK
+                and evidence_by_id[evidence_id].sheet
+                == SheetRegistry.CREDIT_PROFILES.sheet_name
+                and evidence_by_id[evidence_id].record_id == reason.credit_case_id
+                and evidence_by_id[evidence_id].field == "requested_amount"
+                and EvidenceValidator._same_json_scalar(
+                    evidence_by_id[evidence_id].display_value,
+                    reason.requested_amount,
+                )
+            )
+            if len(amount_matches) != 1:
+                errors.append(
+                    f"Decision route reason {reason.reason_id} lacks one exact "
+                    "credit-profile requested amount."
+                )
         if len(set(plan.conditional_approval_checkpoint_ids)) != len(
             plan.conditional_approval_checkpoint_ids
         ):
@@ -893,7 +1115,23 @@ class EvidenceValidator:
                 "BANKING_DISCOVERY_REQUEST does not include its route artifact in lineage."
             )
         if request.requested_amount is not None:
-            errors.append("Decision handoff cannot infer a requested banking amount.")
+            amount_matches = tuple(
+                item
+                for item in draft.evidence_refs
+                if item.evidence_id in request.amount_evidence_ids
+                and item.source_type is SourceType.TEAM_PACK
+                and item.sheet == SheetRegistry.CREDIT_PROFILES.sheet_name
+                and item.record_id == request.credit_case_id
+                and item.field == "requested_amount"
+                and EvidenceValidator._same_json_scalar(
+                    item.display_value, request.requested_amount
+                )
+            )
+            if len(amount_matches) != 1:
+                errors.append(
+                    "BANKING_DISCOVERY_REQUEST amount lacks one exact Planner-selected "
+                    "credit-profile requested_amount evidence item."
+                )
         if request.requested_amount_currency is not CurrencyCode.VND:
             errors.append("Banking request monetary values must use VND.")
         if request.constraints:
@@ -951,7 +1189,18 @@ class EvidenceValidator:
                 errors.append(
                     "BANKING_OPTION_MATRIX requested amount must be a positive integer."
                 )
-            amount_evidence_ids = {
+            team_pack_amount_evidence_ids = {
+                item.evidence_id
+                for item in draft.evidence_refs
+                if item.source_type is SourceType.TEAM_PACK
+                and item.sheet == SheetRegistry.CREDIT_PROFILES.sheet_name
+                and item.record_id in matrix.explicit_credit_case_ids
+                and item.field == "requested_amount"
+                and isinstance(item.display_value, int)
+                and not isinstance(item.display_value, bool)
+                and item.display_value == matrix.requested_amount
+            }
+            legacy_amount_evidence_ids = {
                 item.evidence_id
                 for item in draft.evidence_refs
                 if item.source_type is SourceType.USER_INPUT
@@ -961,10 +1210,13 @@ class EvidenceValidator:
                 and not isinstance(item.display_value, bool)
                 and item.display_value == matrix.requested_amount
             }
+            amount_evidence_ids = (
+                team_pack_amount_evidence_ids | legacy_amount_evidence_ids
+            )
             if not amount_evidence_ids:
                 errors.append(
-                    "BANKING_OPTION_MATRIX requested amount lacks exact USER_INPUT "
-                    "evidence."
+                    "BANKING_OPTION_MATRIX requested amount lacks exact credit-profile "
+                    "or legacy supplement evidence."
                 )
         referenced = set(matrix.evidence_ids)
         for candidate in matrix.candidates:
@@ -1016,7 +1268,7 @@ class EvidenceValidator:
                 ):
                     errors.append(
                         f"Banking option {candidate.option_id} minimum-amount check "
-                        "does not cite exact USER_INPUT amount evidence."
+                        "does not cite exact requested-amount evidence."
                     )
             if candidate.minimum_amount_currency is not CurrencyCode.VND:
                 errors.append(
@@ -1437,19 +1689,29 @@ class EvidenceValidator:
                     "minimum-amount check."
                 )
             elif minimum_checks:
+                amount_resolutions = tuple(
+                    item
+                    for item in option.field_resolutions
+                    if item.required_field == "amount"
+                )
+                amount_is_resolved = (
+                    len(amount_resolutions) == 1
+                    and amount_resolutions[0].status
+                    is BankingPrecheckFieldStatus.RESOLVED
+                )
                 allowed_statuses = (
-                    {BankingCriterionStatus.NOT_EVALUABLE}
-                    if readiness.supplement_id is None
-                    else {
+                    {
                         BankingCriterionStatus.PASS,
                         BankingCriterionStatus.FAIL,
                         BankingCriterionStatus.NOT_APPLICABLE,
                     }
+                    if amount_is_resolved
+                    else {BankingCriterionStatus.NOT_EVALUABLE}
                 )
                 if minimum_checks[0].status not in allowed_statuses:
                     errors.append(
                         f"Precheck readiness option {option.option_id} has a "
-                        "minimum-amount status inconsistent with supplement presence."
+                        "minimum-amount status inconsistent with amount resolution."
                     )
             for field in option.field_resolutions:
                 referenced.update(field.evidence_ids)
@@ -1606,6 +1868,9 @@ class EvidenceValidator:
 
         expected_reference = {
             BankingPrecheckFieldSource.EVALUATION_CASE: "EvaluationCase.contract_id",
+            BankingPrecheckFieldSource.BANKING_DISCOVERY_REQUEST: (
+                "BankingDiscoveryRequest.requested_amount"
+            ),
             BankingPrecheckFieldSource.BANKING_INPUT_SUPPLEMENT: (
                 "BankingInputSupplement.requested_amount"
             ),
@@ -1636,6 +1901,63 @@ class EvidenceValidator:
                 errors.append(
                     f"EvaluationCase precheck field {option_id}.{field.required_field} "
                     "does not reference an upstream artifact."
+                )
+            return
+
+        if field.source is BankingPrecheckFieldSource.BANKING_DISCOVERY_REQUEST:
+            if (
+                field.source_artifact_id is None
+                or field.source_artifact_id not in readiness.source_artifact_ids
+            ):
+                errors.append(
+                    f"Banking request amount field {option_id}.{field.required_field} "
+                    "does not reference its upstream request artifact."
+                )
+            if field.status is BankingPrecheckFieldStatus.MISSING_INPUT:
+                if field.source_record_ids:
+                    errors.append(
+                        f"Missing Banking request amount field "
+                        f"{option_id}.{field.required_field} claims source records."
+                    )
+                if any(
+                    evidence.source_type is SourceType.TEAM_PACK
+                    and evidence.sheet == SheetRegistry.CREDIT_PROFILES.sheet_name
+                    and evidence.field == "requested_amount"
+                    for evidence in source_evidence
+                ):
+                    errors.append(
+                        f"Missing Banking request amount field "
+                        f"{option_id}.{field.required_field} contains amount evidence."
+                    )
+                return
+            if (
+                field.status is not BankingPrecheckFieldStatus.RESOLVED
+                or len(field.source_record_ids) != 2
+                or not all(field.source_record_ids)
+            ):
+                errors.append(
+                    f"Resolved Banking request amount field "
+                    f"{option_id}.{field.required_field} has an invalid requirement/credit "
+                    "binding."
+                )
+                return
+            credit_case_id = field.source_record_ids[1]
+            amount_evidence = tuple(
+                evidence
+                for evidence in source_evidence
+                if evidence.source_type is SourceType.TEAM_PACK
+                and evidence.sheet == SheetRegistry.CREDIT_PROFILES.sheet_name
+                and evidence.record_id == credit_case_id
+                and evidence.field == "requested_amount"
+                and isinstance(evidence.display_value, int)
+                and not isinstance(evidence.display_value, bool)
+                and evidence.display_value > 0
+            )
+            if len(amount_evidence) != 1:
+                errors.append(
+                    f"Resolved Banking request amount field "
+                    f"{option_id}.{field.required_field} lacks exact credit-profile "
+                    "requested_amount evidence."
                 )
             return
 
@@ -2289,6 +2611,9 @@ class EvidenceValidator:
     ) -> None:
         expected_reference = {
             BankingPrecheckFieldSource.EVALUATION_CASE: "EvaluationCase.contract_id",
+            BankingPrecheckFieldSource.BANKING_DISCOVERY_REQUEST: (
+                "BankingDiscoveryRequest.requested_amount"
+            ),
             BankingPrecheckFieldSource.BANKING_INPUT_SUPPLEMENT: (
                 "BankingInputSupplement.requested_amount"
             ),
@@ -2345,6 +2670,29 @@ class EvidenceValidator:
                 errors.append(
                     f"Submission field {candidate.option_id}.{binding.required_field} "
                     "does not reference the exact EvaluationCase contract."
+                )
+        elif binding.source is BankingPrecheckFieldSource.BANKING_DISCOVERY_REQUEST:
+            amount_evidence = tuple(
+                evidence
+                for evidence in source_evidence
+                if evidence.source_type is SourceType.TEAM_PACK
+                and evidence.sheet == SheetRegistry.CREDIT_PROFILES.sheet_name
+                and len(binding.source_record_ids) == 2
+                and evidence.record_id == binding.source_record_ids[1]
+                and evidence.field == "requested_amount"
+                and self._same_json_scalar(
+                    evidence.display_value, proposal.requested_amount
+                )
+            )
+            if (
+                binding.source_artifact_id is None
+                or len(binding.source_record_ids) != 2
+                or not all(binding.source_record_ids)
+                or len(amount_evidence) != 1
+            ):
+                errors.append(
+                    f"Submission field {candidate.option_id}.{binding.required_field} "
+                    "lacks exact BankingDiscoveryRequest credit-amount lineage."
                 )
         elif binding.source is BankingPrecheckFieldSource.BANKING_INPUT_SUPPLEMENT:
             amount_evidence = tuple(
@@ -3312,12 +3660,31 @@ class EvidenceValidator:
             source_reference="EvaluationCase.contract_id",
             errors=errors,
         )
+        uses_discovery_request_amount = any(
+            evidence.source_type is SourceType.DERIVED
+            and evidence.sheet == "BANKING_PRECHECK_READINESS"
+            and evidence.field == "amount"
+            and isinstance(evidence.display_value, dict)
+            and evidence.display_value.get("source")
+            == BankingPrecheckFieldSource.BANKING_DISCOVERY_REQUEST.value
+            for evidence in result_evidence
+        )
+        amount_source = (
+            BankingPrecheckFieldSource.BANKING_DISCOVERY_REQUEST
+            if uses_discovery_request_amount
+            else BankingPrecheckFieldSource.BANKING_INPUT_SUPPLEMENT
+        )
+        amount_source_reference = (
+            "BankingDiscoveryRequest.requested_amount"
+            if uses_discovery_request_amount
+            else "BankingInputSupplement.requested_amount"
+        )
         amount_binding = EvidenceValidator._one_precheck_binding_evidence(
             result=result,
             result_evidence=result_evidence,
             required_field="amount",
-            source=BankingPrecheckFieldSource.BANKING_INPUT_SUPPLEMENT,
-            source_reference="BankingInputSupplement.requested_amount",
+            source=amount_source,
+            source_reference=amount_source_reference,
             errors=errors,
         )
         profile_binding = EvidenceValidator._one_precheck_binding_evidence(
@@ -3366,8 +3733,22 @@ class EvidenceValidator:
                 evidence_by_id[evidence_id]
                 for evidence_id in amount_binding.source_evidence_ids
                 if evidence_id in evidence_by_id
-                and evidence_by_id[evidence_id].source_type is SourceType.USER_INPUT
-                and evidence_by_id[evidence_id].sheet == "BANKING_INPUT_SUPPLEMENT"
+                and (
+                    (
+                        uses_discovery_request_amount
+                        and evidence_by_id[evidence_id].source_type
+                        is SourceType.TEAM_PACK
+                        and evidence_by_id[evidence_id].sheet
+                        == SheetRegistry.CREDIT_PROFILES.sheet_name
+                    )
+                    or (
+                        not uses_discovery_request_amount
+                        and evidence_by_id[evidence_id].source_type
+                        is SourceType.USER_INPUT
+                        and evidence_by_id[evidence_id].sheet
+                        == "BANKING_INPUT_SUPPLEMENT"
+                    )
+                )
                 and evidence_by_id[evidence_id].field == "requested_amount"
                 and isinstance(evidence_by_id[evidence_id].display_value, int)
                 and not isinstance(evidence_by_id[evidence_id].display_value, bool)
@@ -3378,22 +3759,29 @@ class EvidenceValidator:
                 )
             else:
                 requested_amount = amount_sources[0].display_value
-                currency_sources = tuple(
-                    evidence_by_id[evidence_id]
-                    for evidence_id in amount_binding.source_evidence_ids
-                    if evidence_id in evidence_by_id
-                    and evidence_by_id[evidence_id].source_type
-                    is SourceType.USER_INPUT
-                    and evidence_by_id[evidence_id].sheet
-                    == "BANKING_INPUT_SUPPLEMENT"
-                    and evidence_by_id[evidence_id].record_id
-                    == amount_sources[0].record_id
-                    and evidence_by_id[evidence_id].field
-                    == "requested_amount_currency"
-                )
+                legacy_currency_is_valid = True
+                if not uses_discovery_request_amount:
+                    currency_sources = tuple(
+                        evidence_by_id[evidence_id]
+                        for evidence_id in amount_binding.source_evidence_ids
+                        if evidence_id in evidence_by_id
+                        and evidence_by_id[evidence_id].source_type
+                        is SourceType.USER_INPUT
+                        and evidence_by_id[evidence_id].sheet
+                        == "BANKING_INPUT_SUPPLEMENT"
+                        and evidence_by_id[evidence_id].record_id
+                        == amount_sources[0].record_id
+                        and evidence_by_id[evidence_id].field
+                        == "requested_amount_currency"
+                    )
+                    legacy_currency_is_valid = (
+                        len(currency_sources) == 1
+                        and currency_sources[0].display_value
+                        == CurrencyCode.VND.value
+                    )
                 if (
-                    len(currency_sources) != 1
-                    or currency_sources[0].display_value != CurrencyCode.VND.value
+                    result.currency is not CurrencyCode.VND
+                    or not legacy_currency_is_valid
                 ):
                     errors.append(
                         f"Banking result {result.normalized_result_id} amount is not VND."
@@ -3993,6 +4381,471 @@ class EvidenceValidator:
             )
         if not errors:
             checks.append("INTERNAL_DECISION_PACKAGE_BOUNDARY_VALID")
+
+    @staticmethod
+    def _validate_final_risk_assessment(
+        draft: ArtifactDraft,
+        evidence_ids: set[str],
+        checks: list[str],
+        errors: list[str],
+    ) -> None:
+        """Validate Final Risk's conservative, evidence-bound handoff contract."""
+        try:
+            assessment = FinalRiskAssessment.model_validate(draft.payload)
+        except ValueError as exc:
+            errors.append(f"Invalid FINAL_RISK_ASSESSMENT schema: {exc}")
+            return
+
+        if assessment.evaluation_case_id != draft.evaluation_case_id:
+            errors.append(
+                "FINAL_RISK_ASSESSMENT case identity does not match its draft."
+            )
+        ordered_evidence_ids = tuple(
+            evidence.evidence_id for evidence in draft.evidence_refs
+        )
+        if (
+            assessment.evidence_ids != ordered_evidence_ids
+            or set(assessment.evidence_ids) != evidence_ids
+        ):
+            errors.append("FINAL_RISK_ASSESSMENT evidence index is not exact.")
+
+        expected_identity = {
+            "internal_decision_package_artifact_id": (
+                assessment.internal_decision_package_artifact_id
+            ),
+            "internal_decision_package_artifact_version": (
+                assessment.internal_decision_package_artifact_version
+            ),
+            "internal_decision_package_input_hash": (
+                assessment.internal_decision_package_input_hash
+            ),
+            "internal_decision_package_id": (
+                assessment.internal_decision_package_id
+            ),
+        }
+        if draft.identity_inputs != expected_identity:
+            errors.append(
+                "FINAL_RISK_ASSESSMENT artifact identity inputs are not exact."
+            )
+
+        referenced = {
+            evidence_id
+            for item in (
+                *assessment.residual_findings,
+                *assessment.unresolved_approval_gates,
+                *assessment.required_controls,
+                *assessment.limitations,
+            )
+            for evidence_id in item.evidence_ids
+        }
+        if assessment.major_exception_signal is not None:
+            referenced.update(assessment.major_exception_signal.evidence_ids)
+        if not referenced.issubset(evidence_ids):
+            errors.append("FINAL_RISK_ASSESSMENT references unknown evidence.")
+
+        severity_order = {
+            RiskSeverity.LOW: 1,
+            RiskSeverity.MEDIUM: 2,
+            RiskSeverity.HIGH: 3,
+            RiskSeverity.CRITICAL: 4,
+        }
+        expected_level = RiskLevel.NO_CASE_SIGNAL
+        if assessment.residual_findings:
+            highest = max(
+                assessment.residual_findings,
+                key=lambda item: severity_order[item.severity],
+            )
+            expected_level = RiskLevel(highest.severity)
+        if (
+            assessment.initial_risk_level is not expected_level
+            or assessment.residual_risk_level is not expected_level
+        ):
+            errors.append(
+                "FINAL_RISK_ASSESSMENT residual findings contradict its risk level."
+            )
+
+        for finding in assessment.residual_findings:
+            expected_finding_id = deterministic_id(
+                "RRF",
+                assessment.internal_decision_package_id,
+                finding.source_finding_id,
+                finding.status,
+                finding.evidence_ids,
+            )
+            if finding.residual_finding_id != expected_finding_id:
+                errors.append(
+                    "FINAL_RISK_ASSESSMENT contains an unstable residual finding ID."
+                )
+            if not finding.evidence_ids:
+                errors.append(
+                    "FINAL_RISK_ASSESSMENT residual findings require explicit evidence."
+                )
+
+        for control in assessment.required_controls:
+            expected_control_id = deterministic_id(
+                "FRC",
+                assessment.internal_decision_package_id,
+                control.code,
+                control.source_reference_ids,
+                control.protected_action,
+                control.evidence_ids,
+            )
+            if control.control_id != expected_control_id:
+                errors.append(
+                    "FINAL_RISK_ASSESSMENT contains an unstable required-control ID."
+                )
+            requires_action = control.code in {
+                FinalRiskControlCode.GOVERNANCE_EVALUATION_BEFORE_PROTECTED_ACTION,
+                FinalRiskControlCode.GOVERNANCE_REJECTION_MUST_BE_HONORED,
+                FinalRiskControlCode.DOCUMENT_RELEASE_REQUIRES_SEPARATE_AUTHORIZATION,
+            }
+            if requires_action != (control.protected_action is not None):
+                errors.append(
+                    "FINAL_RISK_ASSESSMENT required-control action binding is invalid."
+                )
+            if (
+                control.code
+                is FinalRiskControlCode.DOCUMENT_RELEASE_REQUIRES_SEPARATE_AUTHORIZATION
+                and control.protected_action
+                is not ProtectedAction.SEND_DOCUMENT_TO_EXTERNAL_PARTNER
+            ):
+                errors.append(
+                    "FINAL_RISK_ASSESSMENT Document release control has the wrong "
+                    "protected action."
+                )
+
+        critical = tuple(
+            item
+            for item in assessment.residual_findings
+            if item.severity is RiskSeverity.CRITICAL
+        )
+        if assessment.major_exception_status is MajorExceptionStatus.DETECTED:
+            signal = assessment.major_exception_signal
+            if signal is None:  # pragma: no cover - domain model also enforces this
+                errors.append(
+                    "FINAL_RISK_ASSESSMENT detected a major exception without a signal."
+                )
+            else:
+                expected_signal_evidence = tuple(
+                    dict.fromkeys(
+                        evidence_id
+                        for finding in critical
+                        for evidence_id in finding.evidence_ids
+                    )
+                )
+                expected_signal_id = deterministic_id(
+                    "MES",
+                    assessment.internal_decision_package_id,
+                    tuple(item.residual_finding_id for item in critical),
+                    expected_signal_evidence,
+                )
+                if (
+                    signal.evidence_ids != expected_signal_evidence
+                    or signal.signal_id != expected_signal_id
+                ):
+                    errors.append(
+                        "FINAL_RISK_ASSESSMENT major-exception lineage is not exact."
+                    )
+
+        # The current ready-package schema can contain dormant checkpoint
+        # registrations and resolved rejections, but it cannot contain a live
+        # PENDING/EXPIRED ApprovalRequest. Treating registrations as active gates
+        # would invent workflow state.
+        if assessment.unresolved_approval_gates:
+            errors.append(
+                "FINAL_RISK_ASSESSMENT invents unresolved approval gates from a "
+                "ready package."
+            )
+
+        expected_assessment_id = final_risk_assessment_id(
+            internal_decision_package_artifact_id=(
+                assessment.internal_decision_package_artifact_id
+            ),
+            internal_decision_package_artifact_version=(
+                assessment.internal_decision_package_artifact_version
+            ),
+            internal_decision_package_input_hash=(
+                assessment.internal_decision_package_input_hash
+            ),
+            internal_decision_package_id=assessment.internal_decision_package_id,
+            assessment_status=assessment.assessment_status,
+            residual_risk_level=assessment.residual_risk_level,
+            residual_findings=assessment.residual_findings,
+            unresolved_approval_gates=assessment.unresolved_approval_gates,
+            required_controls=assessment.required_controls,
+            major_exception_status=assessment.major_exception_status,
+            major_exception_signal=assessment.major_exception_signal,
+            limitations=assessment.limitations,
+            evidence_ids=assessment.evidence_ids,
+        )
+        if assessment.assessment_id != expected_assessment_id:
+            errors.append("FINAL_RISK_ASSESSMENT has an unstable assessment_id.")
+        if (
+            assessment.recommendation_performed
+            or assessment.approval_requested
+            or assessment.external_action_performed
+        ):
+            errors.append("FINAL_RISK_ASSESSMENT exceeds the Risk boundary.")
+        if not errors:
+            checks.append("FINAL_RISK_ASSESSMENT_BOUNDARY_VALID")
+
+    @staticmethod
+    def _validate_ai_decision_analysis(
+        draft: ArtifactDraft,
+        evidence_ids: set[str],
+        checks: list[str],
+        errors: list[str],
+    ) -> None:
+        """Validate guarded AI output without treating it as a final Decision."""
+        try:
+            analysis = AIDecisionAnalysis.model_validate(draft.payload)
+        except ValueError as exc:
+            errors.append(f"Invalid AI_DECISION_ANALYSIS schema: {exc}")
+            return
+        if analysis.evaluation_case_id != draft.evaluation_case_id:
+            errors.append("AI_DECISION_ANALYSIS case identity does not match its draft.")
+        expected_referenced_evidence = tuple(
+            dict.fromkeys(
+                evidence_id
+                for item in (
+                    *analysis.reasons,
+                    *analysis.conditions,
+                    *analysis.selected_negotiation_strategies,
+                    *analysis.human_attention_points,
+                )
+                for evidence_id in item.evidence_ids
+            )
+        )
+        if analysis.evidence_ids != expected_referenced_evidence:
+            errors.append("AI_DECISION_ANALYSIS selected evidence index is not exact.")
+        if not set(analysis.evidence_ids).issubset(evidence_ids):
+            errors.append("AI_DECISION_ANALYSIS references unknown evidence.")
+        expected_identity = {
+            "packet_id": analysis.packet_id,
+            "internal_decision_package_artifact": (
+                analysis.internal_decision_package_artifact.model_dump(mode="json")
+            ),
+            "final_risk_artifact": analysis.final_risk_artifact.model_dump(
+                mode="json"
+            ),
+            "analysis_source": analysis.source,
+            "model": analysis.model,
+            "prompt_version": analysis.prompt_version,
+            "composer_input_hash": analysis.input_hash,
+            "composer_configuration_hash": (
+                draft.identity_inputs.get("composer_configuration_hash")
+                if draft.identity_inputs is not None
+                else None
+            ),
+        }
+        if draft.identity_inputs != expected_identity:
+            errors.append(
+                "AI_DECISION_ANALYSIS artifact identity inputs are not exact."
+            )
+        configuration_hash = expected_identity["composer_configuration_hash"]
+        if not isinstance(configuration_hash, str) or not configuration_hash.startswith(
+            "DACFG-"
+        ):
+            errors.append(
+                "AI_DECISION_ANALYSIS lacks a valid composer configuration identity."
+            )
+        if (
+            not analysis.deterministic_guard_passed
+            or analysis.calculations_performed_by_model
+            or analysis.approval_requested
+            or analysis.external_action_performed
+        ):
+            errors.append("AI_DECISION_ANALYSIS exceeds its proposal boundary.")
+        if not errors:
+            checks.append("AI_DECISION_ANALYSIS_BOUNDARY_VALID")
+
+    @staticmethod
+    def _validate_decision_card(
+        draft: ArtifactDraft,
+        evidence_ids: set[str],
+        checks: list[str],
+        errors: list[str],
+    ) -> None:
+        """Validate the detailed proposal shown to Founder before Governance."""
+        try:
+            card = DecisionCard.model_validate(draft.payload)
+        except ValueError as exc:
+            errors.append(f"Invalid DECISION_CARD schema: {exc}")
+            return
+        if card.evaluation_case_id != draft.evaluation_case_id:
+            errors.append("DECISION_CARD case identity does not match its draft.")
+        ordered_evidence_ids = tuple(
+            item.evidence_id for item in draft.evidence_refs
+        )
+        if card.evidence_ids != ordered_evidence_ids or set(card.evidence_ids) != evidence_ids:
+            errors.append("DECISION_CARD evidence index is not exact.")
+        referenced = {
+            evidence_id
+            for item in (
+                *card.reasons,
+                *card.conditions,
+                *card.selected_negotiation_strategies,
+                *card.selected_options,
+                *card.finance_metrics,
+                *card.operations_metrics,
+                *card.calculations,
+                *card.residual_findings,
+                *card.required_controls,
+                *card.limitations,
+                *card.human_attention_points,
+            )
+            for evidence_id in item.evidence_ids
+        }
+        if card.document_release_package is not None:
+            referenced.update(card.document_release_package.evidence_ids)
+        if not referenced.issubset(evidence_ids):
+            errors.append("DECISION_CARD references unknown evidence.")
+        expected_identity = {
+            "ai_analysis_artifact": card.ai_analysis_artifact.model_dump(
+                mode="json"
+            ),
+            "ai_analysis_id": card.ai_analysis_id,
+            "internal_decision_package_artifact": (
+                card.internal_decision_package_artifact.model_dump(mode="json")
+            ),
+            "final_risk_artifact": card.final_risk_artifact.model_dump(mode="json"),
+        }
+        if draft.identity_inputs != expected_identity:
+            errors.append("DECISION_CARD artifact identity inputs are not exact.")
+        if (
+            card.founder_decision_recorded
+            or card.approval_requested
+            or card.document_release_authorized
+            or card.external_action_performed
+        ):
+            errors.append("DECISION_CARD exceeds its proposal boundary.")
+        if not errors:
+            checks.append("DECISION_CARD_BOUNDARY_VALID")
+
+    @staticmethod
+    def _validate_post_decision_update(
+        draft: ArtifactDraft,
+        evidence_ids: set[str],
+        checks: list[str],
+        errors: list[str],
+    ) -> None:
+        """Validate one approved Card route without permitting a protected action."""
+        try:
+            update = PostDecisionUpdate.model_validate(draft.payload)
+        except ValueError as exc:
+            errors.append(f"Invalid POST_DECISION_UPDATE schema: {exc}")
+            return
+        if update.evaluation_case_id != draft.evaluation_case_id:
+            errors.append("POST_DECISION_UPDATE case identity does not match its draft.")
+        ordered_evidence_ids = tuple(
+            item.evidence_id for item in draft.evidence_refs
+        )
+        if (
+            update.evidence_ids != ordered_evidence_ids
+            or set(update.evidence_ids) != evidence_ids
+        ):
+            errors.append("POST_DECISION_UPDATE evidence index is not exact.")
+        expected_identity = {
+            "decision_card_artifact": update.decision_card_artifact.model_dump(
+                mode="json"
+            ),
+            "decision_card_id": update.decision_card_id,
+            "founder_approval": approval_business_identity(
+                update.founder_approval
+            ),
+            "recommendation": update.recommendation,
+            "outcome": update.outcome,
+            "approved_condition_ids": update.approved_condition_ids,
+            "approved_negotiation_strategy_ids": (
+                update.approved_negotiation_strategy_ids
+            ),
+            "selected_option_ids": update.selected_option_ids,
+            "document_release_package": (
+                None
+                if update.document_release_package is None
+                else update.document_release_package.model_dump(mode="json")
+            ),
+        }
+        if draft.identity_inputs != expected_identity:
+            errors.append(
+                "POST_DECISION_UPDATE artifact identity inputs are not exact."
+            )
+        if (
+            not update.founder_decision_recorded
+            or update.external_document_submission_proposed
+            or update.external_action_performed
+        ):
+            errors.append("POST_DECISION_UPDATE exceeds its routing boundary.")
+        if not errors:
+            checks.append("POST_DECISION_UPDATE_BOUNDARY_VALID")
+
+    @staticmethod
+    def _validate_external_document_submission_proposal(
+        draft: ArtifactDraft,
+        evidence_ids: set[str],
+        checks: list[str],
+        errors: list[str],
+    ) -> None:
+        """Validate an exact masked release proposal without claiming authorization."""
+        try:
+            proposal = ExternalDocumentSubmissionProposal.model_validate(
+                draft.payload
+            )
+        except ValueError as exc:
+            errors.append(
+                "Invalid EXTERNAL_DOCUMENT_SUBMISSION_PROPOSAL schema: "
+                f"{exc}"
+            )
+            return
+        if proposal.evaluation_case_id != draft.evaluation_case_id:
+            errors.append(
+                "EXTERNAL_DOCUMENT_SUBMISSION_PROPOSAL case identity does not "
+                "match its draft."
+            )
+        ordered_evidence_ids = tuple(
+            item.evidence_id for item in draft.evidence_refs
+        )
+        if (
+            proposal.evidence_ids != ordered_evidence_ids
+            or set(proposal.evidence_ids) != evidence_ids
+        ):
+            errors.append(
+                "EXTERNAL_DOCUMENT_SUBMISSION_PROPOSAL evidence index is not exact."
+            )
+        expected_identity = {
+            "post_decision_update_artifact": (
+                proposal.post_decision_update_artifact.model_dump(mode="json")
+            ),
+            "post_decision_update_id": proposal.post_decision_update_id,
+            "decision_card_artifact": proposal.decision_card_artifact.model_dump(
+                mode="json"
+            ),
+            "decision_card_id": proposal.decision_card_id,
+            "document_release_package": (
+                proposal.document_release_package.model_dump(mode="json")
+            ),
+            "document_manifest_item_ids": proposal.document_manifest_item_ids,
+            "masking_manifest_item_ids": proposal.masking_manifest_item_ids,
+            "approval_condition_codes": proposal.approval_condition_codes,
+        }
+        if draft.identity_inputs != expected_identity:
+            errors.append(
+                "EXTERNAL_DOCUMENT_SUBMISSION_PROPOSAL artifact identity inputs "
+                "are not exact."
+            )
+        if (
+            proposal.governance_evaluated
+            or proposal.approval_requested
+            or proposal.release_authorized
+            or proposal.external_submission_performed
+        ):
+            errors.append(
+                "EXTERNAL_DOCUMENT_SUBMISSION_PROPOSAL exceeds its proposal boundary."
+            )
+        if not errors:
+            checks.append(
+                "EXTERNAL_DOCUMENT_SUBMISSION_PROPOSAL_BOUNDARY_VALID"
+            )
 
     @staticmethod
     def _validate_document_package_common(

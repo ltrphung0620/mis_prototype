@@ -2,6 +2,8 @@
 
 from fastapi import APIRouter, HTTPException, Request, Response, status
 
+from opc_mis.api.dashboard_projection import build_dashboard_projection
+from opc_mis.api.dashboard_schemas import DashboardWorkflowProjection
 from opc_mis.api.schemas import (
     ApprovalDecisionRequest,
     AutomaticCaseWorkflowRequest,
@@ -114,17 +116,18 @@ async def evaluate_contract(
     response_model=WorkflowStartResult,
     status_code=status.HTTP_202_ACCEPTED,
     tags=["Workflow"],
-    summary="Run through applicable governed simulated Banking precheck",
+    summary="Run the automatic case workflow through Final Risk readiness",
 )
 async def start_case_workflow(
     payload: AutomaticCaseWorkflowRequest,
     request: Request,
 ) -> WorkflowStartResult:
-    """Run until a typed input/approval pause or non-binding results are ready."""
+    """Run until a typed pause, fail-safe boundary, or Final Risk readiness."""
     return await _runtime(request).start_case_workflow(
         contract_id=payload.contract_id,
         evaluation_scope=payload.evaluation_scope,
         as_of_date=payload.as_of_date,
+        run_request_id=payload.run_request_id,
     )
 
 
@@ -143,6 +146,36 @@ async def case_workflow_status(
         return await _runtime(request).case_workflow_summary(workflow_run_id)
     except CaseWorkflowNotFoundError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+
+
+@router.get(
+    "/workflows/{workflow_run_id}/dashboard",
+    response_model=DashboardWorkflowProjection,
+    tags=["Workflow"],
+    summary="Inspect the Founder-facing projection for one workflow run",
+)
+async def case_workflow_dashboard(
+    workflow_run_id: str,
+    request: Request,
+) -> DashboardWorkflowProjection:
+    """Return canonical stages and run-scoped presentation data without evidence detail."""
+
+    runtime = _runtime(request)
+    try:
+        summary = await runtime.case_workflow_summary(workflow_run_id)
+    except CaseWorkflowNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    if summary.evaluation_case_id is None:
+        artifacts: tuple[ArtifactEnvelope, ...] = ()
+        approvals: tuple[ApprovalRequest, ...] = ()
+    else:
+        artifacts = await runtime.artifacts_for_case(summary.evaluation_case_id)
+        approvals = await runtime.approval_requests(summary.evaluation_case_id)
+    return build_dashboard_projection(
+        summary=summary,
+        artifacts=artifacts,
+        approvals=approvals,
+    )
 
 
 @router.post(
@@ -470,7 +503,7 @@ async def document_preparation(
     response_model=BankingInputSupplementResponse,
     status_code=status.HTTP_202_ACCEPTED,
     tags=["Banking"],
-    summary="Supply the pending VND amount and automatically resume the workflow",
+    summary="Resolve a legacy pending Banking amount gap",
     responses={
         404: {"description": "Workflow or evaluation case was not found"},
         409: {"description": "Workflow/request is not waiting for this input"},
@@ -482,7 +515,7 @@ async def submit_banking_input(
     request: Request,
     response: Response,
 ) -> BankingInputSupplementResponse:
-    """Persist USER_INPUT evidence without modifying the TeamPack or calling a bank."""
+    """Handle only an explicit legacy amount gap; normal Planner-linked cases reject it."""
     try:
         result, workflow = await _runtime(request).submit_banking_input(
             evaluation_case_id=evaluation_case_id,

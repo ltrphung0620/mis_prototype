@@ -15,7 +15,6 @@ from opc_mis.domain.enums import (
     ArtifactType,
     BankingDiscoveryHandoffStatus,
     ComponentStatus,
-    CurrencyCode,
     DecisionCapability,
     DecisionHandoffMode,
     DecisionRouteOutcome,
@@ -79,6 +78,15 @@ class DecisionBankingHandoff:
 
         plan = handoff_context.route_plan
         if plan.route_outcome is DecisionRouteOutcome.DIRECT_INTERNAL_DECISION:
+            if (
+                plan.required_capabilities
+                != (DecisionCapability.INTERNAL_DECISION_PACKAGE,)
+                or plan.banking_need_types
+                or plan.routing_reasons
+            ):
+                return self._failed_safe(
+                    "The direct Decision route contains inconsistent Banking work."
+                )
             return BankingDiscoveryHandoffComponentResult(
                 status=ComponentStatus.COMPLETED,
                 handoff_status=BankingDiscoveryHandoffStatus.NOT_APPLICABLE,
@@ -98,6 +106,7 @@ class DecisionBankingHandoff:
             != (DecisionCapability.BANKING_INTERNAL_DISCOVERY,)
             or not plan.banking_need_types
             or not plan.routing_reasons
+            or len(plan.routing_reasons) != 1
             or {item.banking_need_type for item in plan.routing_reasons}
             != set(plan.banking_need_types)
             or any(
@@ -109,6 +118,7 @@ class DecisionBankingHandoff:
                 "The Decision route is inconsistent with Banking discovery handoff."
             )
 
+        reason = plan.routing_reasons[0]
         evidence_ids = tuple(
             sorted(
                 {
@@ -119,7 +129,10 @@ class DecisionBankingHandoff:
             )
         )
         evidence_refs = self._evidence_closure(
-            handoff_context.route_artifact.evidence_refs,
+            (
+                *handoff_context.evaluation_case_artifact.evidence_refs,
+                *handoff_context.route_artifact.evidence_refs,
+            ),
             evidence_ids,
         )
         source_artifact_ids = tuple(
@@ -136,6 +149,12 @@ class DecisionBankingHandoff:
                 plan.evaluation_case_id,
                 plan.route_plan_id,
                 plan.banking_need_types,
+                reason.requirement_id,
+                reason.credit_case_id,
+                reason.requested_amount,
+                reason.requested_amount_currency,
+                reason.amount_semantics,
+                reason.amount_evidence_ids,
                 evidence_ids,
                 source_artifact_ids,
             ),
@@ -145,8 +164,12 @@ class DecisionBankingHandoff:
             execution_mode=mode,
             requested_capability=DecisionCapability.BANKING_INTERNAL_DISCOVERY,
             need_types=plan.banking_need_types,
-            requested_amount=None,
-            requested_amount_currency=CurrencyCode.VND,
+            requirement_id=reason.requirement_id,
+            credit_case_id=reason.credit_case_id,
+            requested_amount=reason.requested_amount,
+            requested_amount_currency=reason.requested_amount_currency,
+            amount_semantics=reason.amount_semantics,
+            amount_evidence_ids=reason.amount_evidence_ids,
             constraints=(),
             source_route_artifact_id=handoff_context.route_artifact.artifact_id,
             source_route_plan_id=plan.route_plan_id,
@@ -164,7 +187,12 @@ class DecisionBankingHandoff:
                 "source_route_plan_id": request.source_route_plan_id,
                 "requested_capability": request.requested_capability,
                 "need_types": request.need_types,
+                "requirement_id": request.requirement_id,
+                "credit_case_id": request.credit_case_id,
+                "requested_amount": request.requested_amount,
                 "requested_amount_currency": request.requested_amount_currency,
+                "amount_semantics": request.amount_semantics,
+                "amount_evidence_ids": request.amount_evidence_ids,
                 "evidence_ids": request.evidence_ids,
             },
         )

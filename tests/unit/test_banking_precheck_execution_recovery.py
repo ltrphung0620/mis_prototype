@@ -87,6 +87,9 @@ class _PermitIssuer:
     async def issue(self, **_kwargs: object) -> AuthorizedActionPermit:
         return self._permit
 
+    async def historical_permit_id_for_reuse(self, **_kwargs: object) -> str:
+        return self._permit.permit_id
+
 
 class _Resolver:
     def __init__(self, requests: tuple[BankingPrecheckRequest, ...]) -> None:

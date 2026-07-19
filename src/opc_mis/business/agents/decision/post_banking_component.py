@@ -199,6 +199,16 @@ class DecisionPostBankingReviewer:
                     "immutable BankingInputSupplement."
                 ),
             )
+        if source is BankingPrecheckFieldSource.BANKING_DISCOVERY_REQUEST:
+            return (
+                "BANKING_PRECHECK_SOURCE_REQUIRED",
+                "requested_amount",
+                "positive integer VND amount from a Planner-linked credit profile",
+                (
+                    "The Banking discovery request is missing the Planner-selected "
+                    "credit-profile requested amount; the source dataset must be corrected."
+                ),
+            )
         if source is BankingPrecheckFieldSource.OPC_PROFILE:
             return (
                 "BANKING_COMPANY_PROFILE_REQUIRED",

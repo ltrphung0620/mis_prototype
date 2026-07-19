@@ -158,6 +158,11 @@ class BankingDiscoverySkill:
         common_identity = {
             "source_artifact_ids": matrix.source_artifact_ids,
             "request_id": matrix.request_id,
+            "requested_amount": matrix.requested_amount,
+            "requested_amount_currency": matrix.requested_amount_currency,
+            "request_amount_evidence_ids": (
+                discovery_context.request.amount_evidence_ids
+            ),
             "supplement_id": (
                 discovery_context.supplement.supplement_id
                 if discovery_context.supplement is not None
@@ -302,7 +307,16 @@ class BankingDiscoverySkill:
             "BOM",
             context.evaluation_case.evaluation_case_id,
             context.request.request_id,
-            context.supplement.supplement_id if context.supplement else None,
+            context.request_artifact.artifact_id,
+            context.requested_amount,
+            context.requested_amount_currency,
+            context.request.amount_evidence_ids,
+            (
+                context.supplement.supplement_id
+                if context.request.requested_amount is None
+                and context.supplement is not None
+                else None
+            ),
             context.dataset.snapshot_hash,
             self._policy.policy_id,
             self._policy.mapping_version,
@@ -322,16 +336,8 @@ class BankingDiscoverySkill:
             mapping_hash=self._policy.policy_hash,
             discovery_status=discovery_status,
             requested_need_types=context.request.need_types,
-            requested_amount=(
-                context.supplement.requested_amount
-                if context.supplement is not None
-                else None
-            ),
-            requested_amount_currency=(
-                context.supplement.requested_amount_currency
-                if context.supplement is not None
-                else context.request.requested_amount_currency
-            ),
+            requested_amount=context.requested_amount,
+            requested_amount_currency=context.requested_amount_currency,
             explicit_credit_case_ids=context.evaluation_case.related_credit_case_ids,
             candidates=tuple(candidates),
             data_gaps=data_gaps,
@@ -380,22 +386,22 @@ class BankingDiscoverySkill:
             if gap.code is BankingDataGapCode.REQUESTED_AMOUNT_UNAVAILABLE
             for evidence_id in gap.evidence_ids
         )
-        supplement_evidence = self._supplement_evidence(context)
+        amount_evidence = self._amount_evidence(context)
         minimum_amount = self._number(product, "minimum_amount")
         minimum_status = BankingCriterionStatus.NOT_EVALUABLE
         minimum_detail = (
-            "Minimum amount cannot be evaluated until an input supplement exists."
+            "Minimum amount cannot be evaluated until an evidence-backed amount exists."
         )
-        if context.supplement is not None:
+        if context.requested_amount is not None:
             if minimum_amount is None:
                 minimum_status = BankingCriterionStatus.NOT_APPLICABLE
                 minimum_detail = "The configured option does not publish a minimum amount."
-            elif context.supplement.requested_amount >= minimum_amount:
+            elif context.requested_amount >= minimum_amount:
                 minimum_status = BankingCriterionStatus.PASS
-                minimum_detail = "The supplied amount meets the catalog minimum."
+                minimum_detail = "The requested amount meets the catalog minimum."
             else:
                 minimum_status = BankingCriterionStatus.FAIL
-                minimum_detail = "The supplied amount is below the catalog minimum."
+                minimum_detail = "The requested amount is below the catalog minimum."
         criteria = (
             BankingCriterion(
                 criterion_id=deterministic_id(
@@ -420,7 +426,7 @@ class BankingDiscoverySkill:
                         (
                             self._field_evidence_id(product_evidence, "minimum_amount"),
                             *amount_gap_evidence,
-                            *(item.evidence_id for item in supplement_evidence),
+                            *(item.evidence_id for item in amount_evidence),
                         )
                     )
                 ),
@@ -478,7 +484,7 @@ class BankingDiscoverySkill:
             product_evidence,
             precheck_evidence,
             credit_evidence,
-            supplement_evidence,
+            amount_evidence,
         )
         candidate_evidence_ids = tuple(
             dict.fromkeys(
@@ -595,7 +601,7 @@ class BankingDiscoverySkill:
         specifications: list[
             tuple[BankingDataGapCode, str, str, tuple[EvidenceRef, ...]]
         ] = []
-        if context.supplement is None:
+        if context.requested_amount is None:
             specifications.append(
                 (
                     BankingDataGapCode.REQUESTED_AMOUNT_UNAVAILABLE,
@@ -639,16 +645,22 @@ class BankingDiscoverySkill:
         return tuple(by_id[item] for item in context.request.evidence_ids)
 
     @staticmethod
-    def _supplement_evidence(
+    def _amount_evidence(
         context: BankingDiscoveryContext,
     ) -> tuple[EvidenceRef, ...]:
-        if context.supplement is None or context.supplement_artifact is None:
-            return ()
-        by_id = {
-            item.evidence_id: item
-            for item in context.supplement_artifact.evidence_refs
-        }
-        return tuple(by_id[item] for item in context.supplement.evidence_ids)
+        if context.request.requested_amount is not None:
+            by_id = {
+                item.evidence_id: item
+                for item in context.request_artifact.evidence_refs
+            }
+            return tuple(by_id[item] for item in context.request.amount_evidence_ids)
+        if context.supplement is not None and context.supplement_artifact is not None:
+            by_id = {
+                item.evidence_id: item
+                for item in context.supplement_artifact.evidence_refs
+            }
+            return tuple(by_id[item] for item in context.supplement.evidence_ids)
+        return ()
 
     def _binding_evidence(self, binding: BankingNeedBinding) -> EvidenceRef:
         return self._policy_evidence(

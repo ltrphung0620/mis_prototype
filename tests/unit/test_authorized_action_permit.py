@@ -182,6 +182,25 @@ async def _issue(arrangement: _Arrangement) -> AuthorizedActionPermit:
     )
 
 
+async def _save_globally_superseding_policy(
+    arrangement: _Arrangement,
+) -> ArtifactEnvelope:
+    policy_artifact_id = arrangement.request.policy_artifact_id
+    assert policy_artifact_id is not None
+    bound_policy = await arrangement.artifacts.get(policy_artifact_id)
+    assert bound_policy is not None
+    superseding_policy = bound_policy.model_copy(
+        update={
+            "artifact_id": "ART-DOWNSTREAM-POLICY-V2",
+            "version": 2,
+            "input_hash": "HASH-DOWNSTREAM-POLICY-V2",
+            "created_at": datetime(2026, 7, 18, 10, 0, tzinfo=UTC),
+        }
+    )
+    await arrangement.artifacts.save(superseding_policy)
+    return superseding_policy
+
+
 def test_exact_approved_latest_subject_issues_stable_ephemeral_permit() -> None:
     async def scenario() -> None:
         arranged = await _arrange()
@@ -203,6 +222,88 @@ def test_exact_approved_latest_subject_issues_stable_ephemeral_permit() -> None:
         assert first.authorized_at == DECIDED_AT
         assert await arranged.artifacts.list_by_case(CASE_ID) == artifacts_before
         assert await arranged.approvals.list_by_case(CASE_ID) == approvals_before
+
+    asyncio.run(scenario())
+
+
+def test_historical_reuse_reconstructs_id_without_executable_permit() -> None:
+    async def scenario() -> None:
+        arranged = await _arrange()
+        originally_issued = await _issue(arranged)
+        await _save_globally_superseding_policy(arranged)
+
+        with pytest.raises(
+            AuthorizationPermitError,
+            match="policy artifact is no longer current",
+        ):
+            await _issue(arranged)
+
+        artifacts_before = await arranged.artifacts.list_by_case(CASE_ID)
+        approvals_before = await arranged.approvals.list_by_case(CASE_ID)
+        historical_id = await arranged.issuer.historical_permit_id_for_reuse(
+            approval_request_id=REQUEST_ID,
+            workflow_run_id=WORKFLOW_ID,
+            evaluation_case_id=CASE_ID,
+            expected_subject_artifact_id=SUBJECT_ID,
+        )
+
+        assert historical_id == originally_issued.permit_id
+        assert isinstance(historical_id, str)
+        assert not isinstance(historical_id, AuthorizedActionPermit)
+        assert await arranged.artifacts.list_by_case(CASE_ID) == artifacts_before
+        assert await arranged.approvals.list_by_case(CASE_ID) == approvals_before
+
+    asyncio.run(scenario())
+
+
+@pytest.mark.parametrize(
+    ("tampered_binding", "expected_error"),
+    (
+        ("request", "version or business input hash has changed"),
+        ("subject", "subject is not validated"),
+        ("policy", "policy artifact identity or validation is invalid"),
+    ),
+)
+def test_historical_reuse_still_requires_exact_bound_authorization(
+    tampered_binding: str,
+    expected_error: str,
+) -> None:
+    async def scenario() -> None:
+        arranged = await _arrange()
+        await _save_globally_superseding_policy(arranged)
+        if tampered_binding == "request":
+            await arranged.approvals.save(
+                arranged.request.model_copy(
+                    update={"subject_input_hash": "TAMPERED-SUBJECT-HASH"}
+                )
+            )
+        elif tampered_binding == "subject":
+            await arranged.artifacts.save(
+                arranged.subject.model_copy(
+                    update={"validation_status": ValidationStatus.BLOCKED}
+                )
+            )
+        else:
+            policy_artifact_id = arranged.request.policy_artifact_id
+            assert policy_artifact_id is not None
+            bound_policy = await arranged.artifacts.get(policy_artifact_id)
+            assert bound_policy is not None
+            await arranged.artifacts.save(
+                bound_policy.model_copy(
+                    update={"input_hash": "TAMPERED-POLICY-HASH"}
+                )
+            )
+
+        with pytest.raises(
+            AuthorizationPermitError,
+            match=expected_error,
+        ):
+            await arranged.issuer.historical_permit_id_for_reuse(
+                approval_request_id=REQUEST_ID,
+                workflow_run_id=WORKFLOW_ID,
+                evaluation_case_id=CASE_ID,
+                expected_subject_artifact_id=SUBJECT_ID,
+            )
 
     asyncio.run(scenario())
 

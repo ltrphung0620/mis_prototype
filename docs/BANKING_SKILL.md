@@ -19,7 +19,6 @@ BANKING_DISCOVERY_REQUEST
   -> BANKING_OPTION_ADVICE
   -> BANKING_PRECHECK_READINESS
   -> DECISION_POST_BANKING_REVIEW
-      -> missing amount: WAITING_FOR_INPUT
       -> evidence ready: BANKING_PRECHECK_READY
           -> BANKING_PRECHECK_SUBMISSION_PROPOSAL
           -> proposal-scoped Governance policy
@@ -47,21 +46,34 @@ simulation, not an external submission or provider decision.
 ## Authoritative inputs and explicit relationships
 
 Initial discovery receives validated `EVALUATION_CASE` and `BANKING_DISCOVERY_REQUEST` artifacts.
-The Decision request deliberately keeps:
+For a supported required performance-bond route, the Decision request carries:
 
 ```json
 {
-  "requested_amount": null,
-  "requested_amount_currency": "VND"
+  "requirement_id": "CREQ-...",
+  "credit_case_id": "CR-...",
+  "requested_amount": 420000000,
+  "requested_amount_currency": "VND",
+  "amount_semantics": "CREDIT_PROFILE_REQUESTED_AMOUNT",
+  "amount_evidence_ids": ["EVD-..."]
 }
 ```
 
-Decision does not copy a number from contract text or from an unlinked credit profile. The request
-is immutable after persistence.
+The number is illustrative. Production logic never hard-codes a contract or amount. Planner first
+classifies an exact configured requirement phrase, then resolves one Credit Profile through the
+conjunction of exact OPC company ID, exact request type, and one canonical contract-ID token. It
+accepts only one matching record with a positive integral `requested_amount`. Similar names,
+unscoped descriptions, multiple candidates, or an invalid amount are never guessed.
+
+Decision does not calculate or reinterpret the number; it carries the exact typed Planner
+requirement and evidence into an immutable request. `requested_amount` means the amount requested or
+referenced by the Credit Profile. It is not a bank-supported amount, bank approval, guarantee limit,
+or financing commitment.
 
 Dataset Ingestion reads these exact TeamPack sheets and keys:
 
 - `02_OPC_PROFILE`, keyed by `field`;
+- `10_CREDIT_PROFILE`, keyed by `credit_case_id`;
 - `11_BANK_PRODUCTS`, keyed by `bank_product_id`;
 - `12_API_CATALOG`, keyed by `api_id`; and
 - `22_API_HANDLING_RULES`, keyed by `rule_id`.
@@ -73,7 +85,7 @@ No relationship is inferred from similar names or descriptions. The typed server
 PERFORMANCE_BOND -> BANKPROD-002 -> API-002
 
 API-002.contract_id     -> EVALUATION_CASE
-API-002.amount          -> BANKING_INPUT_SUPPLEMENT
+API-002.amount          -> BANKING_DISCOVERY_REQUEST
 API-002.company_profile -> OPC_PROFILE
 ```
 
@@ -81,10 +93,12 @@ The comma-separated `required_fields` value in `12_API_CATALOG` remains source m
 compared with the explicit server mapping but is never parsed into an implicit source relationship.
 The policy ID, version, and canonical hash participate in artifact and workflow identity.
 
-`10_CREDIT_PROFILE` is used only when `EvaluationCase.related_credit_case_ids` explicitly selects a
-record. Descriptive text such as `collateral_or_basis = "Contract ..."` is not a foreign key. A
-missing credit-profile relationship may remain a discovery limitation, but it is not a precheck
-blocker because `company_profile` has the separate explicit `02_OPC_PROFILE` source.
+`10_CREDIT_PROFILE` contributes an amount only after Planner has created the explicit
+`ContractRequirement` and added the exact `credit_case_id` to
+`EvaluationCase.related_credit_case_ids`. A contract ID appearing somewhere in prose is not enough
+on its own. The complete configured relationship test above must be unique and evidence-backed.
+`company_profile` remains a different API field sourced from `02_OPC_PROFILE`; Credit Profile is
+never substituted for the company profile.
 
 ## Internal option matrix
 
@@ -98,19 +112,16 @@ contains:
 - source handling text marked `SOURCE_GUIDANCE_ONLY`; and
 - explicit blocking and non-blocking limitations.
 
-For the first run, the immutable request has no amount. Matrix version 1 therefore contains
-`requested_amount: null`, emits `REQUESTED_AMOUNT_UNAVAILABLE`, and records `MINIMUM_AMOUNT` as
-`NOT_EVALUABLE`. This matrix remains stored exactly as created.
+On the normal supported route, the first immutable request already contains the positive amount.
+The first matrix therefore:
 
-When a valid supplement arrives, Workflow includes that new artifact in Banking's input identity
-and runs internal discovery again. It does not overwrite version 1. It persists matrix/result/advice
-version 2, where:
+- carries the exact `requested_amount` and canonical `VND`;
+- traces amount evidence through `BANKING_DISCOVERY_REQUEST` back to the raw
+  `10_CREDIT_PROFILE.requested_amount` cell retained by `EVALUATION_CASE`; and
+- records deterministic `PASS` or `FAIL` for `MINIMUM_AMOUNT` against the catalog value.
 
-- `requested_amount` is the supplemented positive integer;
-- currency is canonical `VND`;
-- amount evidence traces to `BANKING_INPUT_SUPPLEMENT` with `source_type = USER_INPUT`;
-- `REQUESTED_AMOUNT_UNAVAILABLE` is removed; and
-- `MINIMUM_AMOUNT` becomes deterministic `PASS` or `FAIL` against the catalog value.
+If the request claims an amount without matching requirement, Credit Profile, semantics, and raw
+evidence, Banking fails safe. It does not ask a human for a replacement value.
 
 The minimum is read from `11_BANK_PRODUCTS`; Decision and Workflow contain no hard-coded monetary
 threshold.
@@ -134,7 +145,7 @@ Option-level readiness may be:
 |---|---|
 | `READY` | Required fields and deterministic option requirements are satisfied. |
 | `PARTIALLY_READY` | Some evidence is available, but the option is not ready. |
-| `INPUT_REQUIRED` | A mapped user input, currently the requested amount, is absent. |
+| `INPUT_REQUIRED` | A mapped legacy input is absent; this is not expected in the normal required performance-bond route because Planner blocks first. |
 | `NOT_CONFIGURED` | The option has no mapped mock precheck API. |
 | `UNSUPPORTED_MAPPING` | Catalog fields and explicit policy mapping cannot be reconciled safely. |
 | `OPTION_REQUIREMENTS_NOT_MET` | A deterministic product requirement fails. |
@@ -142,45 +153,21 @@ Option-level readiness may be:
 The aggregate artifact indexes ready and pending option IDs. Every option and the aggregate keep
 `precheck_executed: false`.
 
-## Durable missing input and immutable supplement
+## Amount authority and legacy compatibility
 
-Decision post-Banking review reads the readiness artifact. If the amount is missing, it creates a
-durable blocking `MissingDataRequest`. Master Workflow persists the request and pauses at:
+For a new required performance-bond case, Planner owns amount resolution. Missing, ambiguous, or
+invalid evidence creates a blocking Planner `MissingDataRequest`; Finance, Decision, Banking, and
+Founder do not invent or override the amount downstream.
 
-```text
-status        = WAITING_FOR_INPUT
-current_stage = DECISION_POST_BANKING_REVIEW
-```
+`BANKING_INPUT_SUPPLEMENT` and its endpoint remain only as a compatibility/recovery mechanism for
+older persisted requests that legitimately predate the Planner requirement binding. They are not
+part of the normal flow described here, cannot override a non-null authoritative
+`BANKING_DISCOVERY_REQUEST` amount, and are submitted by an authorized staff principal rather than
+the Founder. Evidence intake is not approval and creates no `ApprovalRequest`.
 
-Authorized staff supplies the exact pending request through:
-
-```http
-POST /api/cases/{evaluation_case_id}/banking/input-supplements
-```
-
-```json
-{
-  "workflow_run_id": "CWF-...",
-  "missing_request_id": "MDR-...",
-  "requested_amount": 350000000,
-  "requested_amount_currency": "VND",
-  "evidence_note": "Amount confirmed for readiness assessment."
-}
-```
-
-The numeric amount above is an API example only. No contract-specific amount is embedded in
-Decision, Banking, Workflow, or policy configuration.
-
-The amount must be a strict positive integer. Only `VND` is accepted. The server derives dataset,
-contract, case, Banking-request identity, and the prototype principal `AUTHORIZED_STAFF`; the
-client cannot replace or spoof them. It also verifies that the request is still open for the same
-case and workflow. Founder identity is reserved for approval/business-confirmation endpoints.
-
-The `202` response returns the immutable supplement, a compact artifact reference, and a workflow
-status pointer. The Orchestrator then auto-resumes the same run. The user does not call generic
-resume after a successful supplement.
-
-Submitting input is evidence resolution, not approval. It creates no `ApprovalRequest`.
+Founder interaction happens only when Governance evaluates a concrete protected action or option
+under loaded policy. In this slice that can be the exact `SUBMIT_BANKING_PRECHECK` proposal; it is
+not an amount-capture checkpoint.
 
 ## Optional OpenAI advisor
 
@@ -208,7 +195,7 @@ The request resolver then builds one in-memory request for every authorized prop
 the same order. It resolves only the proposal's explicit bindings:
 
 - `contract_id` from the validated `EVALUATION_CASE`;
-- `amount` from the validated `BANKING_INPUT_SUPPLEMENT`; and
+- `amount` from the validated `BANKING_DISCOVERY_REQUEST`, with Planner/Credit Profile lineage; and
 - `company_profile` from the explicitly indexed `02_OPC_PROFILE` records.
 
 Request hashes and idempotency keys bind the permit, proposal artifact, proposal item, and exact
@@ -292,21 +279,17 @@ from a document reference into an external API request.
 Business components return drafts only. Workflow validates before persistence and owns versions,
 input hashes, node attempts, pause/resume, and latest-artifact selection.
 
-The applicable artifact chain is:
+The normal applicable artifact chain is:
 
 ```text
-BANKING_DISCOVERY_REQUEST v1 (amount remains null)
+EVALUATION_CASE (typed required performance bond + exact Credit Profile amount)
+  -> DECISION_ROUTE_PLAN
+  -> BANKING_DISCOVERY_REQUEST (amount + requirement/evidence lineage)
   -> BANKING_OPTION_MATRIX v1
   -> BANKING_DISCOVERY_RESULT v1
   -> BANKING_OPTION_ADVICE v1
   -> BANKING_PRECHECK_READINESS v1
-  -> DECISION_POST_BANKING_REVIEW v1 + MissingDataRequest
-  -> BANKING_INPUT_SUPPLEMENT v1
-  -> BANKING_OPTION_MATRIX v2
-  -> BANKING_DISCOVERY_RESULT v2
-  -> BANKING_OPTION_ADVICE v2
-  -> BANKING_PRECHECK_READINESS v2
-  -> DECISION_POST_BANKING_REVIEW v2
+  -> DECISION_POST_BANKING_REVIEW v1
       -> ready option: BANKING_PRECHECK_READY
          -> BANKING_PRECHECK_SUBMISSION_PROPOSAL
          -> proposal-scoped APPROVAL_CHECKPOINTS
@@ -327,23 +310,23 @@ BANKING_DISCOVERY_REQUEST v1 (amount remains null)
       -> no ready option: typed non-ready outcome
 ```
 
-Earlier envelopes are never mutated. Repeating the same supplement or workflow request reuses the
-same business inputs instead of creating a third version.
+Earlier envelopes are never mutated. Repeating the same workflow request with identical business
+inputs reuses the same artifact identities.
 
 ## Current TeamPack behavior
 
-With the current TeamPack and server mapping, CON-004 has one configured performance-bond
-candidate, `BANKPROD-002`, mapped to mock API metadata `API-002`. Initial discovery cannot evaluate
-its catalog minimum because the Decision request contains no amount. Decision review therefore
-pauses for explicit input. This is observed dataset behavior, not contract-specific production
-logic.
+With the current TeamPack and server mapping, CON-004 is an example with one required
+performance-bond requirement, one exact linked Credit Profile requested amount, and one configured
+candidate, `BANKPROD-002`, mapped to mock API metadata `API-002`. Planner supplies the amount and
+lineage before Initial Assessment continues, so Banking evaluates the catalog minimum on its first
+normal matrix. This is observed dataset behavior, not contract-specific production logic.
 
-After a valid amount supplement, Banking reevaluates the catalog criterion and readiness. When a
-ready option exists, Decision records `BANKING_PRECHECK_READY`. Banking then creates a proposal
+When a ready option exists, Decision records `BANKING_PRECHECK_READY`. Banking then creates a proposal
 containing every READY option without ranking or selection. The proposal keeps exact fee,
 processing-fee, collateral-ratio, and minimum-amount catalog terms plus reference-only API field
 bindings. Because there is one candidate in the current TeamPack, the OpenAI advisor remains
-`NOT_INVOKED` on both matrix versions. After Founder approval, the configured `API-002` simulation
+`NOT_INVOKED`. If Governance determines that the exact protected action requires Founder approval,
+approval authorizes only that proposal. The configured `API-002` simulation then
 returns `CONDITIONAL_PRECHECK` with `ELIGIBLE`/`CONDITIONAL`, echoes the authorized requested amount
 for the full-coverage test path, and supplies controlled document/condition codes. This remains
 `SIMULATED_NON_BINDING`, not a real response, approval or offer from VietinBank. Decision preserves

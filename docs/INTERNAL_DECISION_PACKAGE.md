@@ -3,7 +3,7 @@
 ## Purpose
 
 `INTERNAL_DECISION_PACKAGE` is the deterministic evidence dossier produced after an eligible,
-nonblocked Decision branch has reached a stable internal outcome. It gives a later Decision policy
+nonblocked Decision branch has reached a stable internal outcome. It gives the downstream Decision phase
 one validated, case-consistent snapshot instead of requiring that phase to rediscover artifacts
 from the workflow history.
 
@@ -165,12 +165,15 @@ Only `CONDITIONAL_DOCUMENT_READY` requires Document Skill. The included
 is unauthorized and no external send occurred. Direct, no-viable-option, no-precheck-path,
 precheck-declined, and non-actionable paths must not invent or require a Document package.
 
-The Internal Decision Package itself is also not an external-release proposal. A later explicit
-Decision-policy phase must first produce an evidence-bound recommendation/proposal. If that later
-proposal requests `SEND_DOCUMENT_TO_EXTERNAL_PARTNER`, Governance must evaluate the separate
-protected action and the Founder must review it when policy requires. Only after authorization may
-a future connector boundary be invoked. That Decision recommendation, protected-action flow, real
-connector, provider receipt, retry, and delivery reconciliation are outside the current phase.
+The Internal Decision Package itself is also not an external-release proposal. The implemented
+downstream Decision phase first builds a deterministic scenario, guarded analysis, and
+evidence-bound Card. Only an approved `ACCEPT` Card with the exact release-package snapshot may
+produce `EXTERNAL_DOCUMENT_SUBMISSION_PROPOSAL`. Governance then evaluates
+`SEND_DOCUMENT_TO_EXTERNAL_PARTNER` as a new protected action; the final-decision approval cannot
+authorize it. An affirmative proposal approval reaches only `READY_FOR_EXTERNAL_SUBMISSION`.
+The real connector, provider receipt, retry, and delivery reconciliation remain outside the
+implemented boundary. See
+[Decision, Final Approval, and External-Release Readiness](DECISION_FINAL_APPROVAL_AND_RELEASE.md).
 
 ### Legacy external-release workflow states
 

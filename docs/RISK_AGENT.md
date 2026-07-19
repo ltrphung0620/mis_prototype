@@ -151,8 +151,10 @@ Implemented mappings are source-field based, not contract-ID or rule-row based:
 
 The document-send checkpoint remains registered but dormant when Document merely creates
 `DOCUMENT_RELEASE_PACKAGE`. Package readiness is an internal Decision handoff, not the
-`DOCUMENT_EXTERNAL_RELEASE_REQUESTED` event. Only a future validated Decision
-recommendation/proposal may supply the matching protected action; that phase is not implemented.
+`DOCUMENT_EXTERNAL_RELEASE_REQUESTED` event. The implemented downstream Decision flow may supply
+the matching protected action only after an exact `ACCEPT` Card is approved and an
+`EXTERNAL_DOCUMENT_SUBMISSION_PROPOSAL` is validated. That later request is separate from the
+final-decision approval and still stops before any external connector call.
 
 Swagger exposes checkpoint inspection, protected-action evaluation, approval request listing, and
 human approve/reject endpoints under the `Governance` tag. Approval requests bind the subject

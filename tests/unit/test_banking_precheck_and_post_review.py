@@ -20,7 +20,6 @@ from opc_mis.business.skills.banking.precheck_readiness_context import (
     BankingPrecheckReadinessContextLoader,
 )
 from opc_mis.domain.artifacts import ArtifactDraft
-from opc_mis.domain.banking_models import BankingInputSupplement
 from opc_mis.domain.enums import (
     ArtifactType,
     BankingCriterionCode,
@@ -30,12 +29,9 @@ from opc_mis.domain.enums import (
     BankingPrecheckFieldStatus,
     BankingPrecheckReadinessStatus,
     ComponentStatus,
-    CurrencyCode,
     DecisionPostBankingOutcome,
-    SourceType,
     ValidationStatus,
 )
-from opc_mis.domain.evidence import EvidenceRef
 from opc_mis.domain.team_pack import SheetRegistry
 from opc_mis.governance.evidence_validator import EvidenceValidator
 from opc_mis.infrastructure.persistence.memory_artifact_repository import (
@@ -45,9 +41,11 @@ from opc_mis.infrastructure.persistence.memory_dataset_repository import (
     InMemoryDatasetRepository,
 )
 from tests.unit.test_banking_discovery import (
+    AMOUNT_EVIDENCE,
     BASE_EVIDENCE,
     CASE_ID,
     CONTRACT_ID,
+    _amount_evidence,
     _case,
     _envelope,
     _execution_context,
@@ -58,38 +56,6 @@ from tests.unit.test_banking_discovery import (
 )
 
 
-def _supplement(amount: int) -> tuple[BankingInputSupplement, EvidenceRef]:
-    evidence = EvidenceRef(
-        evidence_id=f"EVD-SUPPLEMENT-{amount}",
-        source_type=SourceType.USER_INPUT,
-        sheet="BANKING_INPUT_SUPPLEMENT",
-        row_number=0,
-        record_id=f"SUPPLEMENT-{amount}",
-        field="requested_amount",
-        display_value=amount,
-    )
-    return (
-        BankingInputSupplement(
-            supplement_id=f"SUPPLEMENT-{amount}",
-            evaluation_case_id=CASE_ID,
-            dataset_id="DATASET-BANKING-TEST",
-            contract_id=CONTRACT_ID,
-            banking_request_id="BANKING-REQUEST-TEST",
-            requested_amount=amount,
-            requested_amount_currency=CurrencyCode.VND,
-            provider="FOUNDER",
-            note="Amount supplied for deterministic Banking readiness.",
-            resolved_request_ids=("MDR-AMOUNT-TEST",),
-            source_artifact_ids=(
-                "ARTIFACT-EVALUATION-CASE",
-                "ARTIFACT-PRIOR-DECISION-REVIEW",
-            ),
-            evidence_ids=(evidence.evidence_id,),
-        ),
-        evidence,
-    )
-
-
 async def _scenario(
     *,
     amount: int | None,
@@ -98,11 +64,7 @@ async def _scenario(
 ) -> SimpleNamespace:
     datasets = InMemoryDatasetRepository()
     artifacts = InMemoryArtifactRepository()
-    snapshot = _snapshot(1)
-    # Prove that neither readiness nor Decision depends on CREDIT_PROFILE.
-    snapshot.sheets.pop(SheetRegistry.CREDIT_PROFILES.sheet_name, None)
-    snapshot.indexes.pop(SheetRegistry.CREDIT_PROFILES.sheet_name, None)
-    snapshot.headers.pop(SheetRegistry.CREDIT_PROFILES.sheet_name, None)
+    snapshot = _snapshot(1, requested_amount=amount or 420_000_000)
     if include_profile:
         profile_records = [
             _record(
@@ -127,30 +89,29 @@ async def _scenario(
         )
     await datasets.register(snapshot)
 
+    evaluation_case = _case(
+        related_credit_case_ids=(
+            ("CREDIT-UNRELATED",) if amount is not None else ()
+        ),
+        requested_amount=amount or 420_000_000,
+    )
     case_artifact = _envelope(
         artifact_id="ARTIFACT-EVALUATION-CASE",
         artifact_type=ArtifactType.EVALUATION_CASE,
-        payload=_case().model_dump(mode="json"),
+        payload=evaluation_case.model_dump(mode="json"),
+        evidence_refs=evaluation_case.evidence_refs,
     )
     request_artifact = _envelope(
         artifact_id="ARTIFACT-BANKING-REQUEST",
         artifact_type=ArtifactType.BANKING_DISCOVERY_REQUEST,
-        payload=_request().model_dump(mode="json"),
+        payload=_request(amount=amount).model_dump(mode="json"),
+        evidence_refs=(
+            BASE_EVIDENCE,
+            *((_amount_evidence(amount),) if amount is not None else ()),
+        ),
     )
     await artifacts.save(case_artifact)
     await artifacts.save(request_artifact)
-    supplement = None
-    supplement_artifact = None
-    if amount is not None:
-        supplement, supplement_evidence = _supplement(amount)
-        supplement_artifact = _envelope(
-            artifact_id=f"ARTIFACT-SUPPLEMENT-{amount}",
-            artifact_type=ArtifactType.BANKING_INPUT_SUPPLEMENT,
-            payload=supplement.model_dump(mode="json"),
-            evidence_refs=(supplement_evidence,),
-        )
-        await artifacts.save(supplement_artifact)
-
     policy = _policy(1)
     discovery = BankingDiscoverySkill(
         context_loader=BankingDiscoveryContextLoader(
@@ -162,7 +123,6 @@ async def _scenario(
     discovery_input_ids = (
         case_artifact.artifact_id,
         request_artifact.artifact_id,
-        *((supplement_artifact.artifact_id,) if supplement_artifact else ()),
     )
     discovery_result = await discovery.execute(
         _execution_context(*discovery_input_ids)
@@ -205,8 +165,8 @@ async def _scenario(
     )
     readiness_input_ids = (
         case_artifact.artifact_id,
+        request_artifact.artifact_id,
         matrix_artifact.artifact_id,
-        *((supplement_artifact.artifact_id,) if supplement_artifact else ()),
     )
     readiness_result = await readiness_skill.execute(
         _execution_context(*readiness_input_ids)
@@ -228,7 +188,6 @@ async def _scenario(
         _execution_context(matrix_artifact.artifact_id, readiness_artifact.artifact_id)
     )
     return SimpleNamespace(
-        supplement=supplement,
         discovery=discovery_result,
         matrix=matrix,
         readiness_result=readiness_result,
@@ -259,7 +218,7 @@ def test_missing_amount_is_assessed_then_decision_owns_the_durable_pause() -> No
     assert fields["contract_id"].status is BankingPrecheckFieldStatus.RESOLVED
     assert fields["contract_id"].source is BankingPrecheckFieldSource.EVALUATION_CASE
     assert fields["amount"].status is BankingPrecheckFieldStatus.MISSING_INPUT
-    assert fields["amount"].source is BankingPrecheckFieldSource.BANKING_INPUT_SUPPLEMENT
+    assert fields["amount"].source is BankingPrecheckFieldSource.BANKING_DISCOVERY_REQUEST
     assert fields["company_profile"].status is BankingPrecheckFieldStatus.RESOLVED
     assert fields["company_profile"].source is BankingPrecheckFieldSource.OPC_PROFILE
 
@@ -268,7 +227,7 @@ def test_missing_amount_is_assessed_then_decision_owns_the_durable_pause() -> No
     assert decision.review.banking_request_id == matrix.request_id
     assert len(decision.missing_data_requests) == 1
     request = decision.missing_data_requests[0]
-    assert request.requirement_code == "BANKING_PRECHECK_AMOUNT_REQUIRED"
+    assert request.requirement_code == "BANKING_PRECHECK_SOURCE_REQUIRED"
     assert request.target_record == matrix.request_id
     assert request.field == "requested_amount"
     assert decision.review.missing_data_requests == decision.missing_data_requests
@@ -279,7 +238,7 @@ def test_missing_amount_is_assessed_then_decision_owns_the_durable_pause() -> No
     assert decision.action_commands == ()
 
 
-def test_valid_supplement_resolves_exact_sources_and_reaches_ready_review() -> None:
+def test_discovery_request_amount_resolves_exact_sources_and_reaches_ready_review() -> None:
     scenario = asyncio.run(_scenario(amount=420_000_000))
     matrix = scenario.matrix
     readiness = scenario.readiness
@@ -406,7 +365,7 @@ def test_validator_blocks_numeric_amount_status_and_lineage_tampering() -> None:
             "evidence_ids": tuple(
                 evidence_id
                 for evidence_id in minimum.evidence_ids
-                if evidence_id not in scenario.supplement.evidence_ids
+                if evidence_id != AMOUNT_EVIDENCE.evidence_id
             ),
         }
     )
@@ -433,7 +392,10 @@ def test_validator_blocks_numeric_amount_status_and_lineage_tampering() -> None:
 
     assert report.status is ValidationStatus.BLOCKED
     assert any("numeric inputs" in error for error in report.blocking_errors)
-    assert any("exact USER_INPUT" in error for error in report.blocking_errors)
+    assert any(
+        "exact requested-amount evidence" in error
+        for error in report.blocking_errors
+    )
 
 
 def test_validator_blocks_non_finite_values_and_non_immutable_request() -> None:

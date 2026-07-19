@@ -127,6 +127,7 @@ class AutomaticCaseWorkflowRequest(BaseModel):
                 "contract_id": "CONTRACT-ID",
                 "evaluation_scope": ["FINANCE", "OPERATIONS", "RISK"],
                 "as_of_date": "2026-07-16",
+                "run_request_id": "0190f15a-9b7d-7000-8000-000000000001",
             }
         },
     )
@@ -138,6 +139,17 @@ class AutomaticCaseWorkflowRequest(BaseModel):
         EvaluationScope.RISK,
     )
     as_of_date: date | None = None
+    run_request_id: str | None = Field(
+        default=None,
+        min_length=8,
+        max_length=128,
+        pattern=r"^[A-Za-z0-9][A-Za-z0-9._:-]*$",
+        description=(
+            "Client-generated idempotency key for one intentional workflow run. "
+            "Reuse the same key when retrying the same start request; use a new key "
+            "only when the user explicitly starts a new evaluation run."
+        ),
+    )
 
     @field_validator("contract_id")
     @classmethod
@@ -264,7 +276,7 @@ class ApprovalDecisionRequest(BaseModel):
 
 
 class BankingAmountInputSubmissionRequest(BaseModel):
-    """Staff-supplied amount; authenticated identity belongs to the server boundary."""
+    """Legacy gap input; not used to override a Planner-linked contract amount."""
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 

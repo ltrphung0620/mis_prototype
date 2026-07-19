@@ -18,8 +18,7 @@ INITIAL_ASSESSMENT_COMPLETED
       -> BANKING_INTERNAL_OPTIONS_READY
       -> BANKING_PRECHECK_READINESS
       -> DECISION_POST_BANKING_REVIEW
-          -> WAITING_FOR_INPUT, or
-          -> BANKING_PRECHECK_READY
+          -> BANKING_PRECHECK_READY or a typed non-ready outcome
 ```
 
 Decision's internal Banking discovery handoff is implemented as the immediate conditional step.
@@ -44,17 +43,23 @@ produce deterministic `MissingDataRequest` objects and `WAITING_FOR_INPUT`.
 
 ## Routing policy
 
-The current policy supports the one typed banking signal already emitted with exact source
-lineage:
+The route is driven by typed `EvaluationCase.contract_requirements` created by Planner, not by a
+Finance observation, OpenAI narrative, or a user-entered amount:
 
-| Typed Finance observation | Banking need | Outcome |
+| Planner requirement | Banking need | Outcome |
 |---|---|---|
-| `PERFORMANCE_BOND_REQUIREMENT_OBSERVED` | `PERFORMANCE_BOND` | `BANKING_DISCOVERY_REQUIRED` |
+| `requirement_type = PERFORMANCE_BOND` and `certainty = REQUIRED` | `PERFORMANCE_BOND` | `BANKING_DISCOVERY_REQUIRED` |
 
-If no supported typed signal exists, the outcome is `DIRECT_INTERNAL_DECISION`. Text in a title,
-detail, note, contract description, or Risk narrative cannot activate a banking route. Working
-capital, LC, and trade-finance routes require future typed upstream signals; the Decision component
-does not infer them from natural language.
+For this route, Planner must already have resolved one exact linked Credit Profile and its positive
+integral `requested_amount`. The requirement carries `requirement_id`, `credit_case_id`, canonical
+`VND`, `amount_semantics = CREDIT_PROFILE_REQUESTED_AMOUNT`, and the raw amount evidence ID. An
+unlinked, ambiguous, or invalid required performance-bond amount is blocking at Planner intake; it
+is not deferred to a Founder input step.
+
+`POSSIBLE` does not become a required Banking route. If no supported required Planner requirement
+exists, the outcome is `DIRECT_INTERNAL_DECISION`. Working-capital and LC requirements can be
+represented by Planner, but route support for them is outside this current Decision slice. Decision
+does not infer any route from free text.
 
 The route output requests a business capability, not a concrete workflow node:
 
@@ -73,9 +78,11 @@ or assert that approval is currently required.
 
 Every banking route reason preserves:
 
-- source Finance artifact ID;
-- exact observation ID; and
-- exact evidence IDs.
+- source `EVALUATION_CASE` artifact ID;
+- exact Planner `requirement_id` and requirement certainty;
+- exact linked `credit_case_id`;
+- the positive `requested_amount`, `VND`, and its explicit amount semantics; and
+- exact requirement and raw Credit Profile amount evidence IDs.
 
 `DecisionRoutePlan` and its artifact identity depend on the route outcome, typed reasons,
 conditional checkpoints, and explicit upstream artifacts. They do not depend on timestamps,
@@ -107,16 +114,6 @@ Banking Phase A inspection after that request:
 POST /api/cases/{evaluation_case_id}/banking/internal-discovery
 ```
 
-When Decision post-Banking review pauses for the explicit amount, resolve the exact pending request
-through:
-
-```http
-POST /api/cases/{evaluation_case_id}/banking/input-supplements
-```
-
-The validated supplement auto-resumes the same Master Workflow; it does not modify the Initial
-Route or Banking discovery request.
-
 The standalone endpoint returns `409 WAITING_FOR_INPUT` when authoritative assessment artifacts are
 missing. It is a debug/Swagger surface; the automatic Master Workflow invokes the component without
 requiring a user call.
@@ -136,10 +133,16 @@ Initial Route does not:
 - recommend accept/reject; or
 - create a Decision Card.
 
-For CON-004, the validated performance-bond observation produces
-`BANKING_DISCOVERY_REQUIRED`, after which Decision creates `BANKING_DISCOVERY_REQUEST`. No
-requested amount is assigned and no approval request is created. If later readiness needs that
-amount, Decision post-Banking review—not Initial Route—creates the durable `MissingDataRequest`.
+For example, in the current TeamPack CON-004 has a required performance-bond requirement and one
+exact linked Credit Profile amount. Planner places both the typed requirement and the amount
+lineage in `EVALUATION_CASE`; Decision therefore routes to Banking and carries that amount into
+`BANKING_DISCOVERY_REQUEST` without asking the Founder to enter it. CON-004 is an observed example,
+not a contract-specific production rule.
+
+The carried amount means only "the amount requested/reference amount recorded in the linked Credit
+Profile". It is not proof that a bank supports, approves, or will issue a guarantee for that amount.
+Those later facts require a validated Banking result. No approval request is created by Initial
+Route.
 
 Reaching `BANKING_PRECHECK_READY` later does not revise the Initial Route and does not mean that an
 external precheck, approval, bank selection, document, or Decision Card exists.

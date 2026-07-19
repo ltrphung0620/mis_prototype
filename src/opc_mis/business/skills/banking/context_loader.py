@@ -13,8 +13,10 @@ from opc_mis.domain.components import ExecutionContext
 from opc_mis.domain.dataset import DatasetRecord, DatasetSnapshot
 from opc_mis.domain.enums import (
     ArtifactType,
+    CurrencyCode,
     DecisionCapability,
     DecisionHandoffMode,
+    SourceType,
     ValidationStatus,
 )
 from opc_mis.domain.planner_models import EvaluationCase
@@ -66,6 +68,22 @@ class BankingDiscoveryContext:
                 else ()
             ),
         )
+
+    @property
+    def requested_amount(self) -> int | None:
+        """Return the Decision request amount, with supplement-only legacy fallback."""
+        if self.request.requested_amount is not None:
+            return self.request.requested_amount
+        return self.supplement.requested_amount if self.supplement is not None else None
+
+    @property
+    def requested_amount_currency(self) -> CurrencyCode:
+        """Return the currency attached to the authoritative amount source."""
+        if self.request.requested_amount is not None:
+            return self.request.requested_amount_currency
+        if self.supplement is not None:
+            return self.supplement.requested_amount_currency
+        return self.request.requested_amount_currency
 
 
 class BankingDiscoveryContextLoader:
@@ -253,6 +271,80 @@ class BankingDiscoveryContextLoader:
             raise BankingDiscoveryContextError(
                 "Banking request references evidence absent from its artifact envelope."
             )
+        if not set(request.amount_evidence_ids).issubset(request_evidence_ids):
+            raise BankingDiscoveryContextError(
+                "Banking request amount evidence is absent from its artifact envelope."
+            )
+        if request.requested_amount is not None:
+            amount_evidence = tuple(
+                item
+                for item in request_artifact.evidence_refs
+                if item.evidence_id in request.amount_evidence_ids
+            )
+            if (
+                len(amount_evidence) != 1
+                or amount_evidence[0].source_type is not SourceType.TEAM_PACK
+                or amount_evidence[0].sheet
+                != SheetRegistry.CREDIT_PROFILES.sheet_name
+                or amount_evidence[0].record_id != request.credit_case_id
+                or amount_evidence[0].field != "requested_amount"
+                or amount_evidence[0].display_value != request.requested_amount
+            ):
+                raise BankingDiscoveryContextError(
+                    "Banking request amount must bind to one exact credit-profile "
+                    "requested_amount evidence item."
+                )
+            requirements = tuple(
+                item
+                for item in evaluation_case.contract_requirements
+                if item.requirement_id == request.requirement_id
+            )
+            if len(requirements) != 1:
+                raise BankingDiscoveryContextError(
+                    "Banking request amount must reference one exact EvaluationCase "
+                    "contract requirement."
+                )
+            requirement = requirements[0]
+            if (
+                len(request.need_types) != 1
+                or requirement.requirement_type.value
+                != request.need_types[0].value
+                or requirement.credit_case_id != request.credit_case_id
+                or requirement.requested_amount != request.requested_amount
+                or requirement.requested_amount_currency
+                is not request.requested_amount_currency
+                or requirement.amount_semantics is not request.amount_semantics
+                or not set(request.amount_evidence_ids).issubset(
+                    requirement.evidence_ids
+                )
+            ):
+                raise BankingDiscoveryContextError(
+                    "Banking request amount does not match its exact EvaluationCase "
+                    "contract requirement."
+                )
+            case_evidence = {
+                item.evidence_id: item for item in case_artifact.evidence_refs
+            }
+            request_evidence = {
+                item.evidence_id: item for item in request_artifact.evidence_refs
+            }
+            if any(
+                case_evidence.get(evidence_id)
+                != request_evidence[evidence_id]
+                for evidence_id in request.amount_evidence_ids
+            ):
+                raise BankingDiscoveryContextError(
+                    "EvaluationCase artifact does not retain the Banking request amount "
+                    "evidence."
+                )
+        if (
+            request.requested_amount is not None
+            and request.credit_case_id not in evaluation_case.related_credit_case_ids
+        ):
+            raise BankingDiscoveryContextError(
+                "Banking request amount credit case is not an explicit EvaluationCase "
+                "relationship."
+            )
         if supplement is not None:
             if (
                 supplement.evaluation_case_id,
@@ -277,6 +369,15 @@ class BankingDiscoveryContextLoader:
             if not set(supplement.evidence_ids).issubset(supplement_evidence_ids):
                 raise BankingDiscoveryContextError(
                     "Banking input supplement references evidence absent from its envelope."
+                )
+            if request.requested_amount is not None and (
+                supplement.requested_amount != request.requested_amount
+                or supplement.requested_amount_currency
+                is not request.requested_amount_currency
+            ):
+                raise BankingDiscoveryContextError(
+                    "A legacy Banking supplement conflicts with the authoritative "
+                    "BankingDiscoveryRequest amount."
                 )
 
     @staticmethod

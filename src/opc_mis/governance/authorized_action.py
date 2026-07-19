@@ -53,6 +53,49 @@ class AuthorizedActionPermitIssuer:
         expected_subject_artifact_id: str,
     ) -> AuthorizedActionPermit:
         """Issue a stable permit only for the latest exactly approved proposal."""
+        return await self._build_permit(
+            approval_request_id=approval_request_id,
+            workflow_run_id=workflow_run_id,
+            evaluation_case_id=evaluation_case_id,
+            expected_subject_artifact_id=expected_subject_artifact_id,
+            require_current_policy=True,
+        )
+
+    async def historical_permit_id_for_reuse(
+        self,
+        *,
+        approval_request_id: str,
+        workflow_run_id: str,
+        evaluation_case_id: str,
+        expected_subject_artifact_id: str,
+    ) -> str:
+        """Reconstruct lineage for an existing result without granting authority.
+
+        This method returns only the deterministic permit identity. Callers may use
+        it to revalidate an already persisted result, but cannot pass an executable
+        permit to a protected adapter. The exact request-bound policy is validated;
+        only the global latest-policy check is omitted because unrelated downstream
+        policy registries must not invalidate completed historical evidence.
+        """
+        permit = await self._build_permit(
+            approval_request_id=approval_request_id,
+            workflow_run_id=workflow_run_id,
+            evaluation_case_id=evaluation_case_id,
+            expected_subject_artifact_id=expected_subject_artifact_id,
+            require_current_policy=False,
+        )
+        return permit.permit_id
+
+    async def _build_permit(
+        self,
+        *,
+        approval_request_id: str,
+        workflow_run_id: str,
+        evaluation_case_id: str,
+        expected_subject_artifact_id: str,
+        require_current_policy: bool,
+    ) -> AuthorizedActionPermit:
+        """Validate exact authority and build its deterministic permit value."""
         request = await self._approval_requests.get(approval_request_id)
         if request is None:
             raise AuthorizationPermitError("Approval request does not exist.")
@@ -72,7 +115,11 @@ class AuthorizedActionPermitIssuer:
             request=request,
             evaluation_case_id=evaluation_case_id,
         )
-        await self._require_policy_scope(request, subject)
+        await self._require_policy_scope(
+            request,
+            subject,
+            require_current_policy=require_current_policy,
+        )
         protected_action = ProtectedAction.SUBMIT_BANKING_PRECHECK
         permit_id = deterministic_id(
             "AAP",
@@ -230,6 +277,8 @@ class AuthorizedActionPermitIssuer:
         self,
         request: ApprovalRequest,
         subject: ArtifactEnvelope,
+        *,
+        require_current_policy: bool,
     ) -> None:
         """Verify human or machine authority against one exact policy artifact."""
         policy_artifact_id = request.policy_artifact_id
@@ -259,7 +308,7 @@ class AuthorizedActionPermitIssuer:
             ),
             default=None,
         )
-        if latest_version != policy_artifact.version:
+        if require_current_policy and latest_version != policy_artifact.version:
             raise AuthorizationPermitError(
                 "Authorization policy artifact is no longer current."
             )

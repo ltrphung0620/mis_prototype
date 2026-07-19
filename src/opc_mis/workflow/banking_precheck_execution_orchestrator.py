@@ -17,7 +17,7 @@ from opc_mis.business.skills.banking.precheck_result_component import (
     BankingPrecheckResultComponent,
 )
 from opc_mis.domain.artifacts import ArtifactDraft, ArtifactEnvelope
-from opc_mis.domain.banking_models import BankingInputSupplement
+from opc_mis.domain.banking_models import BankingDiscoveryRequest
 from opc_mis.domain.banking_precheck_execution_models import (
     BankingPrecheckResultComponentInput,
     BankingPrecheckResultExecutionResult,
@@ -114,11 +114,30 @@ class BankingPrecheckExecutionOrchestrator:
             (
                 proposal_artifact,
                 evaluation_case_artifact,
-                supplement_artifact,
+                discovery_request_artifact,
                 proposal,
                 evaluation_case,
-                supplement,
+                discovery_request,
             ) = await self._load_inputs(context)
+            if command.reuse_existing_only:
+                permit_id = (
+                    await self._permit_issuer.historical_permit_id_for_reuse(
+                        approval_request_id=command.approval_request_id,
+                        workflow_run_id=context.workflow_run_id,
+                        evaluation_case_id=proposal.evaluation_case_id,
+                        expected_subject_artifact_id=proposal_artifact.artifact_id,
+                    )
+                )
+                existing = await self._existing_result(
+                    context=context,
+                    proposal=proposal,
+                    proposal_artifact=proposal_artifact,
+                    approval_request_id=command.approval_request_id,
+                    permit_id=permit_id,
+                )
+                if existing is not None:
+                    return existing
+                return self._failed((_MISSING_REUSABLE_RESULT,))
             permit = await self._permit_issuer.issue(
                 approval_request_id=command.approval_request_id,
                 workflow_run_id=context.workflow_run_id,
@@ -134,16 +153,14 @@ class BankingPrecheckExecutionOrchestrator:
             )
             if existing is not None:
                 return existing
-            if command.reuse_existing_only:
-                return self._failed((_MISSING_REUSABLE_RESULT,))
             snapshot = await self._datasets.get_snapshot(context.dataset_id)
             requests = self._request_resolver.resolve(
                 proposal_artifact=proposal_artifact,
                 evaluation_case_artifact=evaluation_case_artifact,
-                supplement_artifact=supplement_artifact,
+                discovery_request_artifact=discovery_request_artifact,
                 proposal=proposal,
                 evaluation_case=evaluation_case,
-                supplement=supplement,
+                discovery_request=discovery_request,
                 opc_profile_records=tuple(snapshot.records(SheetRegistry.OPC_PROFILE)),
                 authorization=permit,
             )
@@ -231,7 +248,7 @@ class BankingPrecheckExecutionOrchestrator:
         ArtifactEnvelope,
         BankingPrecheckSubmissionProposal,
         EvaluationCase,
-        BankingInputSupplement,
+        BankingDiscoveryRequest,
     ]:
         if context.evaluation_case_id is None or not context.input_artifact_ids:
             raise ValueError("Banking precheck execution requires a case and proposal lineage.")
@@ -266,23 +283,23 @@ class BankingPrecheckExecutionOrchestrator:
             supplied_tuple,
             ArtifactType.EVALUATION_CASE,
         )
-        supplement_artifact = self._one(
+        discovery_request_artifact = self._one(
             supplied_tuple,
-            ArtifactType.BANKING_INPUT_SUPPLEMENT,
+            ArtifactType.BANKING_DISCOVERY_REQUEST,
         )
         evaluation_case = EvaluationCase.model_validate(
             evaluation_case_artifact.payload
         )
-        supplement = BankingInputSupplement.model_validate(
-            supplement_artifact.payload
+        discovery_request = BankingDiscoveryRequest.model_validate(
+            discovery_request_artifact.payload
         )
         return (
             proposal_artifact,
             evaluation_case_artifact,
-            supplement_artifact,
+            discovery_request_artifact,
             proposal,
             evaluation_case,
-            supplement,
+            discovery_request,
         )
 
     async def _existing_result(

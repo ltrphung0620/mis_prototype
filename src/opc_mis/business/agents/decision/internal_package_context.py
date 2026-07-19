@@ -639,6 +639,9 @@ class InternalDecisionPackageContextLoader:
             return
         assert isinstance(request, BankingDiscoveryRequest)
         route_artifact = self._one(grouped, ArtifactType.DECISION_ROUTE_PLAN)
+        evaluation_case_artifact = self._one(
+            grouped, ArtifactType.EVALUATION_CASE
+        )
         request_artifact = self._one(
             grouped, ArtifactType.BANKING_DISCOVERY_REQUEST
         )
@@ -646,7 +649,11 @@ class InternalDecisionPackageContextLoader:
         if (
             request.source_route_artifact_id != route_artifact.artifact_id
             or request.source_route_plan_id != route.route_plan_id
-            or request_artifact.input_artifact_ids != (route_artifact.artifact_id,)
+            or request_artifact.input_artifact_ids
+            != (
+                evaluation_case_artifact.artifact_id,
+                route_artifact.artifact_id,
+            )
         ):
             raise InternalDecisionPackageContextError(
                 "Banking request does not bind the exact Decision Route Plan."

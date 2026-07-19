@@ -67,6 +67,7 @@ class ApprovalOrchestrator:
         *,
         workflow_run_id: str | None = None,
         allow_running_workflow: bool = False,
+        checkpoint_artifact_id: str | None = None,
     ) -> ApprovalExecutionResult:
         """Evaluate an action and pause its Master Workflow only when a gate triggers.
 
@@ -75,14 +76,27 @@ class ApprovalOrchestrator:
         fail-closed behavior and cannot inject an action into an executing run.
         """
         payload_artifact = await self._require_current_subject(command)
-        if command.action_type is ProtectedAction.SEND_DOCUMENT_TO_EXTERNAL_PARTNER:
+        if (
+            command.action_type
+            is ProtectedAction.SEND_DOCUMENT_TO_EXTERNAL_PARTNER
+            and payload_artifact.artifact_type
+            is not ArtifactType.EXTERNAL_DOCUMENT_SUBMISSION_PROPOSAL
+        ):
             raise ApprovalConflictError(
                 "DOCUMENT_RELEASE_PACKAGE is internal Decision input. External Document "
-                "submission cannot be proposed until a validated final Decision "
-                "submission proposal exists."
+                "submission requires a validated external submission proposal."
+            )
+        if (
+            command.action_type
+            is ProtectedAction.CONFIRM_FINAL_CONTRACT_DECISION
+            and payload_artifact.artifact_type is not ArtifactType.DECISION_CARD
+        ):
+            raise ApprovalConflictError(
+                "Final contract confirmation requires a validated Decision Card."
             )
         checkpoint_artifact, checkpoint_set = await self._require_checkpoint_registry(
-            command.evaluation_case_id
+            command.evaluation_case_id,
+            checkpoint_artifact_id=checkpoint_artifact_id,
         )
         run = await self._optional_case_workflow(
             workflow_run_id,
@@ -503,10 +517,16 @@ class ApprovalOrchestrator:
         """Return auditable approval requests for one case."""
         return await self._requests.list_by_case(evaluation_case_id)
 
-    async def checkpoints(self, evaluation_case_id: str) -> ApprovalCheckpointSet:
+    async def checkpoints(
+        self,
+        evaluation_case_id: str,
+        *,
+        checkpoint_artifact_id: str | None = None,
+    ) -> ApprovalCheckpointSet:
         """Return the registered checkpoint artifact for one case."""
         _, checkpoint_set = await self._require_checkpoint_registry(
-            evaluation_case_id
+            evaluation_case_id,
+            checkpoint_artifact_id=checkpoint_artifact_id,
         )
         return checkpoint_set
 
@@ -550,10 +570,23 @@ class ApprovalOrchestrator:
             request.command.action_type
             is ProtectedAction.SEND_DOCUMENT_TO_EXTERNAL_PARTNER
         ):
-            return (
-                "Direct Document release approval scope is obsolete; the release package "
-                "is internal Decision input and cannot authorize external submission."
-            )
+            subject = await self._artifacts.get(request.subject_artifact_id)
+            if (
+                subject is None
+                or subject.artifact_type
+                is not ArtifactType.EXTERNAL_DOCUMENT_SUBMISSION_PROPOSAL
+            ):
+                return (
+                    "Direct Document release approval scope is obsolete; external "
+                    "submission requires a validated submission proposal."
+                )
+        if (
+            request.command.action_type
+            is ProtectedAction.CONFIRM_FINAL_CONTRACT_DECISION
+        ):
+            subject = await self._artifacts.get(request.subject_artifact_id)
+            if subject is None or subject.artifact_type is not ArtifactType.DECISION_CARD:
+                return "Final Decision confirmation requires a Decision Card."
         if not await self._subject_is_current(request):
             return "Approval subject artifact is no longer current."
         if not await self._policy_is_current(request):
@@ -609,18 +642,29 @@ class ApprovalOrchestrator:
         return latest is not None and latest.artifact_id == artifact.artifact_id
 
     async def _require_checkpoint_registry(
-        self, evaluation_case_id: str
+        self,
+        evaluation_case_id: str,
+        *,
+        checkpoint_artifact_id: str | None = None,
     ) -> tuple[ArtifactEnvelope, ApprovalCheckpointSet]:
         artifacts = await self._artifacts.list_by_case(evaluation_case_id)
-        artifact = self._latest(artifacts, ArtifactType.APPROVAL_CHECKPOINTS)
+        artifact = (
+            await self._artifacts.get(checkpoint_artifact_id)
+            if checkpoint_artifact_id is not None
+            else self._latest(artifacts, ArtifactType.APPROVAL_CHECKPOINTS)
+        )
         if artifact is None:
             raise ApprovalControlError(
                 "No approval checkpoints exist; run Initial Risk Scan first."
             )
-        if artifact.validation_status not in {
+        if (
+            artifact.evaluation_case_id != evaluation_case_id
+            or artifact.artifact_type is not ArtifactType.APPROVAL_CHECKPOINTS
+            or artifact.validation_status not in {
             ValidationStatus.VALID,
             ValidationStatus.VALID_WITH_WARNINGS,
-        }:
+            }
+        ):
             raise ApprovalControlError("The approval checkpoint artifact is not valid.")
         return artifact, ApprovalCheckpointSet.model_validate(artifact.payload)
 
@@ -801,9 +845,29 @@ class ApprovalOrchestrator:
             request.command.action_type
             is ProtectedAction.SEND_DOCUMENT_TO_EXTERNAL_PARTNER
         )
+        final_decision_rejected = (
+            request.command.action_type
+            is ProtectedAction.CONFIRM_FINAL_CONTRACT_DECISION
+        )
         if run.status is WorkflowStatus.WAITING_FOR_APPROVAL:
             if continue_without_action:
                 run = await self._resume_run(run, resume_stage=request.resume_stage)
+            elif final_decision_rejected or document_release_declined:
+                run = run.model_copy(
+                    update={
+                        "status": WorkflowStatus.COMPLETED,
+                        "current_stage": (
+                            WorkflowNode.FINAL_DECISION_REJECTED.value
+                            if final_decision_rejected
+                            else WorkflowNode.EXTERNAL_DOCUMENT_SUBMISSION_DECLINED.value
+                        ),
+                        "resume_stage": None,
+                        "blocked_action": None,
+                        "failure_reason": None,
+                        "updated_at": self._clock(),
+                    }
+                )
+                await self._case_workflows.save_run(run)
             else:
                 run = run.model_copy(
                     update={
@@ -838,17 +902,27 @@ class ApprovalOrchestrator:
         if gate_node is None or request.request_id in gate_node.waiting_for:
             await self._save_gate_node(
                 run,
-                status=WorkflowNodeStatus.BLOCKED,
+                status=(
+                    WorkflowNodeStatus.COMPLETED
+                    if final_decision_rejected or document_release_declined
+                    else WorkflowNodeStatus.BLOCKED
+                ),
                 action=request.command.action_type,
                 waiting_for=(),
-                failure_reason="Protected action was rejected by a human approver.",
+                failure_reason=(
+                    None
+                    if final_decision_rejected or document_release_declined
+                    else "Protected action was rejected by a human approver."
+                ),
                 begin_attempt=False,
             )
         await self._event_once(
             run,
             "PROTECTED_ACTION_BLOCKED",
             (
-                WorkflowNode.DOCUMENT_EXTERNAL_RELEASE_DECLINED
+                WorkflowNode.FINAL_DECISION_REJECTED
+                if final_decision_rejected
+                else WorkflowNode.EXTERNAL_DOCUMENT_SUBMISSION_DECLINED
                 if document_release_declined
                 else WorkflowNode.PROTECTED_ACTION_REJECTED
             ),
@@ -857,16 +931,26 @@ class ApprovalOrchestrator:
                 "action_type": request.command.action_type.value,
             },
         )
-        if document_release_declined:
-            await self._save_document_release_declined_node(run, request)
+        if document_release_declined or final_decision_rejected:
+            declined_node = (
+                WorkflowNode.FINAL_DECISION_REJECTED
+                if final_decision_rejected
+                else WorkflowNode.EXTERNAL_DOCUMENT_SUBMISSION_DECLINED
+            )
+            await self._save_declined_node(run, request, declined_node)
             await self._event_once(
                 run,
-                "DOCUMENT_EXTERNAL_RELEASE_DECLINED",
-                WorkflowNode.DOCUMENT_EXTERNAL_RELEASE_DECLINED,
+                (
+                    "FINAL_DECISION_REJECTED"
+                    if final_decision_rejected
+                    else "EXTERNAL_DOCUMENT_SUBMISSION_DECLINED"
+                ),
+                declined_node,
                 {
                     "request_id": request.request_id,
-                    "release_package_artifact_id": request.subject_artifact_id,
-                    "external_release_performed": False,
+                    "subject_artifact_id": request.subject_artifact_id,
+                    "protected_action": request.command.action_type.value,
+                    "external_submission_performed": False,
                 },
             )
         if continue_without_action:
@@ -881,15 +965,16 @@ class ApprovalOrchestrator:
             )
         return run
 
-    async def _save_document_release_declined_node(
+    async def _save_declined_node(
         self,
         run: CaseWorkflowRun,
         request: ApprovalRequest,
+        node: WorkflowNode,
     ) -> None:
-        """Record the completed rejection outcome while keeping the workflow blocked."""
+        """Record one valid human-declined terminal business outcome."""
         previous = await self._case_workflows.get_node(
             run.workflow_run_id,
-            WorkflowNode.DOCUMENT_EXTERNAL_RELEASE_DECLINED.value,
+            node.value,
         )
         if previous is not None and previous.status is WorkflowNodeStatus.COMPLETED:
             return
@@ -897,7 +982,7 @@ class ApprovalOrchestrator:
         await self._case_workflows.save_node(
             WorkflowNodeState(
                 workflow_run_id=run.workflow_run_id,
-                node=WorkflowNode.DOCUMENT_EXTERNAL_RELEASE_DECLINED,
+                node=node,
                 status=WorkflowNodeStatus.COMPLETED,
                 attempt=1,
                 input_hash=deterministic_id(
@@ -1095,16 +1180,26 @@ class ApprovalOrchestrator:
             current_node = WorkflowNode.PROTECTED_ACTION_AUTHORIZED.value
             authorized = True
         elif request.status is ApprovalRequestStatus.REJECTED:
+            valid_terminal_rejection = request.command.action_type in {
+                ProtectedAction.CONFIRM_FINAL_CONTRACT_DECISION,
+                ProtectedAction.SEND_DOCUMENT_TO_EXTERNAL_PARTNER,
+            }
             status = (
                 run.status
                 if run is not None
-                and request.command.action_type
-                is ProtectedAction.SUBMIT_BANKING_PRECHECK
+                and (
+                    request.command.action_type
+                    is ProtectedAction.SUBMIT_BANKING_PRECHECK
+                    or valid_terminal_rejection
+                )
                 else WorkflowStatus.BLOCKED
             )
             gate_status = ApprovalGateStatus.REJECTED
             current_node = (
-                WorkflowNode.DOCUMENT_EXTERNAL_RELEASE_DECLINED.value
+                WorkflowNode.FINAL_DECISION_REJECTED.value
+                if request.command.action_type
+                is ProtectedAction.CONFIRM_FINAL_CONTRACT_DECISION
+                else WorkflowNode.EXTERNAL_DOCUMENT_SUBMISSION_DECLINED.value
                 if request.command.action_type
                 is ProtectedAction.SEND_DOCUMENT_TO_EXTERNAL_PARTNER
                 else WorkflowNode.PROTECTED_ACTION_REJECTED.value

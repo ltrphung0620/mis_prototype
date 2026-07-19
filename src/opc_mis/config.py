@@ -36,6 +36,18 @@ DEFAULT_MASKING_POLICY_PATH = (
     / "data_protection"
     / "masking_policy.json"
 )
+DEFAULT_DECISION_GOVERNANCE_POLICY_PATH = (
+    Path(__file__).resolve().parents[2]
+    / "config"
+    / "decision"
+    / "decision_governance_policy.json"
+)
+DEFAULT_DECISION_PROMPT_PATH = (
+    Path(__file__).resolve().parents[2]
+    / "config"
+    / "prompts"
+    / "decision_analysis.md"
+)
 
 
 def _masking_hmac_key_from_environment() -> bytes | None:
@@ -74,6 +86,9 @@ class AppSettings:
     banking_prompt_version: str
     banking_prompt_path: Path
     masking_policy_path: Path
+    decision_governance_policy_path: Path
+    decision_prompt_version: str
+    decision_prompt_path: Path
     masking_hmac_key: bytes | None = dataclass_field(repr=False)
     database_path: Path
 
@@ -121,6 +136,18 @@ class AppSettings:
             ),
             masking_policy_path=Path(
                 getenv("MASKING_POLICY_PATH", str(DEFAULT_MASKING_POLICY_PATH))
+            ),
+            decision_governance_policy_path=Path(
+                getenv(
+                    "DECISION_GOVERNANCE_POLICY_PATH",
+                    str(DEFAULT_DECISION_GOVERNANCE_POLICY_PATH),
+                )
+            ),
+            decision_prompt_version=getenv(
+                "DECISION_PROMPT_VERSION", "decision-analysis-v2"
+            ),
+            decision_prompt_path=Path(
+                getenv("DECISION_PROMPT_PATH", str(DEFAULT_DECISION_PROMPT_PATH))
             ),
             masking_hmac_key=_masking_hmac_key_from_environment(),
             database_path=Path(

@@ -6,10 +6,15 @@ import pandas as pd
 
 from opc_mis.domain.enums import (
     CashflowScope,
+    ContractRequirementType,
+    CurrencyCode,
     ReadinessStatus,
+    RequirementAmountSemantics,
+    RequirementCertainty,
     SourceType,
     WorkflowStatus,
 )
+from opc_mis.domain.evidence import DataPatch
 from tests.conftest import execute_planner, make_request
 
 
@@ -20,6 +25,9 @@ def test_con004_creates_traceable_case_from_actual_workbook(team_pack_path: Path
     orders = pd.read_excel(team_pack_path, sheet_name="06_ORDERS", dtype=object)
     invoices = pd.read_excel(team_pack_path, sheet_name="07_INVOICES", dtype=object)
     products = pd.read_excel(team_pack_path, sheet_name="05_PRODUCTS", dtype=object)
+    credit_profiles = pd.read_excel(
+        team_pack_path, sheet_name="10_CREDIT_PROFILE", dtype=object
+    )
 
     contract = contracts.loc[contracts["contract_id"] == contract_id].iloc[0]
     expected_customer = str(contract["customer_id"])
@@ -34,6 +42,10 @@ def test_con004_creates_traceable_case_from_actual_workbook(team_pack_path: Path
             products["service_id"].isin(set(related_orders["service_id"])), "service_id"
         ].astype(str)
     )
+    expected_credit = credit_profiles.loc[
+        (credit_profiles["request_type"] == "Performance bond")
+        & (credit_profiles["collateral_or_basis"] == f"Contract {contract_id}")
+    ].iloc[0]
 
     result = execute_planner(make_request(team_pack_path, contract_id))
 
@@ -49,12 +61,42 @@ def test_con004_creates_traceable_case_from_actual_workbook(team_pack_path: Path
     assert case.related_order_ids == expected_order_ids
     assert case.related_invoice_ids == expected_invoice_ids
     assert case.related_service_ids == expected_service_ids
-    assert case.related_credit_case_ids == ()
+    assert case.related_credit_case_ids == (str(expected_credit["credit_case_id"]),)
     assert case.cashflow_scope is CashflowScope.OPC_GLOBAL
 
+    requirements = {item.requirement_type: item for item in case.contract_requirements}
+    performance_bond = requirements[ContractRequirementType.PERFORMANCE_BOND]
+    assert performance_bond.certainty is RequirementCertainty.REQUIRED
+    assert performance_bond.requested_amount == int(expected_credit["requested_amount"])
+    assert performance_bond.requested_amount_currency is CurrencyCode.VND
+    assert (
+        performance_bond.amount_semantics
+        is RequirementAmountSemantics.CREDIT_PROFILE_REQUESTED_AMOUNT
+    )
+    assert performance_bond.credit_case_id == str(expected_credit["credit_case_id"])
+    assert performance_bond.source_record_ids == (contract_id, "ORD-005")
+    assert performance_bond.source_fields == ("payment_terms", "delivery_note")
+
+    working_capital = requirements[ContractRequirementType.WORKING_CAPITAL]
+    assert working_capital.certainty is RequirementCertainty.REQUIRED
+    assert working_capital.requested_amount is None
+    assert working_capital.amount_semantics is None
+    assert working_capital.credit_case_id is None
+    assert any(
+        warning.warning_code == "CONTRACT_REQUIREMENT_CREDIT_PROFILE_UNLINKED"
+        and warning.details["requirement_id"] == working_capital.requirement_id
+        for warning in result.planner_result.warnings
+    )
+
     selected_records = {evidence.record_id for evidence in case.evidence_refs}
-    assert {contract_id, expected_customer, *expected_order_ids}.issubset(selected_records)
-    for record_id in {contract_id, expected_customer, *expected_order_ids}:
+    required_records = {
+        contract_id,
+        expected_customer,
+        *expected_order_ids,
+        str(expected_credit["credit_case_id"]),
+    }
+    assert required_records.issubset(selected_records)
+    for record_id in required_records:
         assert any(
             evidence.record_id == record_id and evidence.source_type is SourceType.TEAM_PACK
             for evidence in case.evidence_refs
@@ -90,3 +132,44 @@ def test_con004_coverage_warning_is_derived_from_source_values(
         )
     else:
         assert "ORDER_COVERAGE_GAP" not in warnings
+
+
+def test_con004_pauses_at_planner_when_performance_bond_amount_is_missing(
+    team_pack_path: Path,
+) -> None:
+    patch = DataPatch(
+        patch_id="PATCH-CR-002-MISSING-AMOUNT",
+        source=SourceType.USER_INPUT,
+        target_sheet="10_CREDIT_PROFILE",
+        target_record="CR-002",
+        field="requested_amount",
+        value=None,
+        evidence_note="Exercise Planner source-data readiness for a required performance bond.",
+    )
+
+    result = execute_planner(
+        make_request(team_pack_path, "CON-004", data_patches=(patch,))
+    )
+
+    assert result.status is WorkflowStatus.WAITING_FOR_INPUT
+    assert result.planner_result is not None
+    assert tuple(
+        item.requirement_code for item in result.planner_result.missing_data_requests
+    ) == ("PERFORMANCE_BOND_REQUESTED_AMOUNT_REQUIRED",)
+    case = result.planner_result.evaluation_case
+    assert case is not None
+    performance_bond = next(
+        item
+        for item in case.contract_requirements
+        if item.requirement_type is ContractRequirementType.PERFORMANCE_BOND
+    )
+    assert performance_bond.requested_amount is None
+    assert performance_bond.credit_case_id == "CR-002"
+    assert case.related_credit_case_ids == ("CR-002",)
+    assert any(
+        evidence.source_type is SourceType.USER_INPUT
+        and evidence.record_id == "CR-002"
+        and evidence.field == "requested_amount"
+        for request in result.planner_result.missing_data_requests
+        for evidence in request.evidence_refs
+    )

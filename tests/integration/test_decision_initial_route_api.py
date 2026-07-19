@@ -8,7 +8,6 @@ import pytest
 from fastapi.testclient import TestClient
 
 from opc_mis.api.application import create_app
-from opc_mis.domain.enums import FinanceObservationCode
 from opc_mis.infrastructure.excel.workbook_loader import compute_sha256
 
 TEAM_PACK = Path("data/input/MISTalent2026_OPC_AgenticAI_TeamPack_v3.xlsx").resolve()
@@ -66,8 +65,8 @@ def test_initial_route_is_generic_across_actual_contracts(
     for contract_id in contract_ids:
         summary = run_to_route(decision_client, contract_id)
         artifacts = artifacts_for_summary(decision_client, summary)
-        finance = next(
-            item for item in artifacts if item["artifact_type"] == "FINANCE_FACTS"
+        evaluation_case = next(
+            item for item in artifacts if item["artifact_type"] == "EVALUATION_CASE"
         )["payload"]
         route = next(
             item
@@ -75,9 +74,10 @@ def test_initial_route_is_generic_across_actual_contracts(
             if item["artifact_type"] == "DECISION_ROUTE_PLAN"
         )["payload"]
         banking_signal = any(
-            item["code"]
-            == FinanceObservationCode.PERFORMANCE_BOND_REQUIREMENT_OBSERVED.value
-            for item in finance["observations"]
+            item["requirement_type"] == "PERFORMANCE_BOND"
+            and item["certainty"] == "REQUIRED"
+            and item["requested_amount"] is not None
+            for item in evaluation_case["contract_requirements"]
         )
         expected = (
             "BANKING_DISCOVERY_REQUIRED"
@@ -101,23 +101,23 @@ def test_initial_route_is_generic_across_actual_contracts(
         ]
 
         assert summary["status"] == (
-            "WAITING_FOR_INPUT" if banking_signal else "COMPLETED"
+            "WAITING_FOR_APPROVAL" if banking_signal else "COMPLETED"
         )
         assert summary["current_stage"] == (
-            "DECISION_POST_BANKING_REVIEW"
+            "WAITING_FOR_APPROVAL"
             if banking_signal
-            else "INTERNAL_DECISION_PACKAGE_READY"
+            else "DECISION_CARD_READY"
         )
         assert summary["decision_route_outcome"] == expected
         assert bool(summary["banking_discovery_request_id"]) is banking_signal
         assert len(banking_requests) == int(banking_signal)
         assert len(banking_outputs) == 3 * int(banking_signal)
-        assert bool(summary["pending_missing_data_ids"]) is banking_signal
+        assert not summary["pending_missing_data_ids"]
         assert summary["banking_precheck_readiness_status"] == (
-            "INPUT_REQUIRED" if banking_signal else None
+            "READY" if banking_signal else None
         )
         assert summary["decision_post_banking_outcome"] == (
-            "BANKING_INPUT_REQUIRED" if banking_signal else None
+            "BANKING_PRECHECK_READY" if banking_signal else None
         )
         assert summary["internal_decision_package_ready"] is (not banking_signal)
         assert summary["internal_decision_assembly_path"] == (
@@ -133,24 +133,28 @@ def test_initial_route_is_generic_across_actual_contracts(
         approvals = decision_client.get(
             f"/api/cases/{summary['evaluation_case_id']}/approval-requests"
         ).json()
-        assert approvals == []
+        assert bool(approvals) is banking_signal
+        if banking_signal:
+            assert {item["command"]["action_type"] for item in approvals} == {
+                "SUBMIT_BANKING_PRECHECK"
+            }
 
 
-def test_con004_route_has_exact_observation_and_evidence_lineage(
+def test_con004_route_has_exact_planner_requirement_and_evidence_lineage(
     decision_client: TestClient,
 ) -> None:
     summary = run_to_route(decision_client, "CON-004")
     artifacts = artifacts_for_summary(decision_client, summary)
-    finance = next(
-        item for item in artifacts if item["artifact_type"] == "FINANCE_FACTS"
+    evaluation_case = next(
+        item for item in artifacts if item["artifact_type"] == "EVALUATION_CASE"
     )
     route = next(
         item for item in artifacts if item["artifact_type"] == "DECISION_ROUTE_PLAN"
     )
-    source_observation = next(
+    source_requirement = next(
         item
-        for item in finance["payload"]["observations"]
-        if item["code"] == "PERFORMANCE_BOND_REQUIREMENT_OBSERVED"
+        for item in evaluation_case["payload"]["contract_requirements"]
+        if item["requirement_type"] == "PERFORMANCE_BOND"
     )
     reason = route["payload"]["routing_reasons"][0]
 
@@ -158,9 +162,13 @@ def test_con004_route_has_exact_observation_and_evidence_lineage(
     assert route["payload"]["required_capabilities"] == [
         "BANKING_INTERNAL_DISCOVERY"
     ]
-    assert reason["source_artifact_id"] == finance["artifact_id"]
-    assert reason["source_reference_ids"] == [source_observation["observation_id"]]
-    assert reason["evidence_ids"] == source_observation["evidence_ids"]
+    assert reason["source_artifact_id"] == evaluation_case["artifact_id"]
+    assert reason["source_reference_ids"] == [source_requirement["requirement_id"]]
+    assert reason["evidence_ids"] == source_requirement["evidence_ids"]
+    assert reason["credit_case_id"] == "CR-002"
+    assert reason["requested_amount"] == 420_000_000
+    assert reason["requested_amount_currency"] == "VND"
+    assert reason["amount_semantics"] == "CREDIT_PROFILE_REQUESTED_AMOUNT"
     assert set(reason["evidence_ids"]).issubset(
         {item["evidence_id"] for item in route["evidence_refs"]}
     )
@@ -174,8 +182,12 @@ def test_con004_route_has_exact_observation_and_evidence_lineage(
     request_payload = banking_request["payload"]
     assert request_payload["requested_capability"] == "BANKING_INTERNAL_DISCOVERY"
     assert request_payload["need_types"] == ["PERFORMANCE_BOND"]
-    assert request_payload["requested_amount"] is None
+    assert request_payload["requirement_id"] == source_requirement["requirement_id"]
+    assert request_payload["credit_case_id"] == "CR-002"
+    assert request_payload["requested_amount"] == 420_000_000
     assert request_payload["requested_amount_currency"] == "VND"
+    assert request_payload["amount_semantics"] == "CREDIT_PROFILE_REQUESTED_AMOUNT"
+    assert request_payload["amount_evidence_ids"] == reason["amount_evidence_ids"]
     assert request_payload["constraints"] == []
     assert request_payload["source_route_artifact_id"] == route["artifact_id"]
     assert request_payload["source_route_plan_id"] == route["payload"]["route_plan_id"]
@@ -253,6 +265,9 @@ def test_manual_banking_handoff_is_idempotent_and_does_not_create_approval(
     decision_client: TestClient,
 ) -> None:
     summary = run_to_route(decision_client, "CON-004")
+    approvals_before = decision_client.get(
+        f"/api/cases/{summary['evaluation_case_id']}/approval-requests"
+    ).json()
     path = (
         f"/api/cases/{summary['evaluation_case_id']}"
         "/banking-discovery-request"
@@ -267,12 +282,13 @@ def test_manual_banking_handoff_is_idempotent_and_does_not_create_approval(
     ]
     assert first.json()["artifact_refs"] == second.json()["artifact_refs"]
     request = first.json()["banking_discovery_request"]
-    assert request["requested_amount"] is None
+    assert request["requested_amount"] == 420_000_000
+    assert request["credit_case_id"] == "CR-002"
     assert request["constraints"] == []
-    approvals = decision_client.get(
+    approvals_after = decision_client.get(
         f"/api/cases/{summary['evaluation_case_id']}/approval-requests"
     ).json()
-    assert approvals == []
+    assert approvals_after == approvals_before
 
 
 def test_manual_banking_handoff_is_not_applicable_to_a_direct_route(

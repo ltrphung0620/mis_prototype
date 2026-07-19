@@ -134,6 +134,13 @@ class ArtifactType(StrEnum):
     DOCUMENT_RELEASE_PACKAGE = "DOCUMENT_RELEASE_PACKAGE"
     DOCUMENT_EVIDENCE_SUPPLEMENT = "DOCUMENT_EVIDENCE_SUPPLEMENT"
     INTERNAL_DECISION_PACKAGE = "INTERNAL_DECISION_PACKAGE"
+    FINAL_RISK_ASSESSMENT = "FINAL_RISK_ASSESSMENT"
+    AI_DECISION_ANALYSIS = "AI_DECISION_ANALYSIS"
+    DECISION_CARD = "DECISION_CARD"
+    POST_DECISION_UPDATE = "POST_DECISION_UPDATE"
+    EXTERNAL_DOCUMENT_SUBMISSION_PROPOSAL = (
+        "EXTERNAL_DOCUMENT_SUBMISSION_PROPOSAL"
+    )
 
 
 class DecisionRouteMode(StrEnum):
@@ -208,6 +215,7 @@ class BankingPrecheckFieldSource(StrEnum):
     """Explicit server-policy source for one external-API required field."""
 
     EVALUATION_CASE = "EVALUATION_CASE"
+    BANKING_DISCOVERY_REQUEST = "BANKING_DISCOVERY_REQUEST"
     BANKING_INPUT_SUPPLEMENT = "BANKING_INPUT_SUPPLEMENT"
     OPC_PROFILE = "OPC_PROFILE"
 
@@ -351,6 +359,27 @@ class BankingNeedType(StrEnum):
     PERFORMANCE_BOND = "PERFORMANCE_BOND"
 
 
+class ContractRequirementType(StrEnum):
+    """Typed business requirements observed on one explicit contract case."""
+
+    PERFORMANCE_BOND = "PERFORMANCE_BOND"
+    WORKING_CAPITAL = "WORKING_CAPITAL"
+    TRADE_FINANCE_LC = "TRADE_FINANCE_LC"
+
+
+class RequirementCertainty(StrEnum):
+    """Whether source wording declares a requirement or only a possibility."""
+
+    REQUIRED = "REQUIRED"
+    POSSIBLE = "POSSIBLE"
+
+
+class RequirementAmountSemantics(StrEnum):
+    """Authoritative meaning of an amount attached to a contract requirement."""
+
+    CREDIT_PROFILE_REQUESTED_AMOUNT = "CREDIT_PROFILE_REQUESTED_AMOUNT"
+
+
 class DecisionRoutingReasonCode(StrEnum):
     """Typed reason codes accepted by the Initial Route policy."""
 
@@ -435,6 +464,48 @@ class RiskAssessmentStatus(StrEnum):
     LIMITED_BY_EVIDENCE = "LIMITED_BY_EVIDENCE"
 
 
+class FinalRiskAssessmentStatus(StrEnum):
+    """Completeness of the final evidence-based Risk check."""
+
+    COMPLETE = "COMPLETE"
+    LIMITED_BY_EVIDENCE = "LIMITED_BY_EVIDENCE"
+
+
+class ResidualRiskStatus(StrEnum):
+    """Whether an initial case finding has explicit mitigation evidence."""
+
+    OPEN_UNCHANGED = "OPEN_UNCHANGED"
+
+
+class MajorExceptionStatus(StrEnum):
+    """Conservative major-exception conclusion from explicit final evidence."""
+
+    DETECTED = "DETECTED"
+    NOT_DETECTED = "NOT_DETECTED"
+    NOT_EVALUABLE = "NOT_EVALUABLE"
+
+
+class FinalRiskControlCode(StrEnum):
+    """Typed controls retained by Final Risk without executing an action."""
+
+    HUMAN_CONFIRMATION_REQUIRED = "HUMAN_CONFIRMATION_REQUIRED"
+    EVIDENCE_LIMITATION_MUST_BE_PRESERVED = (
+        "EVIDENCE_LIMITATION_MUST_BE_PRESERVED"
+    )
+    GOVERNANCE_EVALUATION_BEFORE_PROTECTED_ACTION = (
+        "GOVERNANCE_EVALUATION_BEFORE_PROTECTED_ACTION"
+    )
+    GOVERNANCE_REJECTION_MUST_BE_HONORED = (
+        "GOVERNANCE_REJECTION_MUST_BE_HONORED"
+    )
+    SIMULATED_BANKING_RESULT_IS_NON_BINDING = (
+        "SIMULATED_BANKING_RESULT_IS_NON_BINDING"
+    )
+    DOCUMENT_RELEASE_REQUIRES_SEPARATE_AUTHORIZATION = (
+        "DOCUMENT_RELEASE_REQUIRES_SEPARATE_AUTHORIZATION"
+    )
+
+
 class ApprovalSignalStatus(StrEnum):
     """Lifecycle state of a side-effect-free approval checkpoint signal."""
 
@@ -483,6 +554,9 @@ class ApprovalTriggerEvent(StrEnum):
     BANKING_PRECHECK_SUBMISSION_REQUESTED = (
         "BANKING_PRECHECK_SUBMISSION_REQUESTED"
     )
+    FINAL_CONTRACT_DECISION_CONFIRMATION_REQUESTED = (
+        "FINAL_CONTRACT_DECISION_CONFIRMATION_REQUESTED"
+    )
 
 
 class ProtectedAction(StrEnum):
@@ -491,6 +565,7 @@ class ProtectedAction(StrEnum):
     SEND_DOCUMENT_TO_EXTERNAL_PARTNER = "SEND_DOCUMENT_TO_EXTERNAL_PARTNER"
     COMMIT_LARGE_FINANCIAL_DECISION = "COMMIT_LARGE_FINANCIAL_DECISION"
     SUBMIT_BANKING_PRECHECK = "SUBMIT_BANKING_PRECHECK"
+    CONFIRM_FINAL_CONTRACT_DECISION = "CONFIRM_FINAL_CONTRACT_DECISION"
 
 
 class OperationsAssessmentStatus(StrEnum):

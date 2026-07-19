@@ -10,7 +10,7 @@ from opc_mis.api.application import create_app
 
 TEAM_PACK = Path("data/input/MISTalent2026_OPC_AgenticAI_TeamPack_v3.xlsx").resolve()
 FULL_SCOPE = ["FINANCE", "OPERATIONS", "RISK"]
-BANKING_TEST_AMOUNT = 350_000_000
+PLANNER_PERFORMANCE_BOND_AMOUNT = 420_000_000
 TEST_HMAC_KEY = "MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY="
 
 
@@ -57,29 +57,7 @@ def start_completed_workflow(
     )
     if terminal["status"] == "COMPLETED":
         return terminal
-    if terminal["status"] == "WAITING_FOR_INPUT":
-        assert terminal["current_stage"] == "DECISION_POST_BANKING_REVIEW"
-        pending_request_ids = terminal["pending_missing_data_ids"]
-        assert len(pending_request_ids) == 1
-        accepted = client.post(
-            (
-                f"/api/cases/{terminal['evaluation_case_id']}"
-                "/banking/input-supplements"
-            ),
-            json={
-                "workflow_run_id": workflow_run_id,
-                "missing_request_id": pending_request_ids[0],
-                "requested_amount": BANKING_TEST_AMOUNT,
-                "requested_amount_currency": "VND",
-                "evidence_note": "Amount confirmed before approval persistence test.",
-            },
-        )
-        assert accepted.status_code == 202
-        terminal = wait_for_status(
-            client,
-            workflow_run_id,
-            {"COMPLETED", "WAITING_FOR_APPROVAL"},
-        )
+    assert terminal["status"] != "WAITING_FOR_INPUT"
     if terminal["status"] == "WAITING_FOR_APPROVAL":
         assert terminal["blocked_action"] == "SUBMIT_BANKING_PRECHECK"
         pending_approval_ids = terminal["pending_approval_ids"]
@@ -119,20 +97,6 @@ def start_precheck_approval_wait(
     )
     assert created.status_code == 202
     workflow_run_id = str(created.json()["workflow_run_id"])
-    amount_wait = wait_for_status(client, workflow_run_id, {"WAITING_FOR_INPUT"})
-    assert amount_wait["current_stage"] == "DECISION_POST_BANKING_REVIEW"
-    evaluation_case_id = str(amount_wait["evaluation_case_id"])
-    amount_response = client.post(
-        f"/api/cases/{evaluation_case_id}/banking/input-supplements",
-        json={
-            "workflow_run_id": workflow_run_id,
-            "missing_request_id": amount_wait["pending_missing_data_ids"][0],
-            "requested_amount": BANKING_TEST_AMOUNT,
-            "requested_amount_currency": "VND",
-            "evidence_note": "Amount confirmed before approval persistence test.",
-        },
-    )
-    assert amount_response.status_code == 202
     precheck_wait = wait_for_status(
         client,
         workflow_run_id,
@@ -140,6 +104,35 @@ def start_precheck_approval_wait(
         required_node="APPROVAL_GATE",
     )
     assert precheck_wait["blocked_action"] == "SUBMIT_BANKING_PRECHECK"
+    assert precheck_wait["pending_missing_data_ids"] == []
+    assert precheck_wait["banking_input_supplement_id"] is None
+    evaluation_case_id = str(precheck_wait["evaluation_case_id"])
+    artifacts = client.get(
+        f"/api/cases/{evaluation_case_id}/artifacts"
+    ).json()
+    assert not any(
+        item["artifact_type"] == "BANKING_INPUT_SUPPLEMENT"
+        for item in artifacts
+    )
+    request = next(
+        item
+        for item in artifacts
+        if item["artifact_type"] == "BANKING_DISCOVERY_REQUEST"
+    )
+    proposal = next(
+        item
+        for item in artifacts
+        if item["artifact_type"] == "BANKING_PRECHECK_SUBMISSION_PROPOSAL"
+    )
+    assert request["payload"]["requested_amount"] == (
+        PLANNER_PERFORMANCE_BOND_AMOUNT
+    )
+    assert request["payload"]["requested_amount_currency"] == "VND"
+    assert request["payload"]["credit_case_id"] == "CR-002"
+    assert proposal["payload"]["requested_amount"] == (
+        PLANNER_PERFORMANCE_BOND_AMOUNT
+    )
+    assert proposal["payload"]["requested_amount_currency"] == "VND"
     return precheck_wait
 
 
@@ -195,6 +188,23 @@ def test_pending_precheck_approval_resumes_after_restart_without_release_gate(
             assert precheck_request["command"]["action_type"] == (
                 "SUBMIT_BANKING_PRECHECK"
             )
+            assert precheck_request["command"]["payload"] == {
+                "precheck_submission_requested": True,
+                "api_ids": ["API-002"],
+                "requested_amount": PLANNER_PERFORMANCE_BOND_AMOUNT,
+                "requested_amount_currency": "VND",
+            }
+            checkpoint_payload = client.get(
+                f"/api/cases/{case_id}/approval-checkpoints"
+            ).json()
+            checkpoints_by_id = {
+                item["checkpoint_id"]: item
+                for item in checkpoint_payload["checkpoints"]
+            }
+            assert {
+                checkpoints_by_id[item]["source_rule_id"]
+                for item in precheck_request["checkpoint_ids"]
+            } == {"API-002", "RR-005"}
             approval_node = next(
                 item for item in waiting["nodes"] if item["node"] == "APPROVAL_GATE"
             )
@@ -250,7 +260,10 @@ def test_pending_precheck_approval_resumes_after_restart_without_release_gate(
             assert resumed["pending_approval_ids"] == []
             assert resumed["resume_stage"] is None
             assert resumed["blocked_action"] is None
-            assert resumed["current_stage"] == "INTERNAL_DECISION_PACKAGE_READY"
+            assert resumed["current_stage"] == "DECISION_CARD_READY"
+            assert resumed["decision_recommendation"] == "NOT_EVALUABLE"
+            assert resumed["pending_approval_ids"] == []
+            assert resumed["external_submission_performed"] is False
             assert len(resumed["document_release_package_ids"]) == 1
             assert resumed["document_release_package_ready"] is True
             assert resumed["internal_decision_package_ready"] is True
@@ -260,6 +273,7 @@ def test_pending_precheck_approval_resumes_after_restart_without_release_gate(
             assert resumed["ready_for_internal_decision"] is True
             assert resumed["document_release_authorized"] is False
             assert resumed["document_external_release_performed"] is False
+            assert resumed["banking_input_supplement_id"] is None
             attempts_after = {
                 item["node"]: item["attempt"] for item in resumed["nodes"]
             }
@@ -285,6 +299,7 @@ def test_pending_precheck_approval_resumes_after_restart_without_release_gate(
             assert "WORKFLOW_RESUME_REQUESTED" in event_types
             assert "DOCUMENT_RELEASE_PACKAGE_READY" in event_types
             assert "INTERNAL_DECISION_PACKAGE_READY" in event_types
+            assert "BANKING_INPUT_SUPPLEMENT_ACCEPTED" not in event_types
             assert "DOCUMENT_EXTERNAL_RELEASE_PROPOSAL" not in event_types
             assert "DOCUMENT_EXTERNAL_RELEASE_AUTHORIZED" not in event_types
             assert "DOCUMENT_EXTERNAL_RELEASE_DECLINED" not in event_types
@@ -295,6 +310,13 @@ def test_pending_precheck_approval_resumes_after_restart_without_release_gate(
                 item["command"]["action_type"]
                 == "SEND_DOCUMENT_TO_EXTERNAL_PARTNER"
                 for item in requests
+            )
+            artifacts = restarted.get(
+                f"/api/cases/{case_id}/artifacts"
+            ).json()
+            assert not any(
+                item["artifact_type"] == "BANKING_INPUT_SUPPLEMENT"
+                for item in artifacts
             )
     finally:
         patcher.undo()
@@ -353,5 +375,114 @@ def test_rejected_approval_blocks_the_same_master_workflow(tmp_path: Path) -> No
             assert client.post(
                 f"/api/workflows/{workflow_run_id}/resume"
             ).status_code == 409
+    finally:
+        patcher.undo()
+
+
+def test_new_run_request_preserves_rejection_and_creates_fresh_approval(
+    tmp_path: Path,
+) -> None:
+    """A new user run gets a new gate without reopening an audited rejection."""
+
+    dataset_id = "APPROVAL_NEW_RUN_REQUEST_TEST"
+    database_path = tmp_path / "approval-new-run-request.db"
+    patcher = pytest.MonkeyPatch()
+    patcher.setenv("OPENAI_ENABLED", "false")
+    patcher.setenv("OPC_MIS_MASKING_HMAC_KEY_BASE64", TEST_HMAC_KEY)
+    first_body = {
+        "contract_id": "CON-004",
+        "evaluation_scope": FULL_SCOPE,
+        "as_of_date": "2026-07-16",
+        "run_request_id": "RUN-REQUEST-CON004-0001",
+    }
+    try:
+        with TestClient(
+            create_app(
+                workbook_path=TEAM_PACK,
+                dataset_id=dataset_id,
+                database_path=database_path,
+            )
+        ) as client:
+            first_start = client.post("/api/cases/run", json=first_body)
+            assert first_start.status_code == 202
+            first_run_id = str(first_start.json()["workflow_run_id"])
+            first_wait = wait_for_status(
+                client,
+                first_run_id,
+                {"WAITING_FOR_APPROVAL"},
+                required_node="APPROVAL_GATE",
+            )
+            first_request_id = str(first_wait["pending_approval_ids"][0])
+
+            same_start = client.post("/api/cases/run", json=first_body)
+            assert same_start.status_code == 202
+            assert same_start.json()["workflow_run_id"] == first_run_id
+            same_wait = client.get(f"/api/workflows/{first_run_id}").json()
+            assert same_wait["status"] == "WAITING_FOR_APPROVAL"
+            assert same_wait["pending_approval_ids"] == [first_request_id]
+
+            rejected = client.post(
+                f"/api/approval-requests/{first_request_id}/decision",
+                json={
+                    "decision": "REJECT",
+                    "decided_by": "FOUNDER",
+                    "reason": "HUMAN_REVIEW_COMPLETED",
+                },
+            )
+            assert rejected.status_code == 200
+            first_terminal = wait_for_status(client, first_run_id, {"COMPLETED"})
+            assert first_terminal["current_stage"] == "DECISION_CARD_READY"
+
+            same_terminal_start = client.post("/api/cases/run", json=first_body)
+            assert same_terminal_start.status_code == 202
+            assert same_terminal_start.json()["workflow_run_id"] == first_run_id
+
+            second_start = client.post(
+                "/api/cases/run",
+                json={**first_body, "run_request_id": "RUN-REQUEST-CON004-0002"},
+            )
+            assert second_start.status_code == 202
+            second_run_id = str(second_start.json()["workflow_run_id"])
+            assert second_run_id != first_run_id
+            second_wait = wait_for_status(
+                client,
+                second_run_id,
+                {"WAITING_FOR_APPROVAL"},
+                required_node="APPROVAL_GATE",
+            )
+            second_request_id = str(second_wait["pending_approval_ids"][0])
+            assert second_request_id != first_request_id
+            assert second_wait["blocked_action"] == "SUBMIT_BANKING_PRECHECK"
+
+            case_id = str(second_wait["evaluation_case_id"])
+            approvals = client.get(
+                f"/api/cases/{case_id}/approval-requests"
+            ).json()
+            statuses = {
+                item["request_id"]: item["status"]
+                for item in approvals
+                if item["request_id"] in {first_request_id, second_request_id}
+            }
+            assert statuses == {
+                first_request_id: "REJECTED",
+                second_request_id: "PENDING",
+            }
+
+            dashboard = client.get(
+                f"/api/workflows/{second_run_id}/dashboard"
+            )
+            assert dashboard.status_code == 200
+            approval_interactions = [
+                item
+                for item in dashboard.json()["pending_interactions"]
+                if item["interaction_type"] == "APPROVAL"
+            ]
+            assert len(approval_interactions) == 1
+            assert approval_interactions[0]["approval_request_ids"] == [
+                second_request_id
+            ]
+            assert approval_interactions[0]["protected_action"] == (
+                "SUBMIT_BANKING_PRECHECK"
+            )
     finally:
         patcher.undo()

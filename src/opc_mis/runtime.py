@@ -7,12 +7,18 @@ from collections.abc import Collection, Mapping
 from datetime import UTC, date, datetime
 from pathlib import Path
 
+from opc_mis.business.agents.decision.analysis_component import DecisionAnalysisAgent
+from opc_mis.business.agents.decision.analysis_context import (
+    DecisionAnalysisContextLoader,
+)
 from opc_mis.business.agents.decision.banking_handoff_component import (
     DecisionBankingHandoff,
 )
 from opc_mis.business.agents.decision.banking_handoff_context import (
     BankingHandoffContextLoader,
 )
+from opc_mis.business.agents.decision.card_component import DecisionCardAssembler
+from opc_mis.business.agents.decision.card_context import DecisionCardContextLoader
 from opc_mis.business.agents.decision.component import DecisionInitialRoutePlanner
 from opc_mis.business.agents.decision.context_loader import DecisionRouteContextLoader
 from opc_mis.business.agents.decision.document_handoff_component import (
@@ -33,6 +39,16 @@ from opc_mis.business.agents.decision.post_banking_component import (
 from opc_mis.business.agents.decision.post_banking_context import (
     DecisionPostBankingContextLoader,
 )
+from opc_mis.business.agents.decision.post_decision_component import (
+    ExternalDocumentSubmissionProposalComponent,
+    ExternalSubmissionReadinessComponent,
+    PostDecisionUpdateComponent,
+)
+from opc_mis.business.agents.decision.post_decision_context import (
+    ApprovedDecisionCardContextLoader,
+    ExternalReleaseProposalContextLoader,
+    ExternalSubmissionReadinessContextLoader,
+)
 from opc_mis.business.agents.decision.post_precheck_component import (
     DecisionPostPrecheckReviewer,
 )
@@ -46,6 +62,8 @@ from opc_mis.business.agents.finance.component import FinanceAgent
 from opc_mis.business.agents.finance.context_loader import FinanceContextLoader
 from opc_mis.business.agents.risk.component import RiskAgent
 from opc_mis.business.agents.risk.context_loader import RiskContextLoader
+from opc_mis.business.agents.risk.final_component import FinalRiskCheck
+from opc_mis.business.agents.risk.final_context_loader import FinalRiskContextLoader
 from opc_mis.business.skills.banking.advisor_component import (
     BankingOptionAdvisorSkill,
 )
@@ -131,6 +149,12 @@ from opc_mis.domain.case_workflow_models import (
 from opc_mis.domain.commands import ActionCommand
 from opc_mis.domain.components import ExecutionContext
 from opc_mis.domain.dataset import DatasetSnapshot
+from opc_mis.domain.decision_models import (
+    DecisionAnalysisExecutionResult,
+    DecisionCard,
+    DecisionCardExecutionResult,
+    DecisionRecommendation,
+)
 from opc_mis.domain.decision_post_banking_models import (
     DecisionPostBankingExecutionResult,
     DecisionPostBankingReview,
@@ -166,9 +190,11 @@ from opc_mis.domain.enums import (
     EvaluationScope,
     ProtectedAction,
     RiskRunStatus,
+    ValidationStatus,
     WorkflowNodeStatus,
     WorkflowStatus,
 )
+from opc_mis.domain.final_risk_models import FinalRiskExecutionResult
 from opc_mis.domain.finance_models import FinanceExecutionResult
 from opc_mis.domain.internal_decision_package_models import (
     InternalDecisionAssemblyPath,
@@ -178,6 +204,15 @@ from opc_mis.domain.lineage import deterministic_id
 from opc_mis.domain.masking_models import MaskableScalar, MaskedPayload
 from opc_mis.domain.operations_models import OperationsExecutionResult
 from opc_mis.domain.planner_models import EvaluationCase, PlannerExecutionResult
+from opc_mis.domain.post_decision_models import (
+    ExternalDocumentSubmissionProposal,
+    ExternalDocumentSubmissionProposalExecutionResult,
+    ExternalSubmissionReadinessExecutionResult,
+    PostDecisionUpdate,
+    PostDecisionUpdateExecutionResult,
+    external_document_release_action_payload,
+    final_decision_action_payload,
+)
 from opc_mis.domain.risk_models import (
     InitialRiskAssessment,
     RiskExecutionResult,
@@ -198,6 +233,9 @@ from opc_mis.infrastructure.config.banking_catalog_policy import (
 from opc_mis.infrastructure.config.banking_precheck_simulation_policy import (
     BankingPrecheckSimulationPolicyLoader,
 )
+from opc_mis.infrastructure.config.decision_governance_policy import (
+    DecisionGovernancePolicyLoader,
+)
 from opc_mis.infrastructure.config.masking_policy_loader import MaskingPolicyLoader
 from opc_mis.infrastructure.excel.dataset_adapter import ExcelDatasetIngestion
 from opc_mis.infrastructure.openai.banking_fallback import (
@@ -208,6 +246,13 @@ from opc_mis.infrastructure.openai.banking_option_advisor import (
     ResilientBankingOptionAdvisor,
 )
 from opc_mis.infrastructure.openai.client import create_openai_client
+from opc_mis.infrastructure.openai.decision_composer import (
+    OpenAIDecisionAnalysisComposer,
+    ResilientDecisionAnalysisComposer,
+)
+from opc_mis.infrastructure.openai.decision_fallback import (
+    DeterministicDecisionAnalysisComposer,
+)
 from opc_mis.infrastructure.openai.fallback import DeterministicFinanceNarrativeComposer
 from opc_mis.infrastructure.openai.finance_composer import (
     OpenAIFinanceNarrativeComposer,
@@ -262,6 +307,12 @@ from opc_mis.workflow.banking_precheck_submission_orchestrator import (
     BankingPrecheckSubmissionProposalOrchestrator,
 )
 from opc_mis.workflow.case_workflow_orchestrator import CaseWorkflowOrchestrator
+from opc_mis.workflow.decision_analysis_orchestrator import (
+    DecisionAnalysisOrchestrator,
+)
+from opc_mis.workflow.decision_approval_policy_orchestrator import (
+    DecisionApprovalPolicyOrchestrator,
+)
 from opc_mis.workflow.decision_banking_handoff_orchestrator import (
     DecisionBankingHandoffOrchestrator,
 )
@@ -279,12 +330,14 @@ from opc_mis.workflow.document_evidence_orchestrator import (
     DocumentEvidenceOrchestrator,
 )
 from opc_mis.workflow.document_orchestrator import DocumentOrchestrator
+from opc_mis.workflow.final_risk_orchestrator import FinalRiskOrchestrator
 from opc_mis.workflow.finance_orchestrator import FinanceAssessmentOrchestrator
 from opc_mis.workflow.internal_decision_package_orchestrator import (
     InternalDecisionPackageOrchestrator,
 )
 from opc_mis.workflow.operations_orchestrator import OperationsAssessmentOrchestrator
 from opc_mis.workflow.orchestrator import PlannerIntakeOrchestrator
+from opc_mis.workflow.post_decision_orchestrator import PostDecisionOrchestrator
 from opc_mis.workflow.risk_orchestrator import RiskAssessmentOrchestrator
 from opc_mis.workflow.workflow_runner import WorkflowRunner
 
@@ -337,6 +390,10 @@ class InternalDecisionPackageCaseNotFoundError(LookupError):
     """Raised when exact package assembly inputs cannot be resolved."""
 
 
+class FinalDecisionCaseNotFoundError(LookupError):
+    """Raised when final Decision or post-Decision inputs cannot be resolved."""
+
+
 class _UnavailableMaskingService:
     """Fail closed when the server has no configured HMAC key material."""
 
@@ -376,6 +433,9 @@ class PlannerRuntime:
         self.workbook_path = workbook_path.resolve()
         self.dataset_id = dataset_id
         resolved_settings = settings or AppSettings.from_environment()
+        self._decision_governance_policy = DecisionGovernancePolicyLoader().load(
+            resolved_settings.decision_governance_policy_path
+        )
         self._masking_policy_configuration = MaskingPolicyLoader().load(
             resolved_settings.masking_policy_path
         )
@@ -670,6 +730,90 @@ class PlannerRuntime:
                 evidence_validator=EvidenceValidator(),
             )
         )
+        self._final_risk_orchestrator = FinalRiskOrchestrator(
+            final_risk=FinalRiskCheck(
+                context_loader=FinalRiskContextLoader(artifacts=self._artifacts)
+            ),
+            artifacts=self._artifacts,
+            evidence_validator=EvidenceValidator(),
+        )
+        decision_fallback = DeterministicDecisionAnalysisComposer()
+        if resolved_settings.openai_enabled and resolved_settings.openai_api_key:
+            decision_mode = "OPENAI_WITH_DETERMINISTIC_FALLBACK"
+            decision_prompt = resolved_settings.decision_prompt_path.read_text(
+                encoding="utf-8"
+            )
+            decision_primary = OpenAIDecisionAnalysisComposer(
+                client=create_openai_client(
+                    api_key=resolved_settings.openai_api_key,
+                    timeout_seconds=resolved_settings.openai_timeout_seconds,
+                    max_retries=resolved_settings.openai_max_retries,
+                ),
+                model=resolved_settings.openai_model,
+                prompt_path=resolved_settings.decision_prompt_path,
+                prompt_version=resolved_settings.decision_prompt_version,
+            )
+            decision_composer = ResilientDecisionAnalysisComposer(
+                decision_primary, decision_fallback
+            )
+            decision_model = resolved_settings.openai_model
+            decision_prompt_version = resolved_settings.decision_prompt_version
+        else:
+            decision_mode = "DETERMINISTIC_FALLBACK"
+            decision_prompt = ""
+            decision_composer = decision_fallback
+            decision_model = decision_fallback.model_name
+            decision_prompt_version = decision_fallback.prompt_version
+        self._decision_analysis_configuration_hash = deterministic_id(
+            "DACFG",
+            decision_mode,
+            decision_model,
+            decision_prompt_version,
+            decision_prompt,
+        )
+        self._decision_analysis_orchestrator = DecisionAnalysisOrchestrator(
+            analysis_agent=DecisionAnalysisAgent(
+                context_loader=DecisionAnalysisContextLoader(
+                    artifacts=self._artifacts
+                ),
+                composer=decision_composer,
+            ),
+            card_assembler=DecisionCardAssembler(
+                context_loader=DecisionCardContextLoader(
+                    artifacts=self._artifacts
+                )
+            ),
+            artifacts=self._artifacts,
+            evidence_validator=EvidenceValidator(),
+        )
+        self._decision_approval_policy_orchestrator = (
+            DecisionApprovalPolicyOrchestrator(
+                artifacts=self._artifacts,
+                policy=self._decision_governance_policy,
+                validator=EvidenceValidator(),
+            )
+        )
+        self._post_decision_orchestrator = PostDecisionOrchestrator(
+            update_component=PostDecisionUpdateComponent(
+                context_loader=ApprovedDecisionCardContextLoader(
+                    artifacts=self._artifacts,
+                    approvals=self._approval_requests,
+                )
+            ),
+            proposal_component=ExternalDocumentSubmissionProposalComponent(
+                context_loader=ExternalReleaseProposalContextLoader(
+                    artifacts=self._artifacts
+                )
+            ),
+            readiness_component=ExternalSubmissionReadinessComponent(
+                context_loader=ExternalSubmissionReadinessContextLoader(
+                    artifacts=self._artifacts,
+                    approvals=self._approval_requests,
+                )
+            ),
+            artifacts=self._artifacts,
+            evidence_validator=EvidenceValidator(),
+        )
         self._case_workflow_orchestrator = CaseWorkflowOrchestrator(
             services=self,
             workflows=self._case_workflows,
@@ -694,6 +838,11 @@ class PlannerRuntime:
         self._decision_document_handoff_locks: dict[str, asyncio.Lock] = {}
         self._document_locks: dict[str, asyncio.Lock] = {}
         self._internal_decision_package_locks: dict[str, asyncio.Lock] = {}
+        self._final_risk_locks: dict[str, asyncio.Lock] = {}
+        self._decision_analysis_locks: dict[str, asyncio.Lock] = {}
+        self._decision_card_locks: dict[str, asyncio.Lock] = {}
+        self._post_decision_locks: dict[str, asyncio.Lock] = {}
+        self._external_submission_locks: dict[str, asyncio.Lock] = {}
         self._document_evidence_locks: dict[str, asyncio.Lock] = {}
         self._document_evidence_submission_locks: dict[str, asyncio.Lock] = {}
         self._banking_input_locks: dict[str, asyncio.Lock] = {}
@@ -745,6 +894,11 @@ class PlannerRuntime:
     def banking_advisor_configuration_hash(self) -> str:
         """Expose non-secret advisor configuration identity for invalidation."""
         return self._banking_advisor_configuration_hash
+
+    @property
+    def decision_analysis_configuration_hash(self) -> str:
+        """Expose non-secret Decision composer identity for node invalidation."""
+        return self._decision_analysis_configuration_hash
 
     @property
     def banking_precheck_adapter_id(self) -> str:
@@ -1110,8 +1264,10 @@ class PlannerRuntime:
             route_artifact = self._latest(
                 artifacts, ArtifactType.DECISION_ROUTE_PLAN
             )
-            input_ids = (
-                (route_artifact.artifact_id,) if route_artifact is not None else ()
+            input_ids = tuple(
+                item.artifact_id
+                for item in (case_artifact, route_artifact)
+                if item is not None
             )
             component_input = {
                 "execution_mode": DecisionHandoffMode.BANKING_DISCOVERY.value
@@ -1228,12 +1384,20 @@ class PlannerRuntime:
                     "Run Banking internal discovery before precheck readiness."
                 )
             evaluation_case = EvaluationCase.model_validate(case_artifact.payload)
+            request_artifact = self._latest(
+                artifacts, ArtifactType.BANKING_DISCOVERY_REQUEST
+            )
             supplement_artifact = self._latest(
                 artifacts, ArtifactType.BANKING_INPUT_SUPPLEMENT
             )
             input_ids = tuple(
                 item.artifact_id
-                for item in (case_artifact, matrix_artifact, supplement_artifact)
+                for item in (
+                    case_artifact,
+                    request_artifact,
+                    matrix_artifact,
+                    supplement_artifact,
+                )
                 if item is not None
             )
             component_input = {
@@ -1769,6 +1933,235 @@ class PlannerRuntime:
             )
             return await self._internal_decision_package_orchestrator.run(context)
 
+    async def final_risk_check(
+        self,
+        *,
+        evaluation_case_id: str,
+        workflow_run_id: str,
+        internal_decision_package_artifact_id: str,
+    ) -> FinalRiskExecutionResult:
+        """Run deterministic Final Risk from one exact validated internal package."""
+        lock = self._final_risk_locks.setdefault(
+            evaluation_case_id, asyncio.Lock()
+        )
+        async with lock:
+            artifacts = await self._artifacts.list_by_case(evaluation_case_id)
+            case_artifact = self._latest(
+                artifacts, ArtifactType.EVALUATION_CASE
+            )
+            if case_artifact is None:
+                raise InternalDecisionPackageCaseNotFoundError(
+                    "Final Risk Check requires a validated EvaluationCase."
+                )
+            package_artifact = await self._artifacts.get(
+                internal_decision_package_artifact_id
+            )
+            if (
+                package_artifact is None
+                or package_artifact.evaluation_case_id != evaluation_case_id
+                or package_artifact.artifact_type
+                is not ArtifactType.INTERNAL_DECISION_PACKAGE
+            ):
+                raise InternalDecisionPackageCaseNotFoundError(
+                    "Final Risk Check requires this case's exact Internal Decision "
+                    "Package."
+                )
+            evaluation_case = EvaluationCase.model_validate(case_artifact.payload)
+            context = ExecutionContext(
+                evaluation_case_id=evaluation_case_id,
+                dataset_id=self.dataset_id,
+                workflow_run_id=workflow_run_id,
+                input_artifact_ids=(package_artifact.artifact_id,),
+                requested_scope=evaluation_case.evaluation_scope,
+                component_input={},
+                current_node=WorkflowNode.FINAL_RISK_CHECK.value,
+            )
+            return await self._final_risk_orchestrator.run(context)
+
+    async def decision_analysis(
+        self,
+        *,
+        evaluation_case_id: str,
+        workflow_run_id: str,
+        final_risk_artifact_id: str,
+    ) -> DecisionAnalysisExecutionResult:
+        """Create one guarded AI Decision analysis from exact Final Risk."""
+        lock = self._decision_analysis_locks.setdefault(
+            evaluation_case_id, asyncio.Lock()
+        )
+        async with lock:
+            case_artifact, evaluation_case = await self._decision_case(
+                evaluation_case_id
+            )
+            del case_artifact
+            final_risk_artifact = await self._required_case_artifact(
+                evaluation_case_id=evaluation_case_id,
+                artifact_id=final_risk_artifact_id,
+                artifact_type=ArtifactType.FINAL_RISK_ASSESSMENT,
+            )
+            context = ExecutionContext(
+                evaluation_case_id=evaluation_case_id,
+                dataset_id=self.dataset_id,
+                workflow_run_id=workflow_run_id,
+                input_artifact_ids=(final_risk_artifact.artifact_id,),
+                requested_scope=evaluation_case.evaluation_scope,
+                component_input={
+                    "composer_configuration_hash": (
+                        self._decision_analysis_configuration_hash
+                    )
+                },
+                current_node=WorkflowNode.DECISION_CARD_COMPOSITION.value,
+            )
+            return await self._decision_analysis_orchestrator.run_analysis(
+                context
+            )
+
+    async def decision_card(
+        self,
+        *,
+        evaluation_case_id: str,
+        workflow_run_id: str,
+        analysis_artifact_id: str,
+    ) -> DecisionCardExecutionResult:
+        """Assemble one detailed Decision Card without requesting approval."""
+        lock = self._decision_card_locks.setdefault(
+            evaluation_case_id, asyncio.Lock()
+        )
+        async with lock:
+            _, evaluation_case = await self._decision_case(evaluation_case_id)
+            analysis_artifact = await self._required_case_artifact(
+                evaluation_case_id=evaluation_case_id,
+                artifact_id=analysis_artifact_id,
+                artifact_type=ArtifactType.AI_DECISION_ANALYSIS,
+            )
+            context = ExecutionContext(
+                evaluation_case_id=evaluation_case_id,
+                dataset_id=self.dataset_id,
+                workflow_run_id=workflow_run_id,
+                input_artifact_ids=(analysis_artifact.artifact_id,),
+                requested_scope=evaluation_case.evaluation_scope,
+                component_input={},
+                current_node=WorkflowNode.DECISION_CARD_COMPOSITION.value,
+            )
+            return await self._decision_analysis_orchestrator.run_card(context)
+
+    async def post_decision_update(
+        self,
+        *,
+        evaluation_case_id: str,
+        workflow_run_id: str,
+        decision_card_artifact_id: str,
+        approval_request_id: str,
+    ) -> PostDecisionUpdateExecutionResult:
+        """Persist routing after Founder approves the exact Decision Card."""
+        lock = self._post_decision_locks.setdefault(
+            evaluation_case_id, asyncio.Lock()
+        )
+        async with lock:
+            _, evaluation_case = await self._decision_case(evaluation_case_id)
+            card_artifact = await self._required_case_artifact(
+                evaluation_case_id=evaluation_case_id,
+                artifact_id=decision_card_artifact_id,
+                artifact_type=ArtifactType.DECISION_CARD,
+            )
+            context = ExecutionContext(
+                evaluation_case_id=evaluation_case_id,
+                dataset_id=self.dataset_id,
+                workflow_run_id=workflow_run_id,
+                input_artifact_ids=(card_artifact.artifact_id,),
+                requested_scope=evaluation_case.evaluation_scope,
+                component_input={"approval_request_id": approval_request_id},
+                current_node=WorkflowNode.POST_DECISION_UPDATE.value,
+            )
+            return await self._post_decision_orchestrator.run_update(context)
+
+    async def external_document_submission_proposal(
+        self,
+        *,
+        evaluation_case_id: str,
+        workflow_run_id: str,
+        post_decision_update_artifact_id: str,
+    ) -> ExternalDocumentSubmissionProposalExecutionResult:
+        """Create one exact masked-package proposal for Governance."""
+        lock = self._external_submission_locks.setdefault(
+            evaluation_case_id, asyncio.Lock()
+        )
+        async with lock:
+            _, evaluation_case = await self._decision_case(evaluation_case_id)
+            update_artifact = await self._required_case_artifact(
+                evaluation_case_id=evaluation_case_id,
+                artifact_id=post_decision_update_artifact_id,
+                artifact_type=ArtifactType.POST_DECISION_UPDATE,
+            )
+            update = PostDecisionUpdate.model_validate(update_artifact.payload)
+            release_snapshot = update.document_release_package
+            if release_snapshot is None:
+                raise ValueError(
+                    "External submission proposal requires an exact document release package."
+                )
+            card_artifact = await self._required_case_artifact(
+                evaluation_case_id=evaluation_case_id,
+                artifact_id=update.decision_card_artifact.artifact_id,
+                artifact_type=ArtifactType.DECISION_CARD,
+            )
+            release_artifact = await self._required_case_artifact(
+                evaluation_case_id=evaluation_case_id,
+                artifact_id=release_snapshot.artifact.artifact_id,
+                artifact_type=ArtifactType.DOCUMENT_RELEASE_PACKAGE,
+            )
+            context = ExecutionContext(
+                evaluation_case_id=evaluation_case_id,
+                dataset_id=self.dataset_id,
+                workflow_run_id=workflow_run_id,
+                input_artifact_ids=(
+                    update_artifact.artifact_id,
+                    card_artifact.artifact_id,
+                    release_artifact.artifact_id,
+                ),
+                requested_scope=evaluation_case.evaluation_scope,
+                component_input={},
+                current_node=(
+                    WorkflowNode.EXTERNAL_DOCUMENT_SUBMISSION_PROPOSAL.value
+                ),
+            )
+            return await self._post_decision_orchestrator.run_external_proposal(
+                context
+            )
+
+    async def external_submission_readiness(
+        self,
+        *,
+        evaluation_case_id: str,
+        workflow_run_id: str,
+        proposal_artifact_id: str,
+        approval_request_id: str,
+    ) -> ExternalSubmissionReadinessExecutionResult:
+        """Return READY after exact authorization; do not call an adapter."""
+        lock = self._external_submission_locks.setdefault(
+            evaluation_case_id, asyncio.Lock()
+        )
+        async with lock:
+            _, evaluation_case = await self._decision_case(evaluation_case_id)
+            proposal_artifact = await self._required_case_artifact(
+                evaluation_case_id=evaluation_case_id,
+                artifact_id=proposal_artifact_id,
+                artifact_type=(
+                    ArtifactType.EXTERNAL_DOCUMENT_SUBMISSION_PROPOSAL
+                ),
+            )
+            context = ExecutionContext(
+                evaluation_case_id=evaluation_case_id,
+                dataset_id=self.dataset_id,
+                workflow_run_id=workflow_run_id,
+                input_artifact_ids=(proposal_artifact.artifact_id,),
+                requested_scope=evaluation_case.evaluation_scope,
+                component_input={"approval_request_id": approval_request_id},
+                current_node=WorkflowNode.READY_FOR_EXTERNAL_SUBMISSION.value,
+            )
+            return await self._post_decision_orchestrator.run_external_readiness(
+                context
+            )
+
     async def document_evidence_supplement(
         self,
         *,
@@ -1940,6 +2333,7 @@ class PlannerRuntime:
         if action_type in {
             ProtectedAction.SUBMIT_BANKING_PRECHECK,
             ProtectedAction.SEND_DOCUMENT_TO_EXTERNAL_PARTNER,
+            ProtectedAction.CONFIRM_FINAL_CONTRACT_DECISION,
         }:
             raise ApprovalConflictError(
                 f"{action_type.value} can only be proposed automatically from its "
@@ -1970,74 +2364,160 @@ class PlannerRuntime:
         workflow_run_id: str,
     ) -> ApprovalExecutionResult:
         """Gate the exact proposal emitted by the executing Master Workflow."""
-        if command.action_type is ProtectedAction.SEND_DOCUMENT_TO_EXTERNAL_PARTNER:
-            raise ValueError(
-                "A raw Document release package is internal Decision input and cannot "
-                "authorize external submission. The final Decision submission proposal "
-                "is not implemented yet."
-            )
-        if command.requested_by != "CASE_WORKFLOW_ORCHESTRATOR" or (
-            command.action_type is not ProtectedAction.SUBMIT_BANKING_PRECHECK
+        supported_actions = {
+            ProtectedAction.SUBMIT_BANKING_PRECHECK,
+            ProtectedAction.CONFIRM_FINAL_CONTRACT_DECISION,
+            ProtectedAction.SEND_DOCUMENT_TO_EXTERNAL_PARTNER,
+        }
+        if (
+            command.requested_by != "CASE_WORKFLOW_ORCHESTRATOR"
+            or command.action_type not in supported_actions
         ):
             raise ValueError(
-                "The Master Workflow may currently gate only an exact internally "
-                "generated Banking precheck proposal."
+                "The Master Workflow may gate only an exact internally generated "
+                "protected-action proposal."
             )
         run = await self._case_workflows.get_run(workflow_run_id)
+        expected_stages = {
+            ProtectedAction.SUBMIT_BANKING_PRECHECK: (
+                WorkflowNode.BANKING_PRECHECK_SUBMISSION_PROPOSAL.value
+            ),
+            ProtectedAction.CONFIRM_FINAL_CONTRACT_DECISION: (
+                WorkflowNode.FINAL_DECISION_APPROVAL.value
+            ),
+            ProtectedAction.SEND_DOCUMENT_TO_EXTERNAL_PARTNER: (
+                WorkflowNode.EXTERNAL_DOCUMENT_SUBMISSION_PROPOSAL.value
+            ),
+        }
         if (
             run is None
             or run.evaluation_case_id != command.evaluation_case_id
             or run.status is not WorkflowStatus.RUNNING
-            or run.current_stage
-            != WorkflowNode.BANKING_PRECHECK_SUBMISSION_PROPOSAL.value
+            or run.current_stage != expected_stages[command.action_type]
         ):
             raise ValueError(
-                "The Banking precheck action is not attached to the active proposal "
-                "node."
+                "The protected action is not attached to its active proposal node."
             )
+        checkpoint_artifact_id: str | None = None
         artifact = await self._artifacts.get(command.payload_artifact_id)
         if (
             artifact is None
-            or artifact.artifact_type
-            is not ArtifactType.BANKING_PRECHECK_SUBMISSION_PROPOSAL
             or artifact.evaluation_case_id != command.evaluation_case_id
         ):
             raise ValueError(
-                "The protected action must reference this case's persisted Banking "
-                "precheck proposal."
+                "The protected action must reference this case's persisted proposal."
             )
-        proposal = BankingPrecheckSubmissionProposal.model_validate(artifact.payload)
-        if (
-            proposal.proposed_action is not ProtectedAction.SUBMIT_BANKING_PRECHECK
-            or proposal.precheck_executed
-            or proposal.submission_executed
+        if command.action_type is ProtectedAction.SUBMIT_BANKING_PRECHECK:
+            if (
+                artifact.artifact_type
+                is not ArtifactType.BANKING_PRECHECK_SUBMISSION_PROPOSAL
+            ):
+                raise ValueError(
+                    "Banking precheck must reference its exact proposal artifact."
+                )
+            proposal = BankingPrecheckSubmissionProposal.model_validate(
+                artifact.payload
+            )
+            if (
+                proposal.proposed_action
+                is not ProtectedAction.SUBMIT_BANKING_PRECHECK
+                or proposal.precheck_executed
+                or proposal.submission_executed
+                or command.payload != banking_precheck_action_payload(proposal)
+            ):
+                raise ValueError(
+                    "The Banking precheck command differs from its unexecuted proposal."
+                )
+            checkpoint_artifact = (
+                await self._banking_precheck_policy_orchestrator.register(
+                    proposal_artifact=artifact,
+                    context=ExecutionContext(
+                        evaluation_case_id=command.evaluation_case_id,
+                        dataset_id=self.dataset_id,
+                        workflow_run_id=workflow_run_id,
+                        input_artifact_ids=(artifact.artifact_id,),
+                        requested_scope=run.requested_scope,
+                        component_input={
+                            "protected_action": command.action_type.value
+                        },
+                        current_node=WorkflowNode.APPROVAL_GATE.value,
+                    ),
+                )
+            )
+            checkpoint_artifact_id = checkpoint_artifact.artifact_id
+        elif (
+            command.action_type
+            is ProtectedAction.CONFIRM_FINAL_CONTRACT_DECISION
         ):
-            raise ValueError(
-                "The Banking precheck proposal is not an unexecuted protected-action subject."
+            if artifact.artifact_type is not ArtifactType.DECISION_CARD:
+                raise ValueError(
+                    "Final Decision confirmation must reference a Decision Card."
+                )
+            card = DecisionCard.model_validate(artifact.payload)
+            if (
+                card.recommendation is DecisionRecommendation.NOT_EVALUABLE
+                or card.founder_decision_recorded
+                or card.approval_requested
+                or command.payload != final_decision_action_payload(card)
+            ):
+                raise ValueError(
+                    "The final Decision command differs from its approvable Card."
+                )
+            checkpoint_artifact = (
+                await self._decision_approval_policy_orchestrator.register(
+                    decision_card_artifact=artifact,
+                    context=ExecutionContext(
+                        evaluation_case_id=command.evaluation_case_id,
+                        dataset_id=self.dataset_id,
+                        workflow_run_id=workflow_run_id,
+                        input_artifact_ids=(artifact.artifact_id,),
+                        requested_scope=run.requested_scope,
+                        component_input={
+                            "protected_action": command.action_type.value
+                        },
+                        current_node=WorkflowNode.APPROVAL_GATE.value,
+                    ),
+                )
             )
-        if command.payload != banking_precheck_action_payload(proposal):
-            raise ValueError(
-                "The Banking precheck command does not match the exact proposal policy scope."
+            checkpoint_artifact_id = checkpoint_artifact.artifact_id
+        else:
+            if (
+                artifact.artifact_type
+                is not ArtifactType.EXTERNAL_DOCUMENT_SUBMISSION_PROPOSAL
+            ):
+                raise ValueError(
+                    "External submission must reference its exact proposal artifact."
+                )
+            external_proposal = ExternalDocumentSubmissionProposal.model_validate(
+                artifact.payload
             )
-        await self._banking_precheck_policy_orchestrator.register(
-            proposal_artifact=artifact,
-            context=ExecutionContext(
-                evaluation_case_id=command.evaluation_case_id,
-                dataset_id=self.dataset_id,
-                workflow_run_id=workflow_run_id,
-                input_artifact_ids=(artifact.artifact_id,),
-                requested_scope=run.requested_scope,
-                component_input={"protected_action": command.action_type.value},
-                current_node=WorkflowNode.APPROVAL_GATE.value,
-            ),
-        )
+            if (
+                external_proposal.proposed_action
+                is not ProtectedAction.SEND_DOCUMENT_TO_EXTERNAL_PARTNER
+                or external_proposal.approval_requested
+                or external_proposal.release_authorized
+                or external_proposal.external_submission_performed
+                or command.payload
+                != external_document_release_action_payload(external_proposal)
+            ):
+                raise ValueError(
+                    "The external submission command differs from its exact proposal."
+                )
         checkpoint_set = await self._approval_orchestrator.checkpoints(
-            command.evaluation_case_id
+            command.evaluation_case_id,
+            checkpoint_artifact_id=checkpoint_artifact_id,
         )
         if not any(
-            item.protected_action is ProtectedAction.SUBMIT_BANKING_PRECHECK
+            item.protected_action is command.action_type
             for item in checkpoint_set.checkpoints
-        ) or not checkpoint_set.policy_coverages:
+        ):
+            raise ValueError(
+                "The case has no registered checkpoint for this protected action."
+            )
+        if (
+            command.action_type is ProtectedAction.SUBMIT_BANKING_PRECHECK
+            and not checkpoint_set.policy_coverages
+        ):
             raise ValueError(
                 "The case has no registered Banking precheck policy coverage."
             )
@@ -2045,6 +2525,7 @@ class PlannerRuntime:
             command,
             workflow_run_id=workflow_run_id,
             allow_running_workflow=True,
+            checkpoint_artifact_id=checkpoint_artifact_id,
         )
 
     async def decide_approval(
@@ -2083,17 +2564,20 @@ class PlannerRuntime:
         contract_id: str,
         evaluation_scope: tuple[EvaluationScope, ...],
         as_of_date: date | None,
+        run_request_id: str | None = None,
     ) -> WorkflowStartResult:
         """Create or reuse one durable automatic Initial Assessment workflow."""
         snapshot = self._require_snapshot()
-        workflow_run_id = deterministic_id(
-            "CWF",
+        workflow_identity: tuple[object, ...] = (
             self.dataset_id,
             snapshot.snapshot_hash,
             contract_id,
             evaluation_scope,
             as_of_date,
         )
+        if run_request_id is not None:
+            workflow_identity = (*workflow_identity, "RUN_REQUEST", run_request_id)
+        workflow_run_id = deterministic_id("CWF", *workflow_identity)
         run = await self._case_workflows.get_run(workflow_run_id)
         if run is None:
             now = datetime.now(UTC)
@@ -2106,6 +2590,7 @@ class PlannerRuntime:
                 current_stage=WorkflowNode.PLANNER_INTAKE.value,
                 requested_scope=evaluation_scope,
                 as_of_date=as_of_date,
+                run_request_id=run_request_id,
                 created_at=now,
                 updated_at=now,
             )
@@ -2138,6 +2623,115 @@ class PlannerRuntime:
                 metadata={},
                 created_at=now,
             )
+        elif (
+            run.status is WorkflowStatus.COMPLETED
+            and run.current_stage
+            in {
+                WorkflowNode.FINAL_RISK_READY.value,
+                WorkflowNode.DECISION_CARD_READY.value,
+            }
+            and run.evaluation_case_id is not None
+        ):
+            artifacts = await self._artifacts.list_by_case(run.evaluation_case_id)
+            final_risk_artifact = self._latest(
+                artifacts, ArtifactType.FINAL_RISK_ASSESSMENT
+            )
+            if final_risk_artifact is not None:
+                identity_inputs = (
+                    final_risk_artifact.artifact_id,
+                    final_risk_artifact.version,
+                    final_risk_artifact.input_hash,
+                    self._decision_analysis_configuration_hash,
+                )
+                expected_node_hash = deterministic_id(
+                    "NIN",
+                    run.dataset_snapshot_hash,
+                    run.evaluation_case_id,
+                    WorkflowNode.DECISION_CARD_COMPOSITION,
+                    run.as_of_date,
+                    identity_inputs,
+                )
+                decision_node = await self._case_workflows.get_node(
+                    run.workflow_run_id,
+                    WorkflowNode.DECISION_CARD_COMPOSITION.value,
+                )
+                should_recompose = (
+                    run.current_stage == WorkflowNode.FINAL_RISK_READY.value
+                    or decision_node is None
+                    or decision_node.input_hash != expected_node_hash
+                )
+                if not should_recompose:
+                    return WorkflowStartResult(
+                        workflow_run_id=run.workflow_run_id,
+                        evaluation_case_id=run.evaluation_case_id,
+                        contract_id=run.contract_id,
+                        status=run.status,
+                        status_url=f"/api/workflows/{run.workflow_run_id}",
+                    )
+                now = datetime.now(UTC)
+                previous_stage = run.current_stage
+                run = run.model_copy(
+                    update={
+                        "status": WorkflowStatus.PENDING,
+                        "current_stage": (
+                            WorkflowNode.DECISION_CARD_COMPOSITION.value
+                        ),
+                        "pending_request_ids": (),
+                        "resume_stage": None,
+                        "blocked_action": None,
+                        "failure_reason": None,
+                        "updated_at": now,
+                    }
+                )
+                await self._case_workflows.save_run(run)
+                await self._runtime_events.append(
+                    workflow_run_id=workflow_run_id,
+                    event_type=(
+                        "WORKFLOW_EXTENDED_TO_DECISION_CARD"
+                        if previous_stage == WorkflowNode.FINAL_RISK_READY.value
+                        else "DECISION_CARD_RECOMPOSITION_REQUESTED"
+                    ),
+                    node=WorkflowNode.DECISION_CARD_COMPOSITION,
+                    metadata={
+                        "final_risk_artifact_id": final_risk_artifact.artifact_id
+                    },
+                    created_at=now,
+                )
+        elif (
+            run.status is WorkflowStatus.COMPLETED
+            and run.current_stage
+            == WorkflowNode.INTERNAL_DECISION_PACKAGE_READY.value
+            and run.evaluation_case_id is not None
+        ):
+            artifacts = await self._artifacts.list_by_case(run.evaluation_case_id)
+            package_artifact = self._latest(
+                artifacts, ArtifactType.INTERNAL_DECISION_PACKAGE
+            )
+            if package_artifact is not None:
+                now = datetime.now(UTC)
+                run = run.model_copy(
+                    update={
+                        "status": WorkflowStatus.PENDING,
+                        "current_stage": WorkflowNode.FINAL_RISK_CHECK.value,
+                        "pending_request_ids": (),
+                        "resume_stage": None,
+                        "blocked_action": None,
+                        "failure_reason": None,
+                        "updated_at": now,
+                    }
+                )
+                await self._case_workflows.save_run(run)
+                await self._runtime_events.append(
+                    workflow_run_id=workflow_run_id,
+                    event_type="WORKFLOW_EXTENDED_TO_FINAL_RISK_CHECK",
+                    node=WorkflowNode.FINAL_RISK_CHECK,
+                    metadata={
+                        "internal_decision_package_artifact_id": (
+                            package_artifact.artifact_id
+                        )
+                    },
+                    created_at=now,
+                )
         elif (
             run.status is WorkflowStatus.COMPLETED
             and run.current_stage == WorkflowNode.DECISION_ROUTE_PLANNED.value
@@ -2731,6 +3325,47 @@ class PlannerRuntime:
     async def artifacts_for_case(self, evaluation_case_id: str) -> tuple[ArtifactEnvelope, ...]:
         """Expose immutable case artifacts for prototype inspection."""
         return await self._artifacts.list_by_case(evaluation_case_id)
+
+    async def _decision_case(
+        self, evaluation_case_id: str
+    ) -> tuple[ArtifactEnvelope, EvaluationCase]:
+        artifacts = await self._artifacts.list_by_case(evaluation_case_id)
+        case_artifact = self._latest(artifacts, ArtifactType.EVALUATION_CASE)
+        if (
+            case_artifact is None
+            or case_artifact.validation_status
+            not in {ValidationStatus.VALID, ValidationStatus.VALID_WITH_WARNINGS}
+        ):
+            raise FinalDecisionCaseNotFoundError(
+                "Final Decision requires a validated EvaluationCase."
+            )
+        return case_artifact, EvaluationCase.model_validate(case_artifact.payload)
+
+    async def _required_case_artifact(
+        self,
+        *,
+        evaluation_case_id: str,
+        artifact_id: str,
+        artifact_type: ArtifactType,
+    ) -> ArtifactEnvelope:
+        artifact = await self._artifacts.get(artifact_id)
+        if (
+            artifact is None
+            or artifact.evaluation_case_id != evaluation_case_id
+            or artifact.artifact_type is not artifact_type
+            or artifact.validation_status
+            not in {ValidationStatus.VALID, ValidationStatus.VALID_WITH_WARNINGS}
+        ):
+            raise FinalDecisionCaseNotFoundError(
+                f"Final Decision requires this case's validated {artifact_type.value}."
+            )
+        artifacts = await self._artifacts.list_by_case(evaluation_case_id)
+        latest = self._latest(artifacts, artifact_type)
+        if latest is None or latest.artifact_id != artifact.artifact_id:
+            raise FinalDecisionCaseNotFoundError(
+                f"Final Decision requires the current {artifact_type.value}."
+            )
+        return artifact
 
     @staticmethod
     def _latest(

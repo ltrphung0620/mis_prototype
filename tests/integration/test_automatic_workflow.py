@@ -25,8 +25,7 @@ from opc_mis.infrastructure.persistence.sqlite_workflow_repository import (
 
 TEAM_PACK = Path("data/input/MISTalent2026_OPC_AgenticAI_TeamPack_v3.xlsx").resolve()
 FULL_SCOPE = ["FINANCE", "OPERATIONS", "RISK"]
-BANKING_TEST_AMOUNT = 350_000_000
-BANKING_EVIDENCE_NOTE = "Amount confirmed for integration-test readiness."
+PLANNER_PERFORMANCE_BOND_AMOUNT = 420_000_000
 TEST_HMAC_KEY = "MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY="
 
 
@@ -77,53 +76,13 @@ def wait_for_terminal(
     raise AssertionError("Automatic workflow did not reach a terminal/wait state in time.")
 
 
-def submit_required_banking_amount(
-    client: TestClient,
-    paused: dict[str, object],
-) -> tuple[dict[str, object], dict[str, object]]:
-    """Resolve the exact durable amount request and wait for automatic resume."""
-    assert paused["status"] == "WAITING_FOR_INPUT"
-    assert paused["current_stage"] == "DECISION_POST_BANKING_REVIEW"
-    pending_request_ids = paused["pending_missing_data_ids"]
-    assert isinstance(pending_request_ids, list)
-    assert len(pending_request_ids) == 1
-    workflow_run_id = str(paused["workflow_run_id"])
-    evaluation_case_id = str(paused["evaluation_case_id"])
-
-    accepted = client.post(
-        f"/api/cases/{evaluation_case_id}/banking/input-supplements",
-        json={
-            "workflow_run_id": workflow_run_id,
-            "missing_request_id": pending_request_ids[0],
-            "requested_amount": BANKING_TEST_AMOUNT,
-            "requested_amount_currency": "VND",
-            "evidence_note": BANKING_EVIDENCE_NOTE,
-        },
-    )
-
-    assert accepted.status_code == 202
-    payload = accepted.json()
-    assert payload["status"] == "COMPLETED"
-    assert payload["current_node"] == "BANKING_INPUT_SUPPLEMENT"
-    assert payload["supplement"]["requested_amount"] == BANKING_TEST_AMOUNT
-    assert payload["supplement"]["provider"] == "AUTHORIZED_STAFF"
-    assert payload["supplement"]["resolved_request_ids"] == pending_request_ids
-    assert payload["workflow"]["workflow_run_id"] == workflow_run_id
-    return payload, wait_for_terminal(client, workflow_run_id)
-
-
 def complete_banking_pause_if_required(
     client: TestClient,
     summary: dict[str, object],
 ) -> dict[str, object]:
-    """Resolve Banking input and approval pauses while leaving direct routes unchanged."""
+    """Resolve Governance and document pauses while leaving direct routes unchanged."""
     current = summary
     for _ in range(6):
-        if current["status"] == "WAITING_FOR_INPUT" and current[
-            "current_stage"
-        ] == "DECISION_POST_BANKING_REVIEW":
-            _, current = submit_required_banking_amount(client, current)
-            continue
         if current["status"] == "WAITING_FOR_INPUT" and current[
             "current_stage"
         ] == "DOCUMENT_PREPARATION":
@@ -183,7 +142,7 @@ def complete_banking_pause_if_required(
     raise AssertionError("Workflow exceeded the expected governed pause sequence.")
 
 
-def test_con004_pauses_for_amount_then_for_submission_approval(
+def test_con004_uses_planner_amount_then_pauses_for_submission_approval(
     workflow_client: TestClient,
 ) -> None:
     before = compute_sha256(TEAM_PACK)
@@ -191,15 +150,22 @@ def test_con004_pauses_for_amount_then_for_submission_approval(
     created = start(workflow_client, "CON-004")
     paused = wait_for_terminal(workflow_client, str(created["workflow_run_id"]))
 
-    assert paused["status"] == "WAITING_FOR_INPUT"
-    assert paused["current_stage"] == "DECISION_POST_BANKING_REVIEW"
-    assert paused["resume_stage"] == "DECISION_POST_BANKING_REVIEW"
+    assert paused["status"] == "WAITING_FOR_APPROVAL"
+    assert paused["current_stage"] == "WAITING_FOR_APPROVAL"
+    assert paused["resume_stage"] == "BANKING_PRECHECK_SUBMISSION_PROPOSAL"
+    assert paused["blocked_action"] == "SUBMIT_BANKING_PRECHECK"
     assert paused["decision_route_outcome"] == "BANKING_DISCOVERY_REQUIRED"
     assert paused["banking_discovery_request_id"]
-    assert paused["banking_discovery_status"] == "OPTIONS_READY_WITH_GAPS"
-    assert paused["banking_precheck_readiness_status"] == "INPUT_REQUIRED"
-    assert paused["decision_post_banking_outcome"] == "BANKING_INPUT_REQUIRED"
-    assert paused["pending_missing_data_ids"]
+    assert paused["banking_discovery_status"] == "OPTIONS_READY"
+    assert paused["banking_precheck_readiness_status"] == "READY"
+    assert paused["decision_post_banking_outcome"] == "BANKING_PRECHECK_READY"
+    assert paused["pending_missing_data_ids"] == []
+    assert paused["banking_input_supplement_id"] is None
+    assert len(paused["pending_approval_ids"]) == 1
+    assert paused["banking_precheck_submission_proposal_id"]
+    assert paused["banking_precheck_submission_candidate_ids"] == paused[
+        "precheck_ready_option_ids"
+    ]
     case_id = str(paused["evaluation_case_id"])
     initial_artifacts = workflow_client.get(
         f"/api/cases/{case_id}/artifacts"
@@ -219,37 +185,67 @@ def test_con004_pauses_for_amount_then_for_submission_approval(
         for item in initial_matrix["payload"]["candidates"][0]["criteria"]
         if item["code"] == "MINIMUM_AMOUNT"
     )
-    assert initial_request["payload"]["requested_amount"] is None
+    proposal = next(
+        item
+        for item in initial_artifacts
+        if item["artifact_type"] == "BANKING_PRECHECK_SUBMISSION_PROPOSAL"
+    )
+    assert initial_request["payload"]["need_types"] == ["PERFORMANCE_BOND"]
+    assert initial_request["payload"]["credit_case_id"] == "CR-002"
+    assert initial_request["payload"]["requested_amount"] == (
+        PLANNER_PERFORMANCE_BOND_AMOUNT
+    )
+    assert initial_request["payload"]["requested_amount_currency"] == "VND"
+    assert initial_request["payload"]["amount_semantics"] == (
+        "CREDIT_PROFILE_REQUESTED_AMOUNT"
+    )
+    assert len(initial_request["payload"]["amount_evidence_ids"]) == 1
     assert initial_matrix["version"] == 1
-    assert initial_matrix["payload"]["requested_amount"] is None
-    assert initial_minimum["status"] == "NOT_EVALUABLE"
-    assert {item["code"] for item in initial_matrix["payload"]["data_gaps"]} == {
-        "REQUESTED_AMOUNT_UNAVAILABLE"
+    assert initial_matrix["payload"]["requested_amount"] == (
+        PLANNER_PERFORMANCE_BOND_AMOUNT
+    )
+    assert initial_matrix["payload"]["requested_amount_currency"] == "VND"
+    assert initial_matrix["payload"]["data_gaps"] == []
+    assert initial_minimum["status"] == "PASS"
+    assert proposal["payload"]["requested_amount"] == (
+        PLANNER_PERFORMANCE_BOND_AMOUNT
+    )
+    assert proposal["payload"]["requested_amount_currency"] == "VND"
+    assert not any(
+        item["artifact_type"] == "BANKING_INPUT_SUPPLEMENT"
+        for item in initial_artifacts
+    )
+    approval_requests = workflow_client.get(
+        f"/api/cases/{case_id}/approval-requests"
+    ).json()
+    approval_request = next(
+        item
+        for item in approval_requests
+        if item["request_id"] == paused["pending_approval_ids"][0]
+    )
+    assert approval_request["command"]["payload"] == {
+        "precheck_submission_requested": True,
+        "api_ids": ["API-002"],
+        "requested_amount": PLANNER_PERFORMANCE_BOND_AMOUNT,
+        "requested_amount_currency": "VND",
     }
+    checkpoint_payload = workflow_client.get(
+        f"/api/cases/{case_id}/approval-checkpoints"
+    ).json()
+    checkpoints_by_id = {
+        item["checkpoint_id"]: item
+        for item in checkpoint_payload["checkpoints"]
+    }
+    assert {
+        checkpoints_by_id[item]["source_rule_id"]
+        for item in approval_request["checkpoint_ids"]
+    } == {"API-002", "RR-005"}
 
-    accepted, approval_wait = submit_required_banking_amount(
-        workflow_client, paused
-    )
-
-    assert accepted["supplement"]["source_artifact_ids"]
-    assert approval_wait["status"] == "WAITING_FOR_APPROVAL"
-    assert approval_wait["current_stage"] == "WAITING_FOR_APPROVAL"
-    assert approval_wait["resume_stage"] == (
-        "BANKING_PRECHECK_SUBMISSION_PROPOSAL"
-    )
-    assert approval_wait["blocked_action"] == "SUBMIT_BANKING_PRECHECK"
-    assert len(approval_wait["pending_approval_ids"]) == 1
-    assert approval_wait["banking_precheck_submission_proposal_id"]
-    assert approval_wait["banking_precheck_submission_candidate_ids"] == (
-        approval_wait["precheck_ready_option_ids"]
-    )
-    final = complete_banking_pause_if_required(workflow_client, approval_wait)
+    final = complete_banking_pause_if_required(workflow_client, paused)
     assert final["status"] == "COMPLETED"
-    assert final["current_stage"] == "INTERNAL_DECISION_PACKAGE_READY"
+    assert final["current_stage"] == "DECISION_CARD_READY"
     assert final["banking_discovery_status"] == "OPTIONS_READY"
-    assert final["banking_input_supplement_id"] == accepted["supplement"][
-        "supplement_id"
-    ]
+    assert final["banking_input_supplement_id"] is None
     assert final["banking_precheck_readiness_status"] == "READY"
     assert final["decision_post_banking_outcome"] == "BANKING_PRECHECK_READY"
     assert final["decision_post_precheck_outcome"] == (
@@ -266,7 +262,9 @@ def test_con004_pauses_for_amount_then_for_submission_approval(
     assert final["banking_precheck_outcomes"] == ["CONDITIONAL_PRECHECK"]
     assert final["banking_precheck_eligibility_statuses"] == ["ELIGIBLE"]
     assert final["banking_precheck_guarantee_decisions"] == ["CONDITIONAL"]
-    assert final["banking_precheck_supported_amounts"] == [BANKING_TEST_AMOUNT]
+    assert final["banking_precheck_supported_amounts"] == [
+        PLANNER_PERFORMANCE_BOND_AMOUNT
+    ]
     assert final["document_release_package_ready"] is True
     assert final["internal_decision_package_ready"] is True
     assert final["internal_decision_assembly_path"] == (
@@ -275,6 +273,24 @@ def test_con004_pauses_for_amount_then_for_submission_approval(
     assert final["ready_for_internal_decision"] is True
     assert final["document_release_authorized"] is False
     assert final["document_external_release_performed"] is False
+    assert final["final_risk_assessment_id"]
+    assert final["final_risk_status"] == "LIMITED_BY_EVIDENCE"
+    assert final["final_residual_risk_level"] == "HIGH"
+    assert final["final_major_exception"] == "NOT_EVALUABLE"
+    assert final["final_unresolved_approval_gate_ids"] == []
+    assert final["ai_decision_analysis_id"]
+    assert final["ai_decision_analysis_source"] == "DETERMINISTIC_FALLBACK"
+    assert final["decision_card_id"]
+    assert final["decision_recommendation"] == "NOT_EVALUABLE"
+    assert final["post_decision_update_id"] is None
+    assert final["external_document_submission_proposal_id"] is None
+    assert final["external_submission_authorized"] is False
+    assert final["ready_for_external_submission"] is False
+    assert final["external_submission_performed"] is False
+    assert {
+        "SIMULATED_BANKING_RESULT_IS_NON_BINDING",
+        "DOCUMENT_RELEASE_REQUIRES_SEPARATE_AUTHORIZATION",
+    }.issubset(set(final["final_required_control_codes"]))
     assert final["banking_precheck_execution_mode"] == "SIMULATED"
     assert (
         final["banking_precheck_result_authority"]
@@ -298,7 +314,6 @@ def test_con004_pauses_for_amount_then_for_submission_approval(
         "BANKING_INTERNAL_DISCOVERY",
         "BANKING_PRECHECK_READINESS",
         "DECISION_POST_BANKING_REVIEW",
-        "BANKING_INPUT_SUPPLEMENT",
         "BANKING_PRECHECK_SUBMISSION_PROPOSAL",
         "BANKING_PRECHECK_EXECUTION",
         "DECISION_POST_PRECHECK_REVIEW",
@@ -306,6 +321,8 @@ def test_con004_pauses_for_amount_then_for_submission_approval(
         "DOCUMENT_PREPARATION",
         "DOCUMENT_INPUT_INTAKE",
         "INTERNAL_DECISION_PACKAGE_ASSEMBLY",
+        "FINAL_RISK_CHECK",
+        "DECISION_CARD_COMPOSITION",
         "APPROVAL_GATE",
     }
     assert all(
@@ -329,7 +346,6 @@ def test_con004_pauses_for_amount_then_for_submission_approval(
         "BANKING_OPTION_MATRIX",
         "BANKING_DISCOVERY_RESULT",
         "BANKING_OPTION_ADVICE",
-        "BANKING_INPUT_SUPPLEMENT",
         "BANKING_PRECHECK_READINESS",
         "DECISION_POST_BANKING_REVIEW",
         "BANKING_PRECHECK_SUBMISSION_PROPOSAL",
@@ -341,59 +357,65 @@ def test_con004_pauses_for_amount_then_for_submission_approval(
         "DOCUMENT_EVIDENCE_SUPPLEMENT",
         "DOCUMENT_RELEASE_PACKAGE",
         "INTERNAL_DECISION_PACKAGE",
+        "FINAL_RISK_ASSESSMENT",
+        "AI_DECISION_ANALYSIS",
+        "DECISION_CARD",
     }.issubset(artifact_types)
     final_artifacts = workflow_client.get(f"/api/cases/{case_id}/artifacts").json()
+    decision_card = next(
+        item
+        for item in final_artifacts
+        if item["artifact_type"] == "DECISION_CARD"
+        and item["payload"]["decision_card_id"] == final["decision_card_id"]
+    )
+    dashboard_response = workflow_client.get(
+        f"/api/workflows/{final['workflow_run_id']}/dashboard"
+    )
+    assert dashboard_response.status_code == 200
+    dashboard = dashboard_response.json()
+    not_evaluable_review = next(
+        item
+        for item in dashboard["pending_interactions"]
+        if item["interaction_type"] == "NOT_EVALUABLE_REVIEW"
+    )
+    assert not_evaluable_review["subject_artifact_id"] == decision_card["artifact_id"]
+    assert not_evaluable_review["subject_artifact_version"] == decision_card["version"]
+    assert not_evaluable_review["request_ids"] == []
+    assert not_evaluable_review["approval_request_ids"] == []
+    assert not_evaluable_review["protected_action"] is None
+    assert not_evaluable_review["endpoint"] is None
+    assert not_evaluable_review["required_fields"] == []
+    assert "các bước sau quyết định không được mở" in (
+        not_evaluable_review["instruction_vi"]
+    )
     requests = [
         item
         for item in final_artifacts
         if item["artifact_type"] == "BANKING_DISCOVERY_REQUEST"
     ]
-    matrices = sorted(
-        (
-            item
-            for item in final_artifacts
-            if item["artifact_type"] == "BANKING_OPTION_MATRIX"
-        ),
-        key=lambda item: item["version"],
-    )
-    assert len(requests) == 1
-    assert requests[0]["payload"]["requested_amount"] is None
-    assert [item["version"] for item in matrices] == [1, 2]
-    assert matrices[0]["payload"]["requested_amount"] is None
-    assert matrices[1]["payload"]["requested_amount"] == BANKING_TEST_AMOUNT
-    resumed_minimum = next(
+    matrices = [
         item
-        for item in matrices[1]["payload"]["candidates"][0]["criteria"]
-        if item["code"] == "MINIMUM_AMOUNT"
-    )
-    assert resumed_minimum["status"] == "PASS"
-    assert matrices[1]["payload"]["data_gaps"] == []
-
-    exact_retry = workflow_client.post(
-        f"/api/cases/{case_id}/banking/input-supplements",
-        json={
-            "workflow_run_id": paused["workflow_run_id"],
-            "missing_request_id": paused["pending_missing_data_ids"][0],
-            "requested_amount": BANKING_TEST_AMOUNT,
-            "requested_amount_currency": "VND",
-            "evidence_note": BANKING_EVIDENCE_NOTE,
-        },
-    )
-    assert exact_retry.status_code == 202
-    assert exact_retry.json()["supplement"]["supplement_id"] == accepted["supplement"][
-        "supplement_id"
+        for item in final_artifacts
+        if item["artifact_type"] == "BANKING_OPTION_MATRIX"
     ]
-    after_retry = workflow_client.get(f"/api/cases/{case_id}/artifacts").json()
+    assert len(requests) == 1
+    assert requests[0]["payload"]["requested_amount"] == (
+        PLANNER_PERFORMANCE_BOND_AMOUNT
+    )
+    assert requests[0]["payload"]["requested_amount_currency"] == "VND"
+    assert len(matrices) == 1
+    assert matrices[0]["version"] == 1
+    assert matrices[0]["payload"]["requested_amount"] == (
+        PLANNER_PERFORMANCE_BOND_AMOUNT
+    )
+    assert matrices[0]["payload"]["data_gaps"] == []
     assert sum(
         item["artifact_type"] == "BANKING_INPUT_SUPPLEMENT"
-        for item in after_retry
-    ) == 1
-    assert sum(
-        item["artifact_type"] == "BANKING_OPTION_MATRIX" for item in after_retry
-    ) == 2
+        for item in final_artifacts
+    ) == 0
     assert sum(
         item["artifact_type"] == "BANKING_PRECHECK_SUBMISSION_PROPOSAL"
-        for item in after_retry
+        for item in final_artifacts
     ) == 1
     approval_requests = workflow_client.get(
         f"/api/cases/{case_id}/approval-requests"
@@ -405,7 +427,10 @@ def test_con004_pauses_for_amount_then_for_submission_approval(
     )
     assert not any(
         item["command"]["action_type"]
-        == "SEND_DOCUMENT_TO_EXTERNAL_PARTNER"
+        in {
+            "CONFIRM_FINAL_CONTRACT_DECISION",
+            "SEND_DOCUMENT_TO_EXTERNAL_PARTNER",
+        }
         for item in approval_requests
     )
     events = workflow_client.get(
@@ -413,11 +438,14 @@ def test_con004_pauses_for_amount_then_for_submission_approval(
     ).json()
     assert [item["event_type"] for item in events].count(
         "BANKING_INPUT_SUPPLEMENT_ACCEPTED"
-    ) == 1
+    ) == 0
     assert [item["event_type"] for item in events].count(
         "APPROVAL_REQUESTED"
     ) == 1
     assert "DOCUMENT_RELEASE_PACKAGE_READY" in {
+        item["event_type"] for item in events
+    }
+    assert "FINAL_RISK_CHECK_COMPLETED" in {
         item["event_type"] for item in events
     }
     assert not {
@@ -433,8 +461,12 @@ def test_duplicate_start_reuses_workflow_and_does_not_repeat_nodes(
 ) -> None:
     first = start(workflow_client, "CON-005")
     final = wait_for_terminal(workflow_client, str(first["workflow_run_id"]))
-    second = start(workflow_client, "CON-005")
+    second_started = start(workflow_client, "CON-005")
+    second = wait_for_terminal(
+        workflow_client, str(second_started["workflow_run_id"])
+    )
 
+    assert second_started["workflow_run_id"] == first["workflow_run_id"]
     assert second["workflow_run_id"] == first["workflow_run_id"]
     assert second["status"] == "COMPLETED"
     nodes = {item["node"]: item for item in final["nodes"]}
@@ -444,11 +476,28 @@ def test_duplicate_start_reuses_workflow_and_does_not_repeat_nodes(
     assert nodes["INITIAL_RISK_PRE_SCAN"]["attempt"] == 1
     assert nodes["INITIAL_RISK_FINALIZATION"]["attempt"] == 1
     assert nodes["DECISION_ROUTE_PLANNING"]["attempt"] == 1
-    events = workflow_client.get(
-        f"/api/workflows/{first['workflow_run_id']}/events"
-    ).json()
+    second_nodes = {item["node"]: item for item in second["nodes"]}
+    assert second_nodes["DECISION_CARD_COMPOSITION"]["attempt"] == 1
+    assert second["artifact_refs"] == final["artifact_refs"]
+    expected_completion_count = (
+        2 if second_started["status"] == "PENDING" else 1
+    )
+    deadline = time.monotonic() + 2
+    events: list[dict[str, object]] = []
+    while time.monotonic() < deadline:
+        events = workflow_client.get(
+            f"/api/workflows/{first['workflow_run_id']}/events"
+        ).json()
+        if [item["event_type"] for item in events].count(
+            "WORKFLOW_COMPLETED"
+        ) >= expected_completion_count:
+            break
+        time.sleep(0.01)
     assert [item["event_type"] for item in events].count("WORKFLOW_CREATED") == 1
-    assert [item["event_type"] for item in events].count("WORKFLOW_COMPLETED") == 1
+    assert [item["event_type"] for item in events].count(
+        "WORKFLOW_COMPLETED"
+    ) == expected_completion_count
+    assert [item["event_type"] for item in events].count("DECISION_CARD_READY") == 1
     dependency_waits = [
         item
         for item in events
@@ -472,8 +521,12 @@ def test_duplicate_banking_start_reuses_matrix_advice_and_node_attempt(
         item["node"]: item["attempt"] for item in final["nodes"]
     }
     artifact_refs_before = final["artifact_refs"]
-    second = start(workflow_client, "CON-004")
+    second_started = start(workflow_client, "CON-004")
+    second = wait_for_terminal(
+        workflow_client, str(second_started["workflow_run_id"])
+    )
 
+    assert second_started["workflow_run_id"] == first["workflow_run_id"]
     assert second["workflow_run_id"] == first["workflow_run_id"]
     assert second["status"] == "COMPLETED"
     after = workflow_client.get(
@@ -485,12 +538,12 @@ def test_duplicate_banking_start_reuses_matrix_advice_and_node_attempt(
     assert after["artifact_refs"] == artifact_refs_before
     artifact_types = [item["artifact_type"] for item in final["artifact_refs"]]
     assert artifact_types.count("BANKING_DISCOVERY_REQUEST") == 1
-    assert artifact_types.count("BANKING_OPTION_MATRIX") == 2
-    assert artifact_types.count("BANKING_DISCOVERY_RESULT") == 2
-    assert artifact_types.count("BANKING_OPTION_ADVICE") == 2
-    assert artifact_types.count("BANKING_PRECHECK_READINESS") == 2
-    assert artifact_types.count("DECISION_POST_BANKING_REVIEW") == 2
-    assert artifact_types.count("BANKING_INPUT_SUPPLEMENT") == 1
+    assert artifact_types.count("BANKING_OPTION_MATRIX") == 1
+    assert artifact_types.count("BANKING_DISCOVERY_RESULT") == 1
+    assert artifact_types.count("BANKING_OPTION_ADVICE") == 1
+    assert artifact_types.count("BANKING_PRECHECK_READINESS") == 1
+    assert artifact_types.count("DECISION_POST_BANKING_REVIEW") == 1
+    assert artifact_types.count("BANKING_INPUT_SUPPLEMENT") == 0
     assert artifact_types.count("BANKING_PRECHECK_SUBMISSION_PROPOSAL") == 1
 
 
@@ -612,9 +665,12 @@ def test_pending_workflow_recovers_after_runtime_restart(
             terminal = wait_for_terminal(client, seeded.workflow_run_id)
             completed = complete_banking_pause_if_required(client, terminal)
             assert completed["status"] == "COMPLETED"
-            assert completed["current_stage"] == (
-                "INTERNAL_DECISION_PACKAGE_READY"
-            )
+            assert completed["current_stage"] == "DECISION_CARD_READY"
+            assert completed["decision_recommendation"] == "NOT_EVALUABLE"
+            assert completed["final_risk_assessment_id"]
+            assert completed["final_risk_status"] == "LIMITED_BY_EVIDENCE"
+            assert completed["final_residual_risk_level"] == "HIGH"
+            assert completed["final_major_exception"] == "NOT_EVALUABLE"
             assert completed["banking_precheck_result_set_id"]
             assert completed["decision_post_precheck_review_id"]
             assert completed["banking_precheck_execution_mode"] == "SIMULATED"
@@ -635,6 +691,10 @@ def test_pending_workflow_recovers_after_runtime_restart(
                 f"/api/workflows/{seeded.workflow_run_id}"
             ).json()
             assert restored["status"] == "COMPLETED"
+            assert restored["current_stage"] == "DECISION_CARD_READY"
+            assert restored["final_risk_assessment_id"] == completed[
+                "final_risk_assessment_id"
+            ]
             assert {
                 item["artifact_id"] for item in restored["artifact_refs"]
             } == artifact_ids

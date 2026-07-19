@@ -1,6 +1,7 @@
 """Unit tests for ordered durable workflow events and recovery filtering."""
 
 import asyncio
+import sqlite3
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -75,5 +76,63 @@ def test_recovery_returns_only_active_dataset_snapshot(tmp_path: Path) -> None:
         await database.close()
 
         assert tuple(item.workflow_run_id for item in recovered) == ("RUN-MATCH",)
+
+    asyncio.run(execute())
+
+
+def test_run_request_id_persists_and_legacy_run_json_remains_readable(
+    tmp_path: Path,
+) -> None:
+    async def execute() -> None:
+        database = SQLiteDatabase(tmp_path / "run-request-id.db")
+        await database.initialize()
+        repository = SQLiteCaseWorkflowRepository(database)
+        now = datetime.now(UTC)
+        base = CaseWorkflowRun(
+            workflow_run_id="RUN-LEGACY",
+            dataset_id="DATASET-A",
+            dataset_snapshot_hash="HASH-A",
+            contract_id="CONTRACT",
+            status=WorkflowStatus.PENDING,
+            current_stage=WorkflowNode.PLANNER_INTAKE.value,
+            requested_scope=(
+                EvaluationScope.FINANCE,
+                EvaluationScope.OPERATIONS,
+                EvaluationScope.RISK,
+            ),
+            created_at=now,
+            updated_at=now,
+        )
+
+        def insert_legacy(connection: sqlite3.Connection) -> None:
+            connection.execute(
+                """
+                INSERT INTO case_workflow_runs(workflow_run_id, status, model_json)
+                VALUES (?, ?, ?)
+                """,
+                (
+                    base.workflow_run_id,
+                    base.status.value,
+                    base.model_dump_json(exclude={"run_request_id"}),
+                ),
+            )
+
+        await database.run(insert_legacy)
+        legacy = await repository.get_run("RUN-LEGACY")
+        assert legacy is not None
+        assert legacy.run_request_id is None
+
+        current = base.model_copy(
+            update={
+                "workflow_run_id": "RUN-CURRENT",
+                "run_request_id": "RUN-REQUEST-0001",
+            }
+        )
+        await repository.save_run(current)
+        persisted = await repository.get_run("RUN-CURRENT")
+        await database.close()
+
+        assert persisted is not None
+        assert persisted.run_request_id == "RUN-REQUEST-0001"
 
     asyncio.run(execute())

@@ -21,7 +21,6 @@ POST /api/cases/run
            BANKING_INTERNAL_DISCOVERY
            BANKING_PRECHECK_READINESS
            DECISION_POST_BANKING_REVIEW
-             -> missing amount: WAITING_FOR_INPUT
              -> ready: BANKING_PRECHECK_READY
                 -> BANKING_PRECHECK_SUBMISSION_PROPOSAL
                 -> CHECK SUBMIT_BANKING_PRECHECK
@@ -48,6 +47,30 @@ POST /api/cases/run
                 INTERNAL_DECISION_PACKAGE_ASSEMBLY
   -> INTERNAL_DECISION_PACKAGE_READY
      (evidence dossier only; no recommendation, approval, or external send)
+  -> FINAL_RISK_CHECK
+  -> FINAL_RISK_ASSESSMENT
+  -> FINAL_RISK_READY
+     (residual risk and required controls only; no Decision recommendation)
+  -> DECISION_CARD_COMPOSITION
+     -> deterministic DecisionScenarioPacket
+     -> bounded OpenAI proposal
+     -> deterministic guard + Evidence Validator
+     -> AI_DECISION_ANALYSIS
+     -> DECISION_CARD + Evidence Validator
+  -> DECISION_CARD_READY
+     -> NOT_EVALUABLE: complete safely without approval
+     -> approvable Card: FINAL_DECISION_APPROVAL
+        -> rejected: FINAL_DECISION_REJECTED
+        -> approved: POST_DECISION_UPDATE
+           -> negotiate: NEGOTIATION_IN_PROGRESS
+           -> do not accept: FINAL_DECISION_NOT_ACCEPTED
+           -> accept without package: FINAL_DECISION_ACCEPTED
+           -> accept with exact package:
+              EXTERNAL_DOCUMENT_SUBMISSION_PROPOSAL
+              -> separate CHECK SEND_DOCUMENT_TO_EXTERNAL_PARTNER
+                 -> rejected: EXTERNAL_DOCUMENT_SUBMISSION_DECLINED
+                 -> approved: READY_FOR_EXTERNAL_SUBMISSION
+                    (no adapter call, send, or receipt)
 ```
 
 `BANKING_PRECHECK_READY` is now an internal handoff milestone. The next component creates only a
@@ -85,15 +108,12 @@ flowchart TD
     R --> S{Explicit Banking need?}
     S -- No --> T[DIRECT_ROUTE]
     S -- Yes --> U[BANKING_DISCOVERY_HANDOFF]
-    U --> V[Persist immutable BANKING_DISCOVERY_REQUEST with amount null]
+    U --> V[Persist request with exact Planner and Credit Profile amount lineage]
     V --> W[BANKING_INTERNAL_DISCOVERY]
-    W --> X[Persist matrix result and advice version one]
-    X --> Y[Persist BANKING_PRECHECK_READINESS version one]
+    W --> X[Persist matrix result and advice]
+    X --> Y[Persist BANKING_PRECHECK_READINESS]
     Y --> Z[DECISION_POST_BANKING_REVIEW]
-    Z --> AA{Amount required?}
-    AA -- Yes --> AB[Persist review and durable MissingDataRequest]
-    AB --> AC[WAITING_FOR_INPUT at DECISION_POST_BANKING_REVIEW]
-    AA -- No --> AD{Ready option exists?}
+    Z --> AD{Ready option exists?}
     AD -- Yes --> AE[BANKING_PRECHECK_READY]
     AD -- No --> AF{Typed non-ready outcome}
     AF -- No viable option or no precheck path --> AF1[Persist review]
@@ -134,7 +154,31 @@ flowchart TD
     AF1 --> IDP
     IDP --> IDPR[Persist INTERNAL_DECISION_PACKAGE]
     IDPR --> IDPREADY[INTERNAL_DECISION_PACKAGE_READY]
-    IDPREADY --> BG12[No recommendation, approval request, or external send]
+    IDPREADY --> FRC[FINAL_RISK_CHECK]
+    FRC --> FRA[Persist FINAL_RISK_ASSESSMENT]
+    FRA --> FRREADY[FINAL_RISK_READY]
+    FRREADY --> DC[DECISION_CARD_COMPOSITION]
+    DC --> DSP[Build deterministic DecisionScenarioPacket]
+    DSP --> OAI[Bounded OpenAI composition or safe fallback]
+    OAI --> DAG[Deterministic guard and Evidence Validator]
+    DAG --> AIA[Persist AI_DECISION_ANALYSIS]
+    AIA --> DCA[Rebuild packet, replay guard, assemble Decision Card]
+    DCA --> DCV[Evidence Validator and persist DECISION_CARD]
+    DCV --> DCR[DECISION_CARD_READY]
+    DCR --> DR{Recommendation}
+    DR -- NOT_EVALUABLE --> DNE[Complete safely; no approval request]
+    DR -- Approvable --> FDA[FINAL_DECISION_APPROVAL]
+    FDA -- Reject --> FDR[FINAL_DECISION_REJECTED]
+    FDA -- Approve exact Card --> PDU[Persist POST_DECISION_UPDATE]
+    PDU --> PDO{Approved route}
+    PDO -- Negotiate --> NIP[NEGOTIATION_IN_PROGRESS]
+    PDO -- Do not accept --> FDNA[FINAL_DECISION_NOT_ACCEPTED]
+    PDO -- Accept without package --> FACC[FINAL_DECISION_ACCEPTED]
+    PDO -- Accept with exact package --> EDSP[Persist EXTERNAL_DOCUMENT_SUBMISSION_PROPOSAL]
+    EDSP --> EGA{Separate Governance approval}
+    EGA -- Reject --> EDD[EXTERNAL_DOCUMENT_SUBMISSION_DECLINED]
+    EGA -- Approve exact proposal --> RFES[READY_FOR_EXTERNAL_SUBMISSION]
+    RFES --> NOSEND[No adapter call, external send, or receipt]
     AU -- Reject --> AW[Close Banking route at BANKING_PRECHECK_DECLINED]
     AW --> IDP
     AS -- Missing or invalid policy/input --> FAIL[Fail closed at APPROVAL_GATE]
@@ -144,67 +188,28 @@ flowchart TD
     BH --> BI[Preserve old result and resolve exact MissingDataRequest]
     BI --> BJ[WAITING_FOR_DEPENDENCIES at BANKING_PRECHECK_RETRY_REQUIRED]
 
-    AC --> AG[POST Banking input supplement]
-    AG --> AH[Validate exact case workflow and pending request]
-    AH --> AI[Persist immutable USER_INPUT supplement]
-    AI --> AJ[Resolve missing request and queue same workflow]
-    AJ --> AK[Reuse completed upstream nodes]
-    AK --> AL[Rerun BANKING_INTERNAL_DISCOVERY with changed input hash]
-    AL --> AM[Persist matrix result and advice version two]
-    AM --> AN[Persist readiness version two]
-    AN --> AO[Run Decision post-Banking review version two]
-    AO --> AP{Ready option exists after deterministic checks?}
-    AP -- Yes --> AE
-    AP -- No --> AF
 ```
 
 Risk pre-scan runs before the parallel tasks so future approval checkpoints exist early. Finance
 and Operations then run concurrently. Risk finalization waits for both fact artifacts. This
 dependency wait is Workflow state, not a Risk component pause.
 
-## Banking input lifecycle
+## Planner requirement and Banking amount lifecycle
 
-The initial `BANKING_DISCOVERY_REQUEST` always keeps `requested_amount: null`. Initial Banking
-discovery produces matrix version 1 with amount unavailable and `MINIMUM_AMOUNT = NOT_EVALUABLE`.
-Banking nevertheless creates `BANKING_PRECHECK_READINESS`; Decision uses it to create the exact
-missing-data request.
+Planner inspects the exact selected contract and explicitly related orders during
+`PLANNER_INTAKE`. It classifies configured requirement types and certainty, then resolves Credit
+Profile data only through exact company, request-type, and canonical contract-ID relationships.
 
-The Master run then contains:
+For `PERFORMANCE_BOND + REQUIRED`, one unique linked Credit Profile with a positive integral
+`requested_amount` is required. Otherwise Planner creates a blocking `MissingDataRequest` and the
+workflow stays at Planner intake. The system does not defer that amount to a Founder form.
 
-```text
-status                   = WAITING_FOR_INPUT
-current_stage            = DECISION_POST_BANKING_REVIEW
-resume_stage             = DECISION_POST_BANKING_REVIEW
-pending_missing_data_ids = [MDR-...]
-```
+When the requirement is valid, `EVALUATION_CASE.contract_requirements` carries the requirement ID,
+Credit Profile ID, amount, VND, semantics, and evidence. Decision copies those exact fields into
+`BANKING_DISCOVERY_REQUEST`; Banking can evaluate `MINIMUM_AMOUNT` on the first normal matrix.
 
-Input is submitted through:
-
-```http
-POST /api/cases/{evaluation_case_id}/banking/input-supplements
-```
-
-```json
-{
-  "workflow_run_id": "CWF-...",
-  "missing_request_id": "MDR-...",
-  "requested_amount": 350000000,
-  "requested_amount_currency": "VND",
-  "evidence_note": "Amount confirmed for readiness assessment."
-}
-```
-
-The numeric amount is illustrative user input, not a default and not a value inferred from the
-contract.
-
-The server accepts only a strict positive integer and `VND`. It derives dataset, contract, case,
-Banking request identity, and the current prototype staff principal `AUTHORIZED_STAFF`; the client
-cannot claim to be Founder or another principal. It validates that the missing request is still
-open for the same run and persists `BANKING_INPUT_SUPPLEMENT` with `USER_INPUT` evidence. The
-`202` response returns the supplement, a compact artifact reference, and a workflow status pointer.
-
-Successful supplement persistence resolves the missing request and queues the same workflow. No
-separate generic-resume call is needed. Supplying evidence is not approval.
+This is a requested/reference amount from Credit Profile. It is not the amount a bank supports or
+approves. A later normalized Banking result owns any separate `supported_amount` fact and authority.
 
 ## Explicit precheck field sources
 
@@ -212,34 +217,29 @@ Readiness uses only server-policy mappings:
 
 ```text
 contract_id      -> EVALUATION_CASE
-amount           -> BANKING_INPUT_SUPPLEMENT
+amount           -> BANKING_DISCOVERY_REQUEST
 company_profile  -> 02_OPC_PROFILE
 ```
 
 `12_API_CATALOG.required_fields` is compared with this mapping but does not create source
-relationships. `10_CREDIT_PROFILE` is not substituted for `company_profile`, and descriptive text
-does not link a credit case to a contract.
+relationships. `10_CREDIT_PROFILE` supplies only the Planner-bound requested amount; it is not
+substituted for `company_profile`. Similar names or unscoped descriptive text never create a link.
 
 ## Artifact flow and immutability
 
 ```text
 DatasetSnapshot
-  -> EVALUATION_CASE + PLANNER_RESULT
+  -> EVALUATION_CASE + PLANNER_RESULT (including typed contract_requirements)
   -> RISK_PRE_SCAN + APPROVAL_CHECKPOINTS
   -> FINANCE_FACTS + FINANCE_ASSESSMENT
   -> OPERATIONS_FACTS + OPERATIONS_ASSESSMENT
   -> RISK_RULE_EVALUATION + INITIAL_RISK_ASSESSMENT
   -> DECISION_ROUTE_PLAN
-  -> BANKING_DISCOVERY_REQUEST v1 (amount null)
-  -> BANKING_OPTION_MATRIX + BANKING_DISCOVERY_RESULT v1
-  -> BANKING_OPTION_ADVICE v1
-  -> BANKING_PRECHECK_READINESS v1
-  -> DECISION_POST_BANKING_REVIEW v1 + MissingDataRequest
-  -> BANKING_INPUT_SUPPLEMENT v1
-  -> BANKING_OPTION_MATRIX + BANKING_DISCOVERY_RESULT v2
-  -> BANKING_OPTION_ADVICE v2
-  -> BANKING_PRECHECK_READINESS v2
-  -> DECISION_POST_BANKING_REVIEW v2
+  -> BANKING_DISCOVERY_REQUEST (requested amount + exact evidence lineage)
+  -> BANKING_OPTION_MATRIX + BANKING_DISCOVERY_RESULT
+  -> BANKING_OPTION_ADVICE
+  -> BANKING_PRECHECK_READINESS
+  -> DECISION_POST_BANKING_REVIEW
       -> ready option: BANKING_PRECHECK_READY
          -> BANKING_PRECHECK_SUBMISSION_PROPOSAL v1
          -> proposal-scoped APPROVAL_CHECKPOINTS
@@ -261,26 +261,27 @@ DatasetSnapshot
       -> no ready option: typed non-ready outcome
          -> INTERNAL_DECISION_PACKAGE_ASSEMBLY
   -> INTERNAL_DECISION_PACKAGE_READY
+  -> FINAL_RISK_ASSESSMENT
+  -> FINAL_RISK_READY
 ```
 
-No earlier artifact is updated in place. Matrix version 1 preserves the original null amount and
-`NOT_EVALUABLE` criterion. Matrix version 2 traces the supplied amount to the supplement and records
-the deterministic `PASS` or `FAIL` result. The latest summary points to the newest versions while
-older envelopes remain auditable.
+No earlier artifact is updated in place. The matrix traces the amount back through the immutable
+Decision request and Planner case to raw Credit Profile evidence, then records deterministic
+`PASS` or `FAIL`. Repeated identical business input reuses the same artifact identity.
 
 ## Idempotency, invalidation, and recovery
 
 `workflow_run_id` depends on dataset snapshot, contract, requested Initial Assessment scope, and
 explicit `as_of_date`. Repeating the same start request returns the same run.
 
-Banking node identity includes explicit upstream artifacts, catalog-policy hash, advisor
-configuration hash, and the accepted supplement when one exists. Therefore:
+Banking node identity includes explicit upstream artifacts, the Planner-bound request amount and
+lineage, catalog-policy hash, and advisor configuration hash. Therefore:
 
-- before input, unchanged work reuses version 1;
-- after input, the changed hash reruns Banking Phase A and creates version 2;
-- completed Planner, Finance, Operations, Risk, Initial Route, and handoff nodes are reused;
-- an identical supplement retry does not create version 3; and
-- a conflicting supplement cannot overwrite accepted evidence;
+- unchanged business inputs reuse the same artifacts;
+- changed TeamPack evidence produces a changed dataset/workflow identity rather than mutating old
+  envelopes;
+- completed Planner, Finance, Operations, Risk, Initial Route, and handoff nodes are reused when
+  their exact inputs remain unchanged;
 - Phase B1 request identity binds the permit, proposal envelope, proposal item, and canonical
   request hash; and
 - an identical authorized execution reuses the same validated result set instead of invoking a
@@ -289,13 +290,14 @@ configuration hash, and the accepted supplement when one exists. Therefore:
   identities, and stable rejected-decision substance. Full Governance audit references remain in
   the payload, while workflow/request IDs and timestamps are excluded from artifact identity.
 
-This is narrow, explicit supplement-driven invalidation. It is not generic transitive `STALE` or
-arbitrary DataPatch support.
+Generic transitive `STALE` or arbitrary DataPatch support is not implemented. Existing
+post-precheck and Document evidence supplements remain narrowly scoped to their own evidence gaps;
+they do not replace the Planner-owned performance-bond amount.
 
 SQLite-backed run, node, artifact, missing-data, approval, and event state survive API restarts.
 The runner recovers matching `PENDING` or interrupted `RUNNING` work. A run intentionally waiting
-for input remains waiting until the exact request is resolved; once the supplement changes it to
-pending, recovery can continue it.
+for genuine Planner, post-precheck, or Document evidence remains waiting until the exact request is
+resolved.
 
 ## Document input, masking, and Internal Decision handoff
 
@@ -329,11 +331,11 @@ GET  /api/workflows/{workflow_run_id}
 GET  /api/workflows/{workflow_run_id}/events?after_sequence=0
 ```
 
-Resolve the Banking amount request and auto-resume:
-
-```http
-POST /api/cases/{evaluation_case_id}/banking/input-supplements
-```
+At `FINAL_RISK_READY`, the workflow summary exposes `final_risk_assessment_id`,
+`final_risk_status`, `final_residual_risk_level`, `final_major_exception`,
+`final_unresolved_approval_gate_ids`, and `final_required_control_codes`. The full validated
+envelope remains available through the case artifact endpoint; the API layer does not recalculate
+or reinterpret these values.
 
 Resolve one explicit post-precheck evidence request without rewriting the old provider result:
 
@@ -356,10 +358,11 @@ GET  /api/cases/{evaluation_case_id}/approval-requests
 POST /api/approval-requests/{request_id}/decision
 ```
 
-The generic protected-action endpoint cannot manually create `SUBMIT_BANKING_PRECHECK` or
-`SEND_DOCUMENT_TO_EXTERNAL_PARTNER`. Banking precheck is accepted only from its exact validated
-proposal node. Document package readiness does not propose the latter action; it remains dormant
-until a future validated Decision proposal exists.
+The generic protected-action endpoint cannot manually create `SUBMIT_BANKING_PRECHECK`,
+`CONFIRM_FINAL_CONTRACT_DECISION`, or `SEND_DOCUMENT_TO_EXTERNAL_PARTNER`. Banking precheck is
+accepted only from its exact validated proposal node. Document package readiness does not propose
+the latter action; it remains dormant until the implemented Decision flow persists an exact
+external submission proposal after approval of the exact `ACCEPT` Card.
 
 The generic endpoint remains for other genuine waits or changed failure conditions:
 
@@ -367,7 +370,7 @@ The generic endpoint remains for other genuine waits or changed failure conditio
 POST /api/workflows/{workflow_run_id}/resume
 ```
 
-It must not be used to clear an unresolved Banking amount request.
+It must not be used to bypass an unresolved Planner requirement or any other missing-data request.
 
 Standalone component endpoints remain available for Swagger inspection, but the Master Workflow
 does not require the user to invoke each component manually.
@@ -423,8 +426,9 @@ and content SHA-256 creates an immutable supplement and rebuilds the package. A 
 `DOCUMENT_RELEASE_PACKAGE` is persisted as the masked Document input for Internal Decision Package
 assembly. It does not trigger Governance, create an ApprovalRequest, or authorize an external
 send. The registered `SEND_DOCUMENT_TO_EXTERNAL_PARTNER` checkpoint stays dormant. Precheck
-authorization cannot be reused; only a later evidence-bound Decision recommendation/proposal may
-activate that separate checkpoint.
+authorization cannot be reused. Only the downstream evidence-bound Decision flow may activate that
+separate checkpoint, and only after an exact `ACCEPT` Card is approved and an
+`EXTERNAL_DOCUMENT_SUBMISSION_PROPOSAL` is persisted.
 
 ## Internal Decision Package convergence and current boundary
 
@@ -439,10 +443,36 @@ evidence and branch outcomes. It creates no new Finance/Risk facts, performs no 
 selection, and makes no accept/negotiate/reject recommendation. It creates no `ActionCommand` or
 `ApprovalRequest` and keeps `recommendation_performed`, `selection_performed`,
 `approval_requested`, and `external_action_performed` false. The successful workflow milestone is
-`INTERNAL_DECISION_PACKAGE_READY`.
+`INTERNAL_DECISION_PACKAGE_READY`; Workflow then automatically runs Final Risk Check.
 
 For the conditional Document branch, the source `DOCUMENT_RELEASE_PACKAGE` still has
 `document_release_authorized = false` and `document_external_release_performed = false`. No real
-external precheck/API call, external document send, partial-coverage optimizer, Final Risk Check,
-deterministic final recommendation/proposal, or Decision Card is implemented. See
+external precheck/API call, external document send, or partial-coverage optimizer is implemented.
+The later Decision flow can reference this exact package but cannot mutate it. See
 [Internal Decision Package](INTERNAL_DECISION_PACKAGE.md) for exact path and source rules.
+
+## Final Risk convergence and Decision continuation
+
+Final Risk Check consumes exactly one validated `INTERNAL_DECISION_PACKAGE`. It carries Initial
+Risk findings forward as `OPEN_UNCHANGED`, preserves evidence limitations, and creates deterministic
+required controls. Without an explicit mitigation rule, `residual_risk_level` must equal the
+Initial Risk level. Registered checkpoints remain dormant; they are not unresolved approval gates.
+
+Workflow validates and persists one `FINAL_RISK_ASSESSMENT`, records
+`FINAL_RISK_CHECK_COMPLETED`, and reaches `FINAL_RISK_READY`. Final Risk itself creates no
+`MissingDataRequest`, `ApprovalRequest`, `ActionCommand`, recommendation, or external action. An
+invalid or mismatched Internal Decision Package fails safe instead of creating a late Founder input
+form.
+
+Workflow then runs the implemented Decision composition and post-decision graph shown above.
+OpenAI sees only a deterministic `DecisionScenarioPacket`; deterministic guards and Evidence
+Validator run before the analysis and Card are persisted. `NOT_EVALUABLE` ends safely at
+`DECISION_CARD_READY`. Every other recommendation requires the separate Founder approval bound to
+the exact Card before `POST_DECISION_UPDATE` exists.
+
+An approved `ACCEPT` with a masked package creates a reference-only
+`EXTERNAL_DOCUMENT_SUBMISSION_PROPOSAL` and activates a second, proposal-bound Governance request.
+Even after that authorization, Workflow stops at `READY_FOR_EXTERNAL_SUBMISSION`; the readiness
+proof is not persisted as a receipt and explicitly records that no adapter or send ran. See
+[Decision, Final Approval, and External-Release Readiness](DECISION_FINAL_APPROVAL_AND_RELEASE.md)
+for exact artifact/checkpoint bindings and responsibility boundaries.
