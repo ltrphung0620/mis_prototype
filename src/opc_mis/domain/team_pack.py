@@ -149,6 +149,54 @@ class SheetRegistry:
             "approval_status",
         ),
     )
+    BANK_PRODUCTS = SheetDefinition(
+        "BANK_PRODUCT",
+        "11_BANK_PRODUCTS",
+        "bank_product_id",
+        (
+            "bank_product_id",
+            "bank",
+            "product_name",
+            "target_segment",
+            "description",
+            "annual_rate_or_fee",
+            "processing_fee_rate",
+            "collateral_ratio",
+            "minimum_amount",
+            "automation_level",
+            "fit_note",
+        ),
+    )
+    API_CATALOG = SheetDefinition(
+        "API_CATALOG",
+        "12_API_CATALOG",
+        "api_id",
+        (
+            "api_id",
+            "provider",
+            "method",
+            "endpoint",
+            "description",
+            "required_fields",
+            "payload_example",
+            "recommended_core_role",
+            "catalog_status",
+            "extension_rule",
+        ),
+    )
+    RISK_RULES = SheetDefinition(
+        "RISK_RULE",
+        "13_RISK_RULES",
+        "rule_id",
+        (
+            "rule_id",
+            "risk_type",
+            "trigger_condition",
+            "severity",
+            "required_action",
+            "owner_agent",
+        ),
+    )
     ALERTS = SheetDefinition(
         "ALERT",
         "14_ALERTS",
@@ -164,6 +212,47 @@ class SheetRegistry:
             "recommended_action",
         ),
     )
+    DATA_CLASS = SheetDefinition(
+        "DATA_CLASS",
+        "20_DATA_CLASS",
+        "data_pattern",
+        (
+            "data_pattern",
+            "example_field",
+            "classification",
+            "external_api_rule",
+            "masking_or_tokenization",
+            "logging_rule",
+        ),
+    )
+    MASKING_EXAMPLES = SheetDefinition(
+        "MASKING_EXAMPLE",
+        "21_MASKING_EXAMPLES",
+        "source_field",
+        (
+            "source_field",
+            "raw_example",
+            "masked_example",
+            "tokenized_example",
+            "allowed_for_partner_api",
+            "reason",
+        ),
+    )
+    API_HANDLING_RULES = SheetDefinition(
+        "API_HANDLING_RULE",
+        "22_API_HANDLING_RULES",
+        "rule_id",
+        (
+            "rule_id",
+            "applies_to",
+            "possible_issue",
+            "team_visible_meaning",
+            "required_handling",
+            "requires_human_approval",
+            "sensitive_fields",
+            "note",
+        ),
+    )
 
     DEFINITIONS = (
         OPC_PROFILE,
@@ -175,7 +264,13 @@ class SheetRegistry:
         BANK_TRANSACTIONS,
         CASHFLOW,
         CREDIT_PROFILES,
+        BANK_PRODUCTS,
+        API_CATALOG,
+        RISK_RULES,
         ALERTS,
+        DATA_CLASS,
+        MASKING_EXAMPLES,
+        API_HANDLING_RULES,
     )
     BY_SHEET: ClassVar[dict[str, SheetDefinition]] = {
         definition.sheet_name: definition for definition in DEFINITIONS

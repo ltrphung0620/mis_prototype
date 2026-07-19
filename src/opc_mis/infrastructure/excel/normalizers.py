@@ -11,12 +11,15 @@ import pandas as pd
 IDENTIFIER_FIELDS = {
     "account_id",
     "alert_id",
+    "api_id",
+    "bank_product_id",
     "company_id",
     "contract_id",
     "credit_case_id",
     "customer_id",
     "invoice_id",
     "order_id",
+    "rule_id",
     "service_id",
     "txn_id",
 }

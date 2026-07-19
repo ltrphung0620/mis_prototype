@@ -74,17 +74,14 @@ def test_finance_runs_for_every_actual_contract_without_downstream_outputs(
     for contract_id in contract_ids:
         payload = run_finance(finance_client, contract_id)
         assert payload["status"] == "COMPLETED"
-        assert payload["finance_facts"]["contract_id"] == contract_id
-        assert payload["finance_assessment"]["contract_id"] == contract_id
-        assert payload["finance_assessment"]["narrative_source"] == ("DETERMINISTIC_FALLBACK")
-        artifacts = payload["generated_artifacts"]
+        assert payload["contract_id"] == contract_id
+        assert payload["narrative_source"] == "DETERMINISTIC_FALLBACK"
+        artifacts = payload["artifact_refs"]
         assert [item["artifact_type"] for item in artifacts] == [
             "FINANCE_FACTS",
             "FINANCE_ASSESSMENT",
         ]
-        assert len(artifacts[0]["input_artifact_ids"]) == 2
-        assert len(artifacts[1]["input_artifact_ids"]) == 3
-        assert all(report["status"] == "VALID" for report in payload["validation_reports"])
+        assert all(item["validation_status"] == "VALID" for item in artifacts)
         forbidden = {
             "risk_level",
             "risk_score",
@@ -95,7 +92,7 @@ def test_finance_runs_for_every_actual_contract_without_downstream_outputs(
             "banking_option",
             "decision_card",
         }
-        assert not forbidden.intersection(nested_keys(payload["finance_assessment"]))
+        assert not forbidden.intersection(nested_keys(payload))
 
 
 def test_finance_totals_match_explicit_team_pack_relationships(
@@ -104,7 +101,7 @@ def test_finance_totals_match_explicit_team_pack_relationships(
     dataset = WorkbookLoader().load("EXPECTED_FINANCE", TEAM_PACK)
     for contract in dataset.records(SheetRegistry.CONTRACTS):
         payload = run_finance(finance_client, contract.record_id)
-        case_facts = payload["finance_facts"]["facts"]
+        case_facts = payload["facts"]
         facts = {item["metric"]: item["value"] for item in case_facts}
         orders = tuple(
             order
@@ -133,10 +130,26 @@ def test_finance_artifacts_are_idempotent(finance_client: TestClient) -> None:
     first = run_finance(finance_client, contract_id)
     second = run_finance(finance_client, contract_id)
 
-    assert [item["artifact_id"] for item in first["generated_artifacts"]] == [
-        item["artifact_id"] for item in second["generated_artifacts"]
+    assert [item["artifact_id"] for item in first["artifact_refs"]] == [
+        item["artifact_id"] for item in second["artifact_refs"]
     ]
-    assert [item["version"] for item in second["generated_artifacts"]] == [1, 1]
+    assert [item["version"] for item in second["artifact_refs"]] == [1, 1]
+
+
+def test_finance_response_does_not_repeat_domain_or_artifact_payloads(
+    finance_client: TestClient,
+) -> None:
+    contract_id = finance_client.get("/api/contracts").json()["contract_ids"][0]
+    payload = run_finance(finance_client, contract_id)
+
+    assert {
+        "finance_facts",
+        "finance_assessment",
+        "generated_artifacts",
+        "validation_reports",
+    }.isdisjoint(payload)
+    assert "payload" not in nested_keys(payload["artifact_refs"])
+    assert "evidence_refs" not in nested_keys(payload["artifact_refs"])
 
 
 def test_finance_requires_an_existing_planner_case(finance_client: TestClient) -> None:

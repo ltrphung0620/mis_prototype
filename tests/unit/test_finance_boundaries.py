@@ -1,6 +1,7 @@
 """Boundary, fallback, validation, and identity tests for Finance."""
 
 import asyncio
+import json
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -35,7 +36,10 @@ from opc_mis.infrastructure.openai.finance_composer import (
     OpenAIFinanceNarrativeComposer,
     ResilientFinanceNarrativeComposer,
 )
-from opc_mis.infrastructure.openai.narrative_guard import validate_narrative
+from opc_mis.infrastructure.openai.narrative_guard import (
+    founder_display_value,
+    validate_narrative,
+)
 from opc_mis.workflow.artifact_factory import artifact_input_hash
 
 
@@ -90,6 +94,9 @@ def test_openai_adapter_accepts_valid_structured_output_without_live_call() -> N
     class FakeResponses:
         async def parse(self, **kwargs: object) -> object:
             assert kwargs["text_format"] is FinanceNarrative
+            request_input = kwargs["input"]
+            user_payload = json.loads(request_input[1]["content"])  # type: ignore[index]
+            assert user_payload["facts"][0]["founder_display_value"] == "100 đồng"
             return SimpleNamespace(output_parsed=narrative)
 
     client = SimpleNamespace(responses=FakeResponses())
@@ -120,6 +127,41 @@ def test_narrative_guard_rejects_numeric_and_downstream_claims() -> None:
 
     with pytest.raises(ValueError):
         validate_narrative(narrative, composer_input())
+
+
+def test_narrative_guard_allows_only_verified_founder_numeric_displays() -> None:
+    verified = FinanceNarrative(
+        headline="Tóm tắt giá trị hợp đồng",
+        statements=(
+            FinanceNarrativeStatement(
+                statement_id="STATEMENT-X",
+                text="Giá trị hợp đồng được ghi nhận là 100 đồng.",
+                fact_ids=("FACT-VERIFIED",),
+            ),
+        ),
+    )
+    unsupported = verified.model_copy(
+        update={
+            "statements": (
+                verified.statements[0].model_copy(
+                    update={"text": "Giá trị hợp đồng được ghi nhận là 200 đồng."}
+                ),
+            )
+        }
+    )
+
+    assert founder_display_value(fact()) == "100 đồng"
+    validate_narrative(verified, composer_input())
+    with pytest.raises(ValueError, match="not backed by a cited fact"):
+        validate_narrative(unsupported, composer_input())
+
+
+def test_deterministic_fallback_is_founder_readable_and_fact_cited() -> None:
+    result = asyncio.run(DeterministicFinanceNarrativeComposer().compose(composer_input()))
+
+    assert result.prompt_version == "finance-narrative-v3"
+    assert "100 đồng" in result.narrative.statements[0].text
+    validate_narrative(result.narrative, composer_input())
 
 
 def test_evidence_validator_rejects_injected_risk_field() -> None:

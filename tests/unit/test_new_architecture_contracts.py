@@ -176,3 +176,8 @@ def test_domain_and_planner_business_layers_do_not_import_adapters() -> None:
         "opc_mis.infrastructure",
     ):
         assert forbidden not in source
+
+
+def test_dependency_wait_is_workflow_state_not_component_status() -> None:
+    assert "WAITING_FOR_DEPENDENCIES" not in ComponentStatus.__members__
+    assert "WAITING_FOR_DEPENDENCIES" in WorkflowStatus.__members__

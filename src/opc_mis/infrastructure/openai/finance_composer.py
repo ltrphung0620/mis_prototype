@@ -13,7 +13,10 @@ from opc_mis.domain.finance_models import (
     FinanceNarrativeComposition,
 )
 from opc_mis.infrastructure.openai.fallback import DeterministicFinanceNarrativeComposer
-from opc_mis.infrastructure.openai.narrative_guard import validate_narrative
+from opc_mis.infrastructure.openai.narrative_guard import (
+    founder_display_value,
+    validate_narrative,
+)
 
 
 class OpenAIFinanceNarrativeComposer:
@@ -33,6 +36,9 @@ class OpenAIFinanceNarrativeComposer:
         self._prompt_version = prompt_version
 
     async def compose(self, payload: FinanceComposerInput) -> FinanceNarrativeComposition:
+        model_payload = payload.model_dump(mode="json")
+        for serialized, fact in zip(model_payload["facts"], payload.facts, strict=True):
+            serialized["founder_display_value"] = founder_display_value(fact)
         response = await self._client.responses.parse(
             model=self._model,
             input=[
@@ -40,7 +46,7 @@ class OpenAIFinanceNarrativeComposer:
                 {
                     "role": "user",
                     "content": json.dumps(
-                        payload.model_dump(mode="json"),
+                        model_payload,
                         ensure_ascii=False,
                         sort_keys=True,
                         allow_nan=False,

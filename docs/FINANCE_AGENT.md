@@ -18,9 +18,11 @@ natural-language descriptions.
 7. Record neutral `FinanceObservation` objects and evidence limitations. These are inputs for the
    future Risk Agent, not activated risk findings.
 8. Persist validated `FINANCE_FACTS`.
-9. Ask OpenAI, when enabled, to compose text from sanitized verified facts. Structured output is
-   checked for fact references, invented numbers, and downstream responsibilities. Expected API,
-   refusal, parse, or validation errors use a deterministic fallback.
+9. Ask OpenAI, when enabled, to compose founder-readable executive text from sanitized verified
+   facts. Numeric presentation is formatted deterministically first; OpenAI may only copy an exact
+   display such as `4,2 tỷ đồng` or `24%` when the statement cites the corresponding fact. Structured
+   output is checked for fact references, unsupported numbers, and downstream responsibilities.
+   Expected API, refusal, parse, or validation errors use a deterministic fallback.
 10. Persist `FINANCE_ASSESSMENT`, explicitly dependent on `FINANCE_FACTS`.
 
 The authoritative output is `FINANCE_FACTS`. Narrative composition cannot change any fact.
@@ -39,6 +41,11 @@ Open `http://127.0.0.1:8000/docs`, then:
 2. Copy `planner_result.evaluation_case.evaluation_case_id`.
 3. Call `POST /api/cases/{evaluation_case_id}/finance-assessment`.
 4. Optionally inspect all envelopes through `GET /api/cases/{evaluation_case_id}/artifacts`.
+
+The Finance assessment endpoint returns a compact API DTO: facts, observations, limitations, and
+narrative appear once, while `artifact_refs` contains only artifact identity/version/validation
+metadata. Full artifact payloads and evidence lineage remain available exclusively from the
+artifact endpoint.
 
 The prototype artifact repository is process-local. Restarting the server clears cases, so Planner
 must be called again before Finance.

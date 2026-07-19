@@ -1,0 +1,3044 @@
+"""Durable Master Workflow through governed Banking precheck authorization."""
+
+import asyncio
+from collections.abc import Callable
+from datetime import UTC, date, datetime
+from typing import Protocol
+
+from opc_mis.domain.approvals import ApprovalCheckpointSet, ApprovalExecutionResult
+from opc_mis.domain.artifacts import ArtifactEnvelope
+from opc_mis.domain.banking_input_models import (
+    BankingAmountInputSubmission,
+    BankingInputExecutionResult,
+)
+from opc_mis.domain.banking_models import (
+    BankingDiscoveryExecutionResult,
+    BankingDiscoveryHandoffExecutionResult,
+    BankingDiscoveryRequest,
+    BankingDiscoveryResult,
+    BankingInputSupplement,
+    BankingOptionAdvice,
+    BankingOptionMatrix,
+    BankingPrecheckReadiness,
+    BankingPrecheckReadinessExecutionResult,
+)
+from opc_mis.domain.banking_precheck_evidence_models import (
+    BankingPrecheckEvidenceExecutionResult,
+    BankingPrecheckEvidenceSubmission,
+    BankingPrecheckEvidenceSupplement,
+)
+from opc_mis.domain.banking_precheck_execution_models import (
+    BankingPrecheckResultExecutionResult,
+    BankingPrecheckResultSet,
+)
+from opc_mis.domain.banking_precheck_submission_models import (
+    BankingPrecheckSubmissionProposal,
+    BankingPrecheckSubmissionProposalExecutionResult,
+    banking_precheck_action_payload,
+)
+from opc_mis.domain.case_workflow_models import (
+    CaseWorkflowRun,
+    WorkflowArtifactReference,
+    WorkflowNodeState,
+    WorkflowRunSummary,
+)
+from opc_mis.domain.commands import ActionCommand
+from opc_mis.domain.decision_post_banking_models import (
+    DecisionPostBankingExecutionResult,
+    DecisionPostBankingReview,
+)
+from opc_mis.domain.decision_post_precheck_models import (
+    DecisionPostPrecheckExecutionResult,
+    DecisionPostPrecheckReview,
+)
+from opc_mis.domain.decision_route_models import (
+    DecisionRouteExecutionResult,
+    DecisionRoutePlan,
+)
+from opc_mis.domain.document_models import (
+    DecisionDocumentHandoffExecutionResult,
+    DocumentChecklist,
+    DocumentEvidenceExecutionResult,
+    DocumentEvidenceSubmission,
+    DocumentEvidenceSupplement,
+    DocumentPackageDraft,
+    DocumentPackageReadiness,
+    DocumentPreparationRequest,
+    DocumentReleasePackage,
+    DocumentSkillExecutionResult,
+)
+from opc_mis.domain.enums import (
+    ApprovalGateStatus,
+    ApprovalRequestStatus,
+    ArtifactType,
+    ComponentStatus,
+    CurrencyCode,
+    DecisionPostBankingOutcome,
+    DecisionPostPrecheckOutcome,
+    DecisionRouteOutcome,
+    EvaluationScope,
+    MissingRequestStatus,
+    ProtectedAction,
+    ValidationStatus,
+    WorkflowNodeStatus,
+    WorkflowStatus,
+)
+from opc_mis.domain.finance_models import FinanceExecutionResult
+from opc_mis.domain.lineage import deterministic_id
+from opc_mis.domain.operations_models import OperationsExecutionResult
+from opc_mis.domain.planner_models import PlannerExecutionResult
+from opc_mis.domain.risk_models import RiskExecutionResult
+from opc_mis.domain.workflow import WorkflowNode
+from opc_mis.ports.approval_request_repository import ApprovalRequestRepository
+from opc_mis.ports.artifact_repository import ArtifactRepository
+from opc_mis.ports.case_workflow_repository import CaseWorkflowRepository
+from opc_mis.ports.runtime_event_repository import RuntimeEventRepository
+
+_BANKING_PRECHECK_EXECUTION_FAILURE = (
+    "Banking precheck execution failed safely; internal provider and "
+    "infrastructure details were withheld."
+)
+
+
+class AutomaticWorkflowServices(Protocol):
+    """Application services invoked by the Master Workflow without UI dependencies."""
+
+    dataset_id: str
+
+    @property
+    def snapshot_hash(self) -> str: ...
+
+    async def evaluate(
+        self,
+        *,
+        contract_id: str,
+        evaluation_scope: tuple[EvaluationScope, ...],
+    ) -> PlannerExecutionResult: ...
+
+    async def finance_assessment(
+        self, *, evaluation_case_id: str, resume_risk: bool = True
+    ) -> FinanceExecutionResult: ...
+
+    async def operations_assessment(
+        self,
+        *,
+        evaluation_case_id: str,
+        as_of_date: date | None = None,
+        resume_risk: bool = True,
+    ) -> OperationsExecutionResult: ...
+
+    async def risk_pre_scan(self, *, evaluation_case_id: str) -> RiskExecutionResult: ...
+
+    async def risk_finalize(self, *, evaluation_case_id: str) -> RiskExecutionResult: ...
+
+    async def decision_initial_route(
+        self, *, evaluation_case_id: str
+    ) -> DecisionRouteExecutionResult: ...
+
+    async def decision_banking_handoff(
+        self, *, evaluation_case_id: str
+    ) -> BankingDiscoveryHandoffExecutionResult: ...
+
+    @property
+    def banking_policy_hash(self) -> str: ...
+
+    @property
+    def banking_advisor_configuration_hash(self) -> str: ...
+
+    @property
+    def banking_precheck_adapter_id(self) -> str: ...
+
+    @property
+    def banking_precheck_adapter_configuration_hash(self) -> str: ...
+
+    async def banking_internal_discovery(
+        self, *, evaluation_case_id: str
+    ) -> BankingDiscoveryExecutionResult: ...
+
+    async def banking_precheck_readiness(
+        self, *, evaluation_case_id: str
+    ) -> BankingPrecheckReadinessExecutionResult: ...
+
+    async def decision_post_banking_review(
+        self, *, evaluation_case_id: str
+    ) -> DecisionPostBankingExecutionResult: ...
+
+    async def banking_precheck_submission_proposal(
+        self, *, evaluation_case_id: str
+    ) -> BankingPrecheckSubmissionProposalExecutionResult: ...
+
+    async def banking_precheck_execution(
+        self,
+        *,
+        evaluation_case_id: str,
+        workflow_run_id: str,
+        approval_request_id: str,
+        proposal_artifact_id: str,
+        reuse_existing_only: bool = False,
+    ) -> BankingPrecheckResultExecutionResult: ...
+
+    async def decision_post_precheck_review(
+        self,
+        *,
+        evaluation_case_id: str,
+        workflow_run_id: str,
+        result_set_artifact_id: str,
+    ) -> DecisionPostPrecheckExecutionResult: ...
+
+    @property
+    def document_masking_policy_hash(self) -> str: ...
+
+    @property
+    def document_tokenizer_key_version(self) -> str: ...
+
+    async def decision_document_handoff(
+        self,
+        *,
+        evaluation_case_id: str,
+        workflow_run_id: str,
+        review_artifact_id: str,
+        result_set_artifact_id: str,
+    ) -> DecisionDocumentHandoffExecutionResult: ...
+
+    async def document_preparation(
+        self,
+        *,
+        evaluation_case_id: str,
+        workflow_run_id: str,
+        preparation_request_artifact_id: str,
+    ) -> DocumentSkillExecutionResult: ...
+
+    async def request_workflow_protected_action(
+        self,
+        *,
+        command: ActionCommand,
+        workflow_run_id: str,
+    ) -> ApprovalExecutionResult: ...
+
+    async def banking_input_supplement(
+        self,
+        *,
+        evaluation_case_id: str,
+        submission: BankingAmountInputSubmission,
+        allowed_pending_request_id: str,
+    ) -> BankingInputExecutionResult: ...
+
+    async def banking_precheck_evidence_supplement(
+        self,
+        *,
+        evaluation_case_id: str,
+        submission: BankingPrecheckEvidenceSubmission,
+        allowed_pending_request_id: str,
+    ) -> BankingPrecheckEvidenceExecutionResult: ...
+
+    async def document_evidence_supplement(
+        self,
+        *,
+        evaluation_case_id: str,
+        submission: DocumentEvidenceSubmission,
+        allowed_pending_request_id: str,
+    ) -> DocumentEvidenceExecutionResult: ...
+
+    async def artifacts_for_case(
+        self, evaluation_case_id: str
+    ) -> tuple[ArtifactEnvelope, ...]: ...
+
+
+class CaseWorkflowNotFoundError(LookupError):
+    """Raised when a requested Master Workflow does not exist."""
+
+
+class CaseWorkflowConflictError(ValueError):
+    """Raised when a workflow cannot be resumed from its current state."""
+
+
+class CaseWorkflowOrchestrator:
+    """Own node selection, pause/resume, state persistence, and recovery."""
+
+    def __init__(
+        self,
+        *,
+        services: AutomaticWorkflowServices,
+        workflows: CaseWorkflowRepository,
+        artifacts: ArtifactRepository,
+        approvals: ApprovalRequestRepository,
+        events: RuntimeEventRepository,
+        clock: Callable[[], datetime] | None = None,
+    ) -> None:
+        self._services = services
+        self._workflows = workflows
+        self._artifacts = artifacts
+        self._approvals = approvals
+        self._events = events
+        self._clock = clock or (lambda: datetime.now(UTC))
+
+    async def execute(self, workflow_run_id: str) -> None:
+        """Run or recover one case workflow until it completes or genuinely pauses."""
+        run = await self._require_run(workflow_run_id)
+        if (
+            run.dataset_id != self._services.dataset_id
+            or run.dataset_snapshot_hash != self._services.snapshot_hash
+        ):
+            await self._fail(
+                run,
+                WorkflowNode.DATASET_INGESTION,
+                "Workflow dataset snapshot does not match the active runtime.",
+            )
+            return
+        if run.status in {WorkflowStatus.COMPLETED, WorkflowStatus.BLOCKED}:
+            return
+        run = await self._save_run(
+            run,
+            status=WorkflowStatus.RUNNING,
+            current_stage=run.current_stage,
+            failure_reason=None,
+        )
+        await self._event(run, "WORKFLOW_STARTED", None)
+        active_node = WorkflowNode.PLANNER_INTAKE
+        try:
+            run = await self._planner(run)
+            if run.status is not WorkflowStatus.RUNNING:
+                return
+            if run.evaluation_case_id is None:  # pragma: no cover - Planner contract guard
+                raise RuntimeError("Planner completed without an evaluation_case_id.")
+
+            active_node = WorkflowNode.INITIAL_RISK_PRE_SCAN
+            risk_ready = await self._risk_pre_scan(run)
+            if not risk_ready:
+                return
+
+            active_node = WorkflowNode.INITIAL_ASSESSMENT
+            finance_result, operations_result = await asyncio.gather(
+                self._finance(run),
+                self._operations(run),
+            )
+            if not self._upstream_completed(finance_result, operations_result):
+                await self._pause_from_upstream(run, finance_result, operations_result)
+                return
+
+            active_node = WorkflowNode.INITIAL_RISK_FINALIZATION
+            risk_result = await self._finalize_risk(run)
+            if (
+                risk_result is not None
+                and risk_result.status is not WorkflowStatus.COMPLETED
+            ):
+                await self._fail(
+                    run,
+                    active_node,
+                    "Risk did not finalize after FinanceFacts and OperationsFacts were ready.",
+                )
+                return
+
+            active_node = WorkflowNode.DECISION_ROUTE_PLANNING
+            route_result = await self._decision_initial_route(run)
+            if (
+                route_result is not None
+                and route_result.status is WorkflowStatus.WAITING_FOR_INPUT
+            ):
+                await self._pause_for_decision_input(run, route_result)
+                return
+            if (
+                route_result is not None
+                and route_result.status is not WorkflowStatus.COMPLETED
+            ):
+                await self._fail(
+                    run,
+                    active_node,
+                    "Decision Initial Route did not complete safely: "
+                    + "; ".join(route_result.validation_errors),
+                )
+                return
+            route_plan = (
+                route_result.route_plan if route_result is not None else None
+            )
+            if route_plan is None:
+                artifacts = await self._artifacts.list_by_case(
+                    run.evaluation_case_id
+                )
+                route_artifact = self._latest(
+                    artifacts, ArtifactType.DECISION_ROUTE_PLAN
+                )
+                if route_artifact is None:
+                    raise RuntimeError(
+                        "Decision Initial Route completed without a route artifact."
+                    )
+                route_plan = DecisionRoutePlan.model_validate(
+                    route_artifact.payload
+                )
+            if (
+                route_plan.route_outcome
+                is DecisionRouteOutcome.BANKING_DISCOVERY_REQUIRED
+            ):
+                active_node = WorkflowNode.BANKING_DISCOVERY_HANDOFF
+                handoff_result = await self._decision_banking_handoff(run)
+                if (
+                    handoff_result is not None
+                    and handoff_result.status is WorkflowStatus.WAITING_FOR_INPUT
+                ):
+                    await self._pause_for_banking_handoff_input(
+                        run, handoff_result
+                    )
+                    return
+                if (
+                    handoff_result is not None
+                    and handoff_result.status is not WorkflowStatus.COMPLETED
+                ):
+                    await self._fail(
+                        run,
+                        active_node,
+                        "Decision Banking handoff did not complete safely: "
+                        + "; ".join(handoff_result.validation_errors),
+                    )
+                    return
+                run = await self._save_run(
+                    run,
+                    status=WorkflowStatus.RUNNING,
+                    current_stage=WorkflowNode.BANKING_INTERNAL_DISCOVERY.value,
+                    failure_reason=None,
+                )
+                active_node = WorkflowNode.BANKING_INTERNAL_DISCOVERY
+                banking_result = await self._banking_internal_discovery(run)
+                if (
+                    banking_result is not None
+                    and banking_result.status is WorkflowStatus.WAITING_FOR_INPUT
+                ):
+                    await self._pause_for_banking_discovery_input(
+                        run, banking_result
+                    )
+                    return
+                if (
+                    banking_result is not None
+                    and banking_result.status is not WorkflowStatus.COMPLETED
+                ):
+                    await self._fail(
+                        run,
+                        active_node,
+                        "Banking internal discovery did not complete safely: "
+                        + "; ".join(banking_result.validation_errors),
+                    )
+                    return
+                run = await self._save_run(
+                    run,
+                    status=WorkflowStatus.RUNNING,
+                    current_stage=WorkflowNode.BANKING_PRECHECK_READINESS.value,
+                    failure_reason=None,
+                )
+                active_node = WorkflowNode.BANKING_PRECHECK_READINESS
+                readiness_result = await self._banking_precheck_readiness(run)
+                if (
+                    readiness_result is not None
+                    and readiness_result.status is not WorkflowStatus.COMPLETED
+                ):
+                    await self._fail(
+                        run,
+                        active_node,
+                        "Banking precheck readiness did not complete safely: "
+                        + "; ".join(readiness_result.validation_errors),
+                    )
+                    return
+                run = await self._save_run(
+                    run,
+                    status=WorkflowStatus.RUNNING,
+                    current_stage=WorkflowNode.DECISION_POST_BANKING_REVIEW.value,
+                    failure_reason=None,
+                )
+                active_node = WorkflowNode.DECISION_POST_BANKING_REVIEW
+                review_result = await self._decision_post_banking_review(run)
+                if (
+                    review_result is not None
+                    and review_result.status is WorkflowStatus.WAITING_FOR_INPUT
+                ):
+                    await self._pause_for_post_banking_input(run, review_result)
+                    return
+                if (
+                    review_result is not None
+                    and review_result.status is not WorkflowStatus.COMPLETED
+                ):
+                    await self._fail(
+                        run,
+                        active_node,
+                        "Decision post-Banking review did not complete safely: "
+                        + "; ".join(review_result.validation_errors),
+                    )
+                    return
+                review = (
+                    review_result.review if review_result is not None else None
+                )
+                if review is None:
+                    artifacts = await self._artifacts.list_by_case(
+                        run.evaluation_case_id
+                    )
+                    review_artifact = self._latest(
+                        artifacts, ArtifactType.DECISION_POST_BANKING_REVIEW
+                    )
+                    if review_artifact is None:
+                        raise RuntimeError(
+                            "Decision post-Banking review completed without an artifact."
+                        )
+                    review = DecisionPostBankingReview.model_validate(
+                        review_artifact.payload
+                    )
+                if (
+                    review.outcome
+                    is DecisionPostBankingOutcome.UNSUPPORTED_PRECHECK_MAPPING
+                ):
+                    await self._fail(
+                        run,
+                        active_node,
+                        "Banking precheck field mapping is unsupported.",
+                    )
+                    return
+                if (
+                    review.outcome
+                    is DecisionPostBankingOutcome.BANKING_PRECHECK_READY
+                ):
+                    run = await self._save_run(
+                        run,
+                        status=WorkflowStatus.RUNNING,
+                        current_stage=(
+                            WorkflowNode.BANKING_PRECHECK_SUBMISSION_PROPOSAL.value
+                        ),
+                        failure_reason=None,
+                    )
+                    active_node = (
+                        WorkflowNode.BANKING_PRECHECK_SUBMISSION_PROPOSAL
+                    )
+                    proposal_result = (
+                        await self._banking_precheck_submission_proposal(run)
+                    )
+                    if (
+                        proposal_result is not None
+                        and proposal_result.status is not WorkflowStatus.COMPLETED
+                    ):
+                        await self._fail(
+                            run,
+                            active_node,
+                            "Banking precheck submission proposal did not complete "
+                            "safely: "
+                            + "; ".join(proposal_result.validation_errors),
+                        )
+                        return
+                    artifacts = await self._artifacts.list_by_case(
+                        run.evaluation_case_id
+                    )
+                    proposal_artifact = self._latest(
+                        artifacts,
+                        ArtifactType.BANKING_PRECHECK_SUBMISSION_PROPOSAL,
+                    )
+                    if proposal_artifact is None:
+                        raise RuntimeError(
+                            "Banking proposal node completed without a persisted "
+                            "proposal artifact."
+                        )
+                    proposal = (
+                        proposal_result.proposal
+                        if proposal_result is not None
+                        else None
+                    )
+                    if proposal is None:
+                        proposal = BankingPrecheckSubmissionProposal.model_validate(
+                            proposal_artifact.payload
+                        )
+                    if (
+                        proposal_artifact.payload
+                        != proposal.model_dump(mode="json")
+                        or proposal.evaluation_case_id != run.evaluation_case_id
+                        or proposal.proposed_action
+                        is not ProtectedAction.SUBMIT_BANKING_PRECHECK
+                        or proposal.precheck_executed
+                        or proposal.submission_executed
+                    ):
+                        await self._fail(
+                            run,
+                            active_node,
+                            "The persisted Banking proposal is not a valid, "
+                            "unexecuted approval subject.",
+                        )
+                        return
+                    active_node = WorkflowNode.APPROVAL_GATE
+                    approval_result = (
+                        await self._services.request_workflow_protected_action(
+                            command=ActionCommand(
+                                action_type=(
+                                    ProtectedAction.SUBMIT_BANKING_PRECHECK
+                                ),
+                                evaluation_case_id=run.evaluation_case_id,
+                                payload_artifact_id=proposal_artifact.artifact_id,
+                                requested_by="CASE_WORKFLOW_ORCHESTRATOR",
+                                payload=banking_precheck_action_payload(proposal),
+                            ),
+                            workflow_run_id=run.workflow_run_id,
+                        )
+                    )
+                    if approval_result.action_authorized:
+                        if approval_result.approval_request is None:
+                            await self._fail(
+                                run,
+                                WorkflowNode.APPROVAL_GATE,
+                                "Governance authorized the Banking precheck without "
+                                "a durable action-authorization record.",
+                            )
+                            return
+                        refreshed = await self._require_run(run.workflow_run_id)
+                        refreshed = await self._save_run(
+                            refreshed,
+                            status=WorkflowStatus.RUNNING,
+                            current_stage=WorkflowNode.BANKING_PRECHECK_EXECUTION.value,
+                            pending_request_ids=(),
+                            failure_reason=None,
+                        )
+                        await self._event(
+                            refreshed,
+                            "BANKING_PRECHECK_SUBMISSION_AUTHORIZED",
+                            WorkflowNode.BANKING_PRECHECK_SUBMISSION_AUTHORIZED,
+                            {
+                                "approval_request_id": (
+                                    approval_result.approval_request.request_id
+                                ),
+                                "proposal_artifact_id": proposal_artifact.artifact_id,
+                            },
+                        )
+                        active_node = WorkflowNode.BANKING_PRECHECK_EXECUTION
+                        execution_result = await self._banking_precheck_execution(
+                            refreshed,
+                            proposal_artifact=proposal_artifact,
+                            approval_request_id=(
+                                approval_result.approval_request.request_id
+                            ),
+                        )
+                        if (
+                            execution_result is not None
+                            and execution_result.status is not WorkflowStatus.COMPLETED
+                        ):
+                            await self._fail(
+                                refreshed,
+                                active_node,
+                                "Authorized Banking precheck execution did not complete "
+                                "safely: "
+                                + "; ".join(execution_result.validation_errors),
+                            )
+                            return
+                        if execution_result is None:
+                            await self._fail(
+                                refreshed,
+                                active_node,
+                                "Banking precheck execution returned no exact result set.",
+                            )
+                            return
+                        result_artifacts = tuple(
+                            item
+                            for item in execution_result.generated_artifacts
+                            if item.artifact_type
+                            is ArtifactType.BANKING_PRECHECK_RESULT_SET
+                        )
+                        if len(result_artifacts) != 1:
+                            await self._fail(
+                                refreshed,
+                                active_node,
+                                "Banking precheck execution did not return one exact "
+                                "validated result artifact.",
+                            )
+                            return
+                        result_artifact = result_artifacts[0]
+                        result_set = BankingPrecheckResultSet.model_validate(
+                            result_artifact.payload
+                        )
+                        if (
+                            result_artifact.evaluation_case_id
+                            != refreshed.evaluation_case_id
+                            or execution_result.result_set != result_set
+                        ):
+                            await self._fail(
+                                refreshed,
+                                active_node,
+                                "Banking precheck execution result and persisted "
+                                "artifact disagree.",
+                            )
+                            return
+                        refreshed = await self._require_run(run.workflow_run_id)
+                        refreshed = await self._save_run(
+                            refreshed,
+                            status=WorkflowStatus.RUNNING,
+                            current_stage=(
+                                WorkflowNode.DECISION_POST_PRECHECK_REVIEW.value
+                            ),
+                            pending_request_ids=(),
+                            failure_reason=None,
+                        )
+                        await self._event(
+                            refreshed,
+                            "BANKING_PRECHECK_RESULTS_READY",
+                            WorkflowNode.BANKING_PRECHECK_RESULTS_READY,
+                            {
+                                "result_set_artifact_id": result_artifact.artifact_id,
+                                "result_set_id": result_set.result_set_id,
+                            },
+                        )
+                        active_node = WorkflowNode.DECISION_POST_PRECHECK_REVIEW
+                        post_precheck_result = (
+                            await self._decision_post_precheck_review(
+                                refreshed,
+                                result_set_artifact=result_artifact,
+                            )
+                        )
+                        if (
+                            post_precheck_result is not None
+                            and post_precheck_result.status
+                            is WorkflowStatus.WAITING_FOR_INPUT
+                        ):
+                            await self._pause_for_post_precheck_input(
+                                refreshed, post_precheck_result
+                            )
+                            return
+                        if (
+                            post_precheck_result is not None
+                            and post_precheck_result.status
+                            is not WorkflowStatus.COMPLETED
+                        ):
+                            await self._fail(
+                                refreshed,
+                                active_node,
+                                "Decision post-precheck review did not complete safely: "
+                                + "; ".join(
+                                    post_precheck_result.validation_errors
+                                ),
+                            )
+                            return
+                        refreshed = await self._require_run(run.workflow_run_id)
+                        artifacts = await self._artifacts.list_by_case(
+                            refreshed.evaluation_case_id or ""
+                        )
+                        post_precheck_artifact = self._latest(
+                            artifacts,
+                            ArtifactType.DECISION_POST_PRECHECK_REVIEW,
+                        )
+                        if post_precheck_artifact is None:
+                            await self._fail(
+                                refreshed,
+                                WorkflowNode.DECISION_POST_PRECHECK_REVIEW,
+                                "Decision post-precheck review has no persisted artifact.",
+                            )
+                            return
+                        post_precheck = DecisionPostPrecheckReview.model_validate(
+                            post_precheck_artifact.payload
+                        )
+                        if (
+                            post_precheck.outcome
+                            is DecisionPostPrecheckOutcome.CONDITIONAL_OPTIONS_AVAILABLE
+                        ):
+                            await self._document_flow(
+                                refreshed,
+                                review_artifact=post_precheck_artifact,
+                                result_set_artifact=result_artifact,
+                            )
+                            return
+                        await self._complete(
+                            refreshed,
+                            WorkflowNode.DECISION_POST_PRECHECK_REVIEW_COMPLETED,
+                        )
+                        return
+                    if (
+                        approval_result.gate_status is ApprovalGateStatus.REJECTED
+                        and approval_result.approval_request is not None
+                        and approval_result.approval_request.status
+                        is ApprovalRequestStatus.REJECTED
+                    ):
+                        refreshed = await self._require_run(run.workflow_run_id)
+                        await self._event(
+                            refreshed,
+                            "BANKING_PRECHECK_DECLINED_BY_FOUNDER",
+                            WorkflowNode.BANKING_PRECHECK_DECLINED,
+                            {
+                                "approval_request_id": (
+                                    approval_result.approval_request.request_id
+                                ),
+                                "proposal_artifact_id": proposal_artifact.artifact_id,
+                                "next_route": "INTERNAL_DECISION_CONTINUATION",
+                            },
+                        )
+                        await self._complete(
+                            refreshed,
+                            WorkflowNode.BANKING_PRECHECK_DECLINED,
+                        )
+                        return
+                    refreshed = await self._require_run(run.workflow_run_id)
+                    if refreshed.status in {
+                        WorkflowStatus.WAITING_FOR_APPROVAL,
+                        WorkflowStatus.WAITING_FOR_INPUT,
+                        WorkflowStatus.BLOCKED,
+                    }:
+                        return
+                    await self._fail(
+                        refreshed,
+                        WorkflowNode.APPROVAL_GATE,
+                        "Banking precheck submission was not authorized or paused "
+                        "by Governance.",
+                    )
+                    return
+                await self._complete(
+                    run, WorkflowNode.DECISION_POST_BANKING_REVIEW
+                )
+                return
+            await self._complete(run, WorkflowNode.DECISION_ROUTE_PLANNED)
+        except Exception as exc:  # persisted fail-safe boundary for background execution
+            await self._fail(run, active_node, f"{type(exc).__name__}: {exc}")
+
+    async def _document_flow(
+        self,
+        run: CaseWorkflowRun,
+        *,
+        review_artifact: ArtifactEnvelope,
+        result_set_artifact: ArtifactEnvelope,
+    ) -> None:
+        """Prepare one internal package without proposing an external release."""
+        if run.evaluation_case_id is None:  # pragma: no cover - Planner invariant
+            raise RuntimeError("Document flow requires an evaluation case.")
+        run = await self._save_run(
+            run,
+            status=WorkflowStatus.RUNNING,
+            current_stage=WorkflowNode.DECISION_DOCUMENT_HANDOFF.value,
+            pending_request_ids=(),
+            failure_reason=None,
+        )
+        handoff = await self._decision_document_handoff(
+            run,
+            review_artifact=review_artifact,
+            result_set_artifact=result_set_artifact,
+        )
+        if handoff is not None and handoff.status is not WorkflowStatus.COMPLETED:
+            await self._fail(
+                run,
+                WorkflowNode.DECISION_DOCUMENT_HANDOFF,
+                "Decision Document handoff did not complete safely: "
+                + "; ".join(handoff.validation_errors),
+            )
+            return
+        artifacts = await self._artifacts.list_by_case(run.evaluation_case_id)
+        request_artifacts = tuple(
+            item
+            for item in artifacts
+            if item.artifact_type is ArtifactType.DOCUMENT_PREPARATION_REQUEST
+            and item.input_artifact_ids
+            == (review_artifact.artifact_id, result_set_artifact.artifact_id)
+            and item.validation_status
+            in {ValidationStatus.VALID, ValidationStatus.VALID_WITH_WARNINGS}
+        )
+        if len(request_artifacts) != 1:
+            reason = (
+                "MULTIPLE_DOCUMENT_OPTIONS_REQUIRE_DECISION_SELECTION"
+                if len(request_artifacts) > 1
+                else "CONDITIONAL_RESULT_HAS_NO_DOCUMENT_PREPARATION_REQUEST"
+            )
+            await self._fail(
+                run,
+                WorkflowNode.DECISION_DOCUMENT_HANDOFF,
+                reason,
+            )
+            return
+        request_artifact = request_artifacts[0]
+        run = await self._save_run(
+            run,
+            status=WorkflowStatus.RUNNING,
+            current_stage=WorkflowNode.DOCUMENT_PREPARATION.value,
+            pending_request_ids=(),
+            failure_reason=None,
+        )
+        preparation = await self._document_preparation(
+            run, request_artifact=request_artifact
+        )
+        if (
+            preparation is not None
+            and preparation.status is WorkflowStatus.WAITING_FOR_INPUT
+        ):
+            await self._pause_for_document_input(run, preparation)
+            return
+        if preparation is not None and preparation.status is not WorkflowStatus.COMPLETED:
+            await self._fail(
+                run,
+                WorkflowNode.DOCUMENT_PREPARATION,
+                "Document preparation did not complete safely: "
+                + "; ".join(preparation.validation_errors),
+            )
+            return
+        release_candidates = tuple(
+            item
+            for item in (
+                preparation.generated_artifacts if preparation is not None else ()
+            )
+            if item.artifact_type is ArtifactType.DOCUMENT_RELEASE_PACKAGE
+            and item.validation_status
+            in {ValidationStatus.VALID, ValidationStatus.VALID_WITH_WARNINGS}
+        )
+        if len(release_candidates) != 1:
+            await self._fail(
+                run,
+                WorkflowNode.DOCUMENT_PREPARATION,
+                "Document preparation did not create one exact release package.",
+            )
+            return
+        release_artifact = release_candidates[0]
+        release_package = DocumentReleasePackage.model_validate(
+            release_artifact.payload
+        )
+        await self._event(
+            run,
+            "DOCUMENT_RELEASE_PACKAGE_READY",
+            WorkflowNode.DOCUMENT_RELEASE_PACKAGE_READY,
+            {
+                "release_package_id": release_package.release_package_id,
+                "release_package_artifact_id": release_artifact.artifact_id,
+                "ready_for_internal_decision": True,
+                "release_authorized": False,
+                "external_release_performed": False,
+            },
+        )
+        await self._event(
+            run,
+            "READY_FOR_INTERNAL_DECISION",
+            WorkflowNode.READY_FOR_INTERNAL_DECISION,
+            {
+                "release_package_artifact_id": release_artifact.artifact_id,
+                "external_release_action_proposed": False,
+            },
+        )
+        await self._complete(run, WorkflowNode.DOCUMENT_RELEASE_PACKAGE_READY)
+
+    async def summary(self, workflow_run_id: str) -> WorkflowRunSummary:
+        """Build a compact status view from durable workflow and artifact state."""
+        run = await self._require_run(workflow_run_id)
+        nodes = await self._workflows.list_nodes(workflow_run_id)
+        artifacts: tuple[ArtifactEnvelope, ...] = ()
+        checkpoints = 0
+        decision_route_outcome: DecisionRouteOutcome | None = None
+        banking_discovery_request_id: str | None = None
+        banking_discovery_status = None
+        banking_discovery_result_id: str | None = None
+        banking_option_matrix_id: str | None = None
+        banking_option_advice_id: str | None = None
+        banking_option_count = 0
+        banking_input_supplement_id: str | None = None
+        banking_precheck_readiness_id: str | None = None
+        banking_precheck_readiness_status = None
+        decision_post_banking_review_id: str | None = None
+        decision_post_banking_outcome: DecisionPostBankingOutcome | None = None
+        precheck_ready_option_ids: tuple[str, ...] = ()
+        banking_precheck_submission_proposal_id: str | None = None
+        banking_precheck_submission_candidate_ids: tuple[str, ...] = ()
+        banking_precheck_result_set_id: str | None = None
+        banking_precheck_normalized_result_ids: tuple[str, ...] = ()
+        banking_precheck_outcomes = ()
+        banking_precheck_eligibility_statuses = ()
+        banking_precheck_guarantee_decisions = ()
+        banking_precheck_supported_amounts: tuple[int | None, ...] = ()
+        banking_precheck_currencies = ()
+        banking_precheck_required_document_codes: tuple[tuple[str, ...], ...] = ()
+        banking_precheck_approval_condition_codes: tuple[tuple[str, ...], ...] = ()
+        banking_precheck_execution_mode = None
+        banking_precheck_result_authority = None
+        banking_precheck_external_bank_submission: bool | None = None
+        banking_precheck_bank_approval_obtained: bool | None = None
+        decision_post_precheck_review_id: str | None = None
+        decision_post_precheck_outcome: DecisionPostPrecheckOutcome | None = None
+        decision_post_precheck_candidate_option_ids: tuple[str, ...] = ()
+        decision_post_precheck_candidate_product_ids: tuple[str, ...] = ()
+        decision_post_precheck_conditional_option_ids: tuple[str, ...] = ()
+        decision_post_precheck_inconclusive_option_ids: tuple[str, ...] = ()
+        decision_post_precheck_evidence_required_option_ids: tuple[str, ...] = ()
+        decision_post_precheck_not_eligible_option_ids: tuple[str, ...] = ()
+        decision_post_precheck_unavailable_option_ids: tuple[str, ...] = ()
+        document_preparation_request_ids: tuple[str, ...] = ()
+        document_checklist_ids: tuple[str, ...] = ()
+        document_package_draft_ids: tuple[str, ...] = ()
+        document_package_readinesses = ()
+        document_release_package_ids: tuple[str, ...] = ()
+        document_evidence_supplement_ids: tuple[str, ...] = ()
+        document_pending_codes = ()
+        pending_approvals: tuple[str, ...] = ()
+        if run.evaluation_case_id is not None:
+            artifacts = await self._artifacts.list_by_case(run.evaluation_case_id)
+            checkpoint_artifact = self._latest(
+                artifacts, ArtifactType.APPROVAL_CHECKPOINTS
+            )
+            if checkpoint_artifact is not None:
+                checkpoints = len(
+                    ApprovalCheckpointSet.model_validate(
+                        checkpoint_artifact.payload
+                    ).checkpoints
+                )
+            route_artifact = self._latest(
+                artifacts, ArtifactType.DECISION_ROUTE_PLAN
+            )
+            if route_artifact is not None:
+                decision_route_outcome = DecisionRoutePlan.model_validate(
+                    route_artifact.payload
+                ).route_outcome
+            banking_request_artifact = self._latest(
+                artifacts, ArtifactType.BANKING_DISCOVERY_REQUEST
+            )
+            if banking_request_artifact is not None:
+                banking_discovery_request_id = (
+                    BankingDiscoveryRequest.model_validate(
+                        banking_request_artifact.payload
+                    ).request_id
+                )
+            banking_matrix_artifact = self._latest(
+                artifacts, ArtifactType.BANKING_OPTION_MATRIX
+            )
+            if banking_matrix_artifact is not None:
+                matrix = BankingOptionMatrix.model_validate(
+                    banking_matrix_artifact.payload
+                )
+                banking_discovery_status = matrix.discovery_status
+                banking_option_matrix_id = matrix.matrix_id
+                banking_option_count = len(matrix.candidates)
+            banking_result_artifact = self._latest(
+                artifacts, ArtifactType.BANKING_DISCOVERY_RESULT
+            )
+            if banking_result_artifact is not None:
+                banking_discovery_result_id = BankingDiscoveryResult.model_validate(
+                    banking_result_artifact.payload
+                ).result_id
+            banking_advice_artifact = self._latest(
+                artifacts, ArtifactType.BANKING_OPTION_ADVICE
+            )
+            if banking_advice_artifact is not None:
+                banking_option_advice_id = BankingOptionAdvice.model_validate(
+                    banking_advice_artifact.payload
+                ).advice_id
+            supplement_artifact = self._latest(
+                artifacts, ArtifactType.BANKING_INPUT_SUPPLEMENT
+            )
+            if supplement_artifact is not None:
+                banking_input_supplement_id = BankingInputSupplement.model_validate(
+                    supplement_artifact.payload
+                ).supplement_id
+            readiness_artifact = self._latest(
+                artifacts, ArtifactType.BANKING_PRECHECK_READINESS
+            )
+            if readiness_artifact is not None:
+                readiness = BankingPrecheckReadiness.model_validate(
+                    readiness_artifact.payload
+                )
+                banking_precheck_readiness_id = readiness.readiness_id
+                banking_precheck_readiness_status = readiness.status
+                precheck_ready_option_ids = readiness.ready_option_ids
+            post_banking_artifact = self._latest(
+                artifacts, ArtifactType.DECISION_POST_BANKING_REVIEW
+            )
+            if post_banking_artifact is not None:
+                post_banking_review = DecisionPostBankingReview.model_validate(
+                    post_banking_artifact.payload
+                )
+                decision_post_banking_review_id = post_banking_review.review_id
+                decision_post_banking_outcome = post_banking_review.outcome
+            proposal_artifact = self._latest(
+                artifacts,
+                ArtifactType.BANKING_PRECHECK_SUBMISSION_PROPOSAL,
+            )
+            if proposal_artifact is not None:
+                proposal = BankingPrecheckSubmissionProposal.model_validate(
+                    proposal_artifact.payload
+                )
+                banking_precheck_submission_proposal_id = proposal.proposal_id
+                banking_precheck_submission_candidate_ids = (
+                    proposal.candidate_option_ids
+                )
+            result_set_artifact = self._latest(
+                artifacts,
+                ArtifactType.BANKING_PRECHECK_RESULT_SET,
+            )
+            if result_set_artifact is not None:
+                result_set = BankingPrecheckResultSet.model_validate(
+                    result_set_artifact.payload
+                )
+                banking_precheck_result_set_id = result_set.result_set_id
+                banking_precheck_normalized_result_ids = tuple(
+                    item.normalized_result_id for item in result_set.results
+                )
+                banking_precheck_outcomes = tuple(
+                    item.outcome for item in result_set.results
+                )
+                banking_precheck_eligibility_statuses = tuple(
+                    item.eligibility_status for item in result_set.results
+                )
+                banking_precheck_guarantee_decisions = tuple(
+                    item.guarantee_decision for item in result_set.results
+                )
+                banking_precheck_supported_amounts = tuple(
+                    item.supported_amount for item in result_set.results
+                )
+                banking_precheck_currencies = tuple(
+                    item.currency for item in result_set.results
+                )
+                banking_precheck_required_document_codes = tuple(
+                    tuple(item.required_documents) for item in result_set.results
+                )
+                banking_precheck_approval_condition_codes = tuple(
+                    tuple(item.approval_conditions) for item in result_set.results
+                )
+                banking_precheck_execution_mode = result_set.execution_mode
+                banking_precheck_result_authority = result_set.authority
+                banking_precheck_external_bank_submission = (
+                    result_set.external_bank_submission
+                )
+                banking_precheck_bank_approval_obtained = (
+                    result_set.bank_approval_obtained
+                )
+            post_precheck_artifact = self._latest(
+                artifacts,
+                ArtifactType.DECISION_POST_PRECHECK_REVIEW,
+            )
+            if post_precheck_artifact is not None:
+                post_precheck = DecisionPostPrecheckReview.model_validate(
+                    post_precheck_artifact.payload
+                )
+                decision_post_precheck_review_id = post_precheck.review_id
+                decision_post_precheck_outcome = post_precheck.outcome
+                decision_post_precheck_candidate_option_ids = (
+                    post_precheck.candidate_option_ids
+                )
+                decision_post_precheck_candidate_product_ids = (
+                    post_precheck.candidate_bank_product_ids
+                )
+                decision_post_precheck_conditional_option_ids = (
+                    post_precheck.conditional_option_ids
+                )
+                decision_post_precheck_inconclusive_option_ids = (
+                    post_precheck.no_recommendation_option_ids
+                )
+                decision_post_precheck_evidence_required_option_ids = (
+                    post_precheck.evidence_required_option_ids
+                )
+                decision_post_precheck_not_eligible_option_ids = (
+                    post_precheck.not_eligible_option_ids
+                )
+                decision_post_precheck_unavailable_option_ids = (
+                    post_precheck.unavailable_option_ids
+                )
+            document_request_artifacts = tuple(
+                item
+                for item in artifacts
+                if item.artifact_type
+                is ArtifactType.DOCUMENT_PREPARATION_REQUEST
+                and item.validation_status
+                in {ValidationStatus.VALID, ValidationStatus.VALID_WITH_WARNINGS}
+            )
+            document_preparation_request_ids = tuple(
+                DocumentPreparationRequest.model_validate(item.payload).request_id
+                for item in sorted(
+                    document_request_artifacts,
+                    key=lambda item: (item.version, item.artifact_id),
+                )
+            )
+            checklist_artifact = self._latest(
+                artifacts, ArtifactType.DOCUMENT_CHECKLIST
+            )
+            if checklist_artifact is not None:
+                checklist = DocumentChecklist.model_validate(
+                    checklist_artifact.payload
+                )
+                document_checklist_ids = (checklist.checklist_id,)
+                document_pending_codes = checklist.missing_document_codes
+            package_artifact = self._latest(
+                artifacts, ArtifactType.DOCUMENT_PACKAGE_DRAFT
+            )
+            if package_artifact is not None:
+                package = DocumentPackageDraft.model_validate(
+                    package_artifact.payload
+                )
+                document_package_draft_ids = (package.package_draft_id,)
+                document_package_readinesses = (package.readiness,)
+            release_artifact = self._latest(
+                artifacts, ArtifactType.DOCUMENT_RELEASE_PACKAGE
+            )
+            if release_artifact is not None:
+                release = DocumentReleasePackage.model_validate(
+                    release_artifact.payload
+                )
+                document_release_package_ids = (release.release_package_id,)
+            document_evidence_supplement_ids = tuple(
+                DocumentEvidenceSupplement.model_validate(item.payload).supplement_id
+                for item in sorted(
+                    (
+                        item
+                        for item in artifacts
+                        if item.artifact_type
+                        is ArtifactType.DOCUMENT_EVIDENCE_SUPPLEMENT
+                        and item.validation_status
+                        in {
+                            ValidationStatus.VALID,
+                            ValidationStatus.VALID_WITH_WARNINGS,
+                        }
+                    ),
+                    key=lambda item: (item.version, item.artifact_id),
+                )
+            )
+            requests = await self._approvals.list_by_case(run.evaluation_case_id)
+            pending_approvals = tuple(
+                item.request_id
+                for item in requests
+                if item.workflow_run_id == run.workflow_run_id
+                and item.status.value == "PENDING"
+            )
+        return WorkflowRunSummary(
+            workflow_run_id=run.workflow_run_id,
+            evaluation_case_id=run.evaluation_case_id,
+            contract_id=run.contract_id,
+            status=run.status,
+            current_stage=run.current_stage,
+            nodes=nodes,
+            artifact_refs=tuple(
+                WorkflowArtifactReference(
+                    artifact_id=item.artifact_id,
+                    artifact_type=item.artifact_type,
+                    version=item.version,
+                    validation_status=item.validation_status,
+                )
+                for item in artifacts
+            ),
+            approval_checkpoint_count=checkpoints,
+            decision_route_outcome=decision_route_outcome,
+            banking_discovery_request_id=banking_discovery_request_id,
+            banking_discovery_status=banking_discovery_status,
+            banking_discovery_result_id=banking_discovery_result_id,
+            banking_option_matrix_id=banking_option_matrix_id,
+            banking_option_advice_id=banking_option_advice_id,
+            banking_option_count=banking_option_count,
+            banking_input_supplement_id=banking_input_supplement_id,
+            banking_precheck_readiness_id=banking_precheck_readiness_id,
+            banking_precheck_readiness_status=banking_precheck_readiness_status,
+            decision_post_banking_review_id=decision_post_banking_review_id,
+            decision_post_banking_outcome=decision_post_banking_outcome,
+            precheck_ready_option_ids=precheck_ready_option_ids,
+            banking_precheck_submission_proposal_id=(
+                banking_precheck_submission_proposal_id
+            ),
+            banking_precheck_submission_candidate_ids=(
+                banking_precheck_submission_candidate_ids
+            ),
+            banking_precheck_result_set_id=banking_precheck_result_set_id,
+            banking_precheck_normalized_result_ids=(
+                banking_precheck_normalized_result_ids
+            ),
+            banking_precheck_outcomes=banking_precheck_outcomes,
+            banking_precheck_eligibility_statuses=(
+                banking_precheck_eligibility_statuses
+            ),
+            banking_precheck_guarantee_decisions=(
+                banking_precheck_guarantee_decisions
+            ),
+            banking_precheck_supported_amounts=(
+                banking_precheck_supported_amounts
+            ),
+            banking_precheck_currencies=banking_precheck_currencies,
+            banking_precheck_required_document_codes=(
+                banking_precheck_required_document_codes
+            ),
+            banking_precheck_approval_condition_codes=(
+                banking_precheck_approval_condition_codes
+            ),
+            banking_precheck_execution_mode=banking_precheck_execution_mode,
+            banking_precheck_result_authority=banking_precheck_result_authority,
+            banking_precheck_external_bank_submission=(
+                banking_precheck_external_bank_submission
+            ),
+            banking_precheck_bank_approval_obtained=(
+                banking_precheck_bank_approval_obtained
+            ),
+            decision_post_precheck_review_id=decision_post_precheck_review_id,
+            decision_post_precheck_outcome=decision_post_precheck_outcome,
+            decision_post_precheck_candidate_option_ids=(
+                decision_post_precheck_candidate_option_ids
+            ),
+            decision_post_precheck_candidate_product_ids=(
+                decision_post_precheck_candidate_product_ids
+            ),
+            decision_post_precheck_conditional_option_ids=(
+                decision_post_precheck_conditional_option_ids
+            ),
+            decision_post_precheck_inconclusive_option_ids=(
+                decision_post_precheck_inconclusive_option_ids
+            ),
+            decision_post_precheck_evidence_required_option_ids=(
+                decision_post_precheck_evidence_required_option_ids
+            ),
+            decision_post_precheck_not_eligible_option_ids=(
+                decision_post_precheck_not_eligible_option_ids
+            ),
+            decision_post_precheck_unavailable_option_ids=(
+                decision_post_precheck_unavailable_option_ids
+            ),
+            document_preparation_request_ids=document_preparation_request_ids,
+            document_checklist_ids=document_checklist_ids,
+            document_package_draft_ids=document_package_draft_ids,
+            document_package_readinesses=document_package_readinesses,
+            document_release_package_ids=document_release_package_ids,
+            document_evidence_supplement_ids=(
+                document_evidence_supplement_ids
+            ),
+            document_pending_codes=document_pending_codes,
+            document_release_package_ready=bool(document_release_package_ids),
+            ready_for_internal_decision=(
+                bool(document_release_package_ids)
+                and run.status is WorkflowStatus.COMPLETED
+                and run.current_stage
+                == WorkflowNode.DOCUMENT_RELEASE_PACKAGE_READY.value
+            ),
+            document_release_authorized=False,
+            document_external_release_performed=False,
+            pending_approval_ids=pending_approvals,
+            pending_missing_data_ids=run.pending_request_ids,
+            resume_stage=run.resume_stage,
+            blocked_action=run.blocked_action,
+            failure_reason=run.failure_reason,
+        )
+
+    async def submit_banking_input(
+        self,
+        *,
+        evaluation_case_id: str,
+        submission: BankingAmountInputSubmission,
+    ) -> tuple[BankingInputExecutionResult, CaseWorkflowRun]:
+        """Persist a verified amount supplement, then atomically schedule re-evaluation."""
+        run = await self._require_run(submission.workflow_run_id)
+        if run.evaluation_case_id != evaluation_case_id:
+            raise CaseWorkflowConflictError(
+                "Workflow and evaluation case do not match."
+            )
+        existing_result = await self._existing_banking_input_result(
+            run=run,
+            evaluation_case_id=evaluation_case_id,
+            submission=submission,
+        )
+        if existing_result is not None:
+            if (
+                run.status is WorkflowStatus.WAITING_FOR_INPUT
+                and run.current_stage
+                == WorkflowNode.DECISION_POST_BANKING_REVIEW.value
+                and run.resume_stage
+                == WorkflowNode.DECISION_POST_BANKING_REVIEW.value
+                and submission.missing_request_id in run.pending_request_ids
+            ):
+                run = await self._schedule_after_banking_input(
+                    run=run,
+                    submission=submission,
+                    result=existing_result,
+                )
+            return existing_result, run
+        if (
+            run.status is not WorkflowStatus.WAITING_FOR_INPUT
+            or run.current_stage != WorkflowNode.DECISION_POST_BANKING_REVIEW.value
+            or run.resume_stage != WorkflowNode.DECISION_POST_BANKING_REVIEW.value
+        ):
+            raise CaseWorkflowConflictError(
+                "Banking input is accepted only while Decision post-Banking review waits."
+            )
+        if submission.missing_request_id not in run.pending_request_ids:
+            raise CaseWorkflowConflictError(
+                "missing_request_id is not pending on this workflow."
+            )
+        artifacts = await self._artifacts.list_by_case(evaluation_case_id)
+        case_artifact = self._latest(artifacts, ArtifactType.EVALUATION_CASE)
+        review_artifact = self._latest(
+            artifacts, ArtifactType.DECISION_POST_BANKING_REVIEW
+        )
+        current_supplement = self._latest(
+            artifacts, ArtifactType.BANKING_INPUT_SUPPLEMENT
+        )
+        node = await self._start_node(
+            run,
+            WorkflowNode.BANKING_INPUT_SUPPLEMENT,
+            identity_inputs=(
+                case_artifact.artifact_id if case_artifact is not None else None,
+                review_artifact.artifact_id if review_artifact is not None else None,
+                (
+                    current_supplement.artifact_id
+                    if current_supplement is not None
+                    else None
+                ),
+                submission.missing_request_id,
+                submission.requested_amount,
+                submission.requested_amount_currency,
+                submission.provided_by,
+                submission.evidence_note,
+            ),
+        )
+        result = await self._services.banking_input_supplement(
+            evaluation_case_id=evaluation_case_id,
+            submission=submission,
+            allowed_pending_request_id=submission.missing_request_id,
+        )
+        await self._finish_node(
+            node,
+            self._result_node_status(result.status, result.component_status),
+            result.generated_artifacts,
+            failure_reason="; ".join(result.validation_errors) or None,
+        )
+        if result.status is not WorkflowStatus.COMPLETED:
+            return result, run
+        updated = await self._schedule_after_banking_input(
+            run=run,
+            submission=submission,
+            result=result,
+        )
+        return result, updated
+
+    async def _schedule_after_banking_input(
+        self,
+        *,
+        run: CaseWorkflowRun,
+        submission: BankingAmountInputSubmission,
+        result: BankingInputExecutionResult,
+    ) -> CaseWorkflowRun:
+        """Remove only the resolved request and queue deterministic Banking rebuild."""
+        remaining_request_ids = tuple(
+            item
+            for item in run.pending_request_ids
+            if item != submission.missing_request_id
+        )
+        updated = await self._save_run(
+            run,
+            status=WorkflowStatus.PENDING,
+            current_stage=WorkflowNode.BANKING_INTERNAL_DISCOVERY.value,
+            pending_request_ids=remaining_request_ids,
+            resume_stage=None,
+            failure_reason=None,
+        )
+        await self._event(
+            updated,
+            "BANKING_INPUT_SUPPLEMENT_ACCEPTED",
+            WorkflowNode.BANKING_INPUT_SUPPLEMENT,
+            {
+                "missing_request_id": submission.missing_request_id,
+                "supplement_id": (
+                    result.supplement.supplement_id
+                    if result.supplement is not None
+                    else None
+                ),
+            },
+        )
+        return updated
+
+    async def _existing_banking_input_result(
+        self,
+        *,
+        run: CaseWorkflowRun,
+        evaluation_case_id: str,
+        submission: BankingAmountInputSubmission,
+    ) -> BankingInputExecutionResult | None:
+        """Return the latest exact accepted payload for retry idempotency."""
+        artifacts = await self._artifacts.list_by_case(evaluation_case_id)
+        matches: list[tuple[ArtifactEnvelope, BankingInputSupplement]] = []
+        for artifact in artifacts:
+            if (
+                artifact.artifact_type is not ArtifactType.BANKING_INPUT_SUPPLEMENT
+                or artifact.validation_status
+                not in {
+                    ValidationStatus.VALID,
+                    ValidationStatus.VALID_WITH_WARNINGS,
+                }
+            ):
+                continue
+            supplement = BankingInputSupplement.model_validate(artifact.payload)
+            if submission.missing_request_id in supplement.resolved_request_ids:
+                matches.append((artifact, supplement))
+        if not matches:
+            return None
+        artifact, supplement = max(matches, key=lambda item: item[0].version)
+        if (
+            supplement.evaluation_case_id != evaluation_case_id
+            or supplement.dataset_id != run.dataset_id
+            or supplement.contract_id != run.contract_id
+        ):
+            raise CaseWorkflowConflictError(
+                "Persisted Banking input identity does not match this workflow."
+            )
+        if not (
+            supplement.requested_amount == submission.requested_amount
+            and supplement.requested_amount_currency
+            is submission.requested_amount_currency
+            and supplement.provider == submission.provided_by
+            and supplement.note == submission.evidence_note
+            and supplement.resolved_request_ids == (submission.missing_request_id,)
+        ):
+            return None
+        return BankingInputExecutionResult(
+            status=WorkflowStatus.COMPLETED,
+            component_status=ComponentStatus.COMPLETED,
+            current_node=WorkflowNode.BANKING_INPUT_SUPPLEMENT.value,
+            supplement=supplement,
+            generated_artifacts=(artifact,),
+        )
+
+    async def submit_banking_precheck_evidence(
+        self,
+        *,
+        evaluation_case_id: str,
+        submission: BankingPrecheckEvidenceSubmission,
+    ) -> tuple[BankingPrecheckEvidenceExecutionResult, CaseWorkflowRun]:
+        """Resolve one exact evidence handoff without reinterpreting bank output."""
+        run = await self._require_run(submission.workflow_run_id)
+        if run.evaluation_case_id != evaluation_case_id:
+            raise CaseWorkflowConflictError(
+                "Workflow and evaluation case do not match."
+            )
+        artifacts = await self._artifacts.list_by_case(evaluation_case_id)
+        current_supplement = self._latest_precheck_evidence_supplement(
+            artifacts, submission.missing_request_id
+        )
+        pending_wait = (
+            run.status is WorkflowStatus.WAITING_FOR_INPUT
+            and run.current_stage
+            == WorkflowNode.DECISION_POST_PRECHECK_REVIEW.value
+            and run.resume_stage
+            == WorkflowNode.DECISION_POST_PRECHECK_REVIEW.value
+            and submission.missing_request_id in run.pending_request_ids
+        )
+        accepted_retry = (
+            run.status is WorkflowStatus.WAITING_FOR_DEPENDENCIES
+            and run.current_stage
+            == WorkflowNode.BANKING_PRECHECK_RETRY_REQUIRED.value
+            and current_supplement is not None
+        )
+        if not pending_wait and not accepted_retry:
+            raise CaseWorkflowConflictError(
+                "Evidence is accepted only for an exact pending post-precheck request."
+            )
+        review_artifact = self._latest(
+            artifacts, ArtifactType.DECISION_POST_PRECHECK_REVIEW
+        )
+        node = await self._start_node(
+            run,
+            WorkflowNode.BANKING_PRECHECK_EVIDENCE_INTAKE,
+            identity_inputs=(
+                review_artifact.artifact_id if review_artifact is not None else None,
+                (
+                    current_supplement.artifact_id
+                    if current_supplement is not None
+                    else None
+                ),
+                submission.missing_request_id,
+                submission.evidence_reference_id,
+                submission.provided_by,
+                submission.evidence_note,
+            ),
+        )
+        result = await self._services.banking_precheck_evidence_supplement(
+            evaluation_case_id=evaluation_case_id,
+            submission=submission,
+            allowed_pending_request_id=submission.missing_request_id,
+        )
+        await self._finish_node(
+            node,
+            self._result_node_status(result.status, result.component_status),
+            result.generated_artifacts,
+            failure_reason="; ".join(result.validation_errors) or None,
+        )
+        if result.status is not WorkflowStatus.COMPLETED:
+            return result, run
+        if accepted_retry:
+            return result, run
+
+        remaining_request_ids = tuple(
+            item
+            for item in run.pending_request_ids
+            if item != submission.missing_request_id
+        )
+        if remaining_request_ids:
+            updated = await self._save_run(
+                run,
+                status=WorkflowStatus.WAITING_FOR_INPUT,
+                current_stage=WorkflowNode.DECISION_POST_PRECHECK_REVIEW.value,
+                pending_request_ids=remaining_request_ids,
+                resume_stage=WorkflowNode.DECISION_POST_PRECHECK_REVIEW.value,
+                failure_reason=None,
+            )
+        else:
+            updated = await self._save_run(
+                run,
+                status=WorkflowStatus.WAITING_FOR_DEPENDENCIES,
+                current_stage=WorkflowNode.BANKING_PRECHECK_RETRY_REQUIRED.value,
+                pending_request_ids=(),
+                resume_stage=None,
+                failure_reason=(
+                    "A fresh governed precheck integration is required; the prior "
+                    "provider result remains unchanged."
+                ),
+            )
+        await self._event(
+            updated,
+            "BANKING_PRECHECK_EVIDENCE_REFERENCE_ACCEPTED",
+            WorkflowNode.BANKING_PRECHECK_EVIDENCE_INTAKE,
+            {
+                "missing_request_id": submission.missing_request_id,
+                "supplement_id": (
+                    result.supplement.supplement_id
+                    if result.supplement is not None
+                    else None
+                ),
+                "remaining_request_ids": list(remaining_request_ids),
+                "fresh_governed_precheck_required": not remaining_request_ids,
+            },
+        )
+        return result, updated
+
+    @staticmethod
+    def _latest_precheck_evidence_supplement(
+        artifacts: tuple[ArtifactEnvelope, ...], request_id: str
+    ) -> ArtifactEnvelope | None:
+        matches: list[ArtifactEnvelope] = []
+        for artifact in artifacts:
+            if (
+                artifact.artifact_type
+                is not ArtifactType.BANKING_PRECHECK_EVIDENCE_SUPPLEMENT
+                or artifact.validation_status
+                not in {ValidationStatus.VALID, ValidationStatus.VALID_WITH_WARNINGS}
+            ):
+                continue
+            supplement = BankingPrecheckEvidenceSupplement.model_validate(
+                artifact.payload
+            )
+            if supplement.missing_request_id == request_id:
+                matches.append(artifact)
+        return max(matches, key=lambda item: item.version, default=None)
+
+    async def submit_document_evidence(
+        self,
+        *,
+        evaluation_case_id: str,
+        submission: DocumentEvidenceSubmission,
+    ) -> tuple[DocumentEvidenceExecutionResult, CaseWorkflowRun]:
+        """Accept one opaque document reference and schedule a safe package rebuild."""
+        run = await self._require_run(submission.workflow_run_id)
+        if run.evaluation_case_id != evaluation_case_id:
+            raise CaseWorkflowConflictError(
+                "Workflow and evaluation case do not match."
+            )
+        artifacts = await self._artifacts.list_by_case(evaluation_case_id)
+        current = self._document_supplement_for_request(
+            artifacts, submission.missing_request_id
+        )
+        pending_wait = (
+            run.status is WorkflowStatus.WAITING_FOR_INPUT
+            and run.current_stage == WorkflowNode.DOCUMENT_PREPARATION.value
+            and run.resume_stage == WorkflowNode.DOCUMENT_PREPARATION.value
+            and submission.missing_request_id in run.pending_request_ids
+        )
+        if not pending_wait:
+            if current is None:
+                raise CaseWorkflowConflictError(
+                    "Document evidence is accepted only for an exact pending request."
+                )
+            supplement = DocumentEvidenceSupplement.model_validate(current.payload)
+            if not self._document_submission_matches(submission, supplement):
+                raise CaseWorkflowConflictError(
+                    "This Document request already has different accepted metadata."
+                )
+            return (
+                DocumentEvidenceExecutionResult(
+                    status=WorkflowStatus.COMPLETED,
+                    component_status=ComponentStatus.COMPLETED,
+                    current_node=WorkflowNode.DOCUMENT_INPUT_INTAKE.value,
+                    supplement=supplement,
+                    generated_artifacts=(current,),
+                ),
+                run,
+            )
+        package_artifact = self._package_for_missing_request(
+            artifacts, submission.missing_request_id
+        )
+        if package_artifact is None:
+            raise CaseWorkflowConflictError(
+                "The pending Document request has no validated package draft."
+            )
+        node = await self._start_node(
+            run,
+            WorkflowNode.DOCUMENT_INPUT_INTAKE,
+            identity_inputs=(
+                package_artifact.artifact_id,
+                package_artifact.version,
+                package_artifact.input_hash,
+                submission.missing_request_id,
+                submission.document_reference_id,
+                submission.content_sha256,
+                submission.document_type,
+                submission.provided_by,
+                submission.evidence_note,
+            ),
+        )
+        result = await self._services.document_evidence_supplement(
+            evaluation_case_id=evaluation_case_id,
+            submission=submission,
+            allowed_pending_request_id=submission.missing_request_id,
+        )
+        await self._finish_node(
+            node,
+            self._result_node_status(result.status, result.component_status),
+            result.generated_artifacts,
+            failure_reason="; ".join(result.validation_errors) or None,
+        )
+        if result.status is not WorkflowStatus.COMPLETED:
+            return result, run
+        remaining = tuple(
+            item
+            for item in run.pending_request_ids
+            if item != submission.missing_request_id
+        )
+        if remaining:
+            updated = await self._save_run(
+                run,
+                status=WorkflowStatus.WAITING_FOR_INPUT,
+                current_stage=WorkflowNode.DOCUMENT_PREPARATION.value,
+                pending_request_ids=remaining,
+                resume_stage=WorkflowNode.DOCUMENT_PREPARATION.value,
+                failure_reason=None,
+            )
+        else:
+            updated = await self._save_run(
+                run,
+                status=WorkflowStatus.PENDING,
+                current_stage=WorkflowNode.DOCUMENT_PREPARATION.value,
+                pending_request_ids=(),
+                resume_stage=None,
+                failure_reason=None,
+            )
+        await self._event(
+            updated,
+            "DOCUMENT_EVIDENCE_REFERENCE_ACCEPTED",
+            WorkflowNode.DOCUMENT_INPUT_INTAKE,
+            {
+                "missing_request_id": submission.missing_request_id,
+                "supplement_id": (
+                    result.supplement.supplement_id
+                    if result.supplement is not None
+                    else None
+                ),
+                "remaining_request_ids": list(remaining),
+            },
+        )
+        return result, updated
+
+    @staticmethod
+    def _document_supplement_for_request(
+        artifacts: tuple[ArtifactEnvelope, ...], request_id: str
+    ) -> ArtifactEnvelope | None:
+        matches = tuple(
+            item
+            for item in artifacts
+            if item.artifact_type is ArtifactType.DOCUMENT_EVIDENCE_SUPPLEMENT
+            and DocumentEvidenceSupplement.model_validate(
+                item.payload
+            ).missing_request_id
+            == request_id
+        )
+        if len(matches) > 1:
+            raise CaseWorkflowConflictError(
+                "Accepted Document evidence is ambiguous for this request."
+            )
+        return matches[0] if matches else None
+
+    @staticmethod
+    def _document_submission_matches(
+        submission: DocumentEvidenceSubmission,
+        supplement: DocumentEvidenceSupplement,
+    ) -> bool:
+        return (
+            submission.missing_request_id == supplement.missing_request_id
+            and submission.document_reference_id
+            == supplement.document_reference_id
+            and submission.content_sha256 == supplement.content_sha256
+            and submission.document_type is supplement.document_type
+            and submission.provided_by == supplement.provided_by
+            and submission.evidence_note == supplement.evidence_note
+        )
+
+    @staticmethod
+    def _package_for_missing_request(
+        artifacts: tuple[ArtifactEnvelope, ...], request_id: str
+    ) -> ArtifactEnvelope | None:
+        matches: list[ArtifactEnvelope] = []
+        for artifact in artifacts:
+            if (
+                artifact.artifact_type is not ArtifactType.DOCUMENT_PACKAGE_DRAFT
+                or artifact.validation_status
+                not in {ValidationStatus.VALID, ValidationStatus.VALID_WITH_WARNINGS}
+            ):
+                continue
+            package = DocumentPackageDraft.model_validate(artifact.payload)
+            if request_id in {
+                item.request_id for item in package.missing_data_requests
+            }:
+                matches.append(artifact)
+        return max(matches, key=lambda item: item.version, default=None)
+
+    async def resume(self, workflow_run_id: str) -> CaseWorkflowRun:
+        """Move a genuine wait/failure back to PENDING; completed runs are immutable."""
+        run = await self._require_run(workflow_run_id)
+        if run.status not in {
+            WorkflowStatus.WAITING_FOR_INPUT,
+            WorkflowStatus.FAILED_SAFE,
+        }:
+            raise CaseWorkflowConflictError(
+                f"Workflow in {run.status.value} cannot be resumed."
+            )
+        if (
+            run.status is WorkflowStatus.WAITING_FOR_INPUT
+            and run.pending_request_ids
+        ):
+            raise CaseWorkflowConflictError(
+                "Resolve the pending MissingDataRequest through its typed input endpoint "
+                "before resuming this workflow."
+            )
+        resumed = await self._save_run(
+            run,
+            status=WorkflowStatus.PENDING,
+            current_stage=run.resume_stage or run.current_stage,
+            failure_reason=None,
+            pending_request_ids=(),
+        )
+        await self._event(resumed, "WORKFLOW_RESUME_REQUESTED", None)
+        return resumed
+
+    async def _planner(self, run: CaseWorkflowRun) -> CaseWorkflowRun:
+        existing = await self._workflows.get_node(
+            run.workflow_run_id, WorkflowNode.PLANNER_INTAKE.value
+        )
+        if self._node_completed(existing) and run.evaluation_case_id is not None:
+            return run
+        node = await self._start_node(run, WorkflowNode.PLANNER_INTAKE)
+        result = await self._services.evaluate(
+            contract_id=run.contract_id,
+            evaluation_scope=run.requested_scope,
+        )
+        if result.status is WorkflowStatus.WAITING_FOR_INPUT:
+            request_ids = tuple(
+                item.request_id
+                for item in (
+                    result.planner_result.missing_data_requests
+                    if result.planner_result is not None
+                    else ()
+                )
+            )
+            await self._finish_node(
+                node,
+                WorkflowNodeStatus.WAITING_FOR_INPUT,
+                result.generated_artifacts,
+                waiting_for=request_ids,
+            )
+            waiting = await self._save_run(
+                run,
+                status=WorkflowStatus.WAITING_FOR_INPUT,
+                current_stage=WorkflowNode.PLANNER_INTAKE.value,
+                pending_request_ids=request_ids,
+            )
+            await self._event(
+                waiting,
+                "WORKFLOW_WAITING_FOR_INPUT",
+                WorkflowNode.PLANNER_INTAKE,
+                {"pending_request_ids": list(request_ids)},
+            )
+            return waiting
+        if result.status is WorkflowStatus.FAILED_SAFE:
+            raise RuntimeError("Planner failed safe: " + "; ".join(result.validation_errors))
+        evaluation_case = (
+            result.planner_result.evaluation_case
+            if result.planner_result is not None
+            else None
+        )
+        if evaluation_case is None:
+            raise RuntimeError("Planner returned no EvaluationCase.")
+        await self._finish_node(
+            node,
+            self._component_node_status(result.component_status),
+            result.generated_artifacts,
+        )
+        return await self._save_run(
+            run,
+            status=WorkflowStatus.RUNNING,
+            current_stage=WorkflowNode.INITIAL_ASSESSMENT.value,
+            evaluation_case_id=evaluation_case.evaluation_case_id,
+        )
+
+    async def _risk_pre_scan(self, run: CaseWorkflowRun) -> bool:
+        if run.evaluation_case_id is None:
+            return False
+        existing = await self._workflows.get_node(
+            run.workflow_run_id, WorkflowNode.INITIAL_RISK_PRE_SCAN.value
+        )
+        if self._node_completed(existing):
+            await self._ensure_risk_finalization_wait(run)
+            return True
+        node = await self._start_node(run, WorkflowNode.INITIAL_RISK_PRE_SCAN)
+        result = await self._services.risk_pre_scan(
+            evaluation_case_id=run.evaluation_case_id
+        )
+        if result.status is WorkflowStatus.FAILED_SAFE:
+            raise RuntimeError("Risk pre-scan failed safe: " + "; ".join(result.validation_errors))
+        await self._finish_node(
+            node,
+            self._component_node_status(result.component_status),
+            result.generated_artifacts,
+        )
+        await self._event(
+            run,
+            "APPROVAL_CHECKPOINTS_REGISTERED",
+            WorkflowNode.INITIAL_RISK_PRE_SCAN,
+            {
+                "count": (
+                    len(result.approval_checkpoints.checkpoints)
+                    if result.approval_checkpoints is not None
+                    else 0
+                )
+            },
+        )
+        await self._ensure_risk_finalization_wait(run)
+        return True
+
+    async def _finance(self, run: CaseWorkflowRun) -> FinanceExecutionResult | None:
+        if run.evaluation_case_id is None:
+            return None
+        existing = await self._workflows.get_node(
+            run.workflow_run_id, WorkflowNode.FINANCE_ASSESSMENT.value
+        )
+        if self._node_completed(existing):
+            return None
+        node = await self._start_node(run, WorkflowNode.FINANCE_ASSESSMENT)
+        result = await self._services.finance_assessment(
+            evaluation_case_id=run.evaluation_case_id,
+            resume_risk=False,
+        )
+        await self._finish_node(
+            node,
+            self._result_node_status(result.status, result.component_status),
+            result.generated_artifacts,
+            failure_reason="; ".join(result.validation_errors) or None,
+        )
+        return result
+
+    async def _operations(self, run: CaseWorkflowRun) -> OperationsExecutionResult | None:
+        if run.evaluation_case_id is None:
+            return None
+        existing = await self._workflows.get_node(
+            run.workflow_run_id, WorkflowNode.OPERATIONS_ASSESSMENT.value
+        )
+        if self._node_completed(existing):
+            return None
+        node = await self._start_node(run, WorkflowNode.OPERATIONS_ASSESSMENT)
+        result = await self._services.operations_assessment(
+            evaluation_case_id=run.evaluation_case_id,
+            as_of_date=run.as_of_date,
+            resume_risk=False,
+        )
+        await self._finish_node(
+            node,
+            self._result_node_status(result.status, result.component_status),
+            result.generated_artifacts,
+            failure_reason="; ".join(result.validation_errors) or None,
+        )
+        return result
+
+    async def _finalize_risk(
+        self, run: CaseWorkflowRun
+    ) -> RiskExecutionResult | None:
+        if run.evaluation_case_id is None:  # pragma: no cover
+            raise RuntimeError("Cannot finalize Risk without an evaluation case.")
+        existing = await self._workflows.get_node(
+            run.workflow_run_id, WorkflowNode.INITIAL_RISK_FINALIZATION.value
+        )
+        if self._node_completed(existing):
+            return None
+        node = await self._start_node(run, WorkflowNode.INITIAL_RISK_FINALIZATION)
+        await self._event(
+            run,
+            "RISK_DEPENDENCIES_READY",
+            WorkflowNode.INITIAL_RISK_FINALIZATION,
+        )
+        result = await self._services.risk_finalize(
+            evaluation_case_id=run.evaluation_case_id
+        )
+        await self._finish_node(
+            node,
+            self._result_node_status(result.status, result.component_status),
+            result.generated_artifacts,
+            failure_reason="; ".join(result.validation_errors) or None,
+        )
+        return result
+
+    async def _ensure_risk_finalization_wait(self, run: CaseWorkflowRun) -> None:
+        """Persist dependency waiting as workflow state without invoking Risk."""
+        existing = await self._workflows.get_node(
+            run.workflow_run_id,
+            WorkflowNode.INITIAL_RISK_FINALIZATION.value,
+        )
+        if existing is not None:
+            return
+        waiting = WorkflowNodeState(
+            workflow_run_id=run.workflow_run_id,
+            node=WorkflowNode.INITIAL_RISK_FINALIZATION,
+            status=WorkflowNodeStatus.WAITING_FOR_DEPENDENCIES,
+            attempt=0,
+            input_hash=deterministic_id(
+                "NIN",
+                run.dataset_snapshot_hash,
+                run.evaluation_case_id,
+                WorkflowNode.INITIAL_RISK_FINALIZATION,
+                run.as_of_date,
+            ),
+            waiting_for=(
+                ArtifactType.FINANCE_FACTS.value,
+                ArtifactType.OPERATIONS_FACTS.value,
+            ),
+        )
+        await self._workflows.save_node(waiting)
+        await self._events.append(
+            workflow_run_id=run.workflow_run_id,
+            event_type="NODE_WAITING",
+            node=WorkflowNode.INITIAL_RISK_FINALIZATION,
+            metadata={
+                "status": WorkflowNodeStatus.WAITING_FOR_DEPENDENCIES.value,
+                "waiting_for": list(waiting.waiting_for),
+            },
+            created_at=self._clock(),
+        )
+
+    async def _complete(
+        self, run: CaseWorkflowRun, current_stage: WorkflowNode
+    ) -> None:
+        completed = await self._save_run(
+            run,
+            status=WorkflowStatus.COMPLETED,
+            current_stage=current_stage.value,
+            pending_request_ids=(),
+            failure_reason=None,
+        )
+        await self._event(completed, "WORKFLOW_COMPLETED", None)
+
+    async def _decision_banking_handoff(
+        self, run: CaseWorkflowRun
+    ) -> BankingDiscoveryHandoffExecutionResult | None:
+        if run.evaluation_case_id is None:  # pragma: no cover
+            raise RuntimeError(
+                "Cannot hand off Banking discovery without an evaluation case."
+            )
+        existing = await self._workflows.get_node(
+            run.workflow_run_id, WorkflowNode.BANKING_DISCOVERY_HANDOFF.value
+        )
+        artifacts = await self._artifacts.list_by_case(run.evaluation_case_id)
+        route_artifact = self._latest(artifacts, ArtifactType.DECISION_ROUTE_PLAN)
+        identity_inputs = (
+            (
+                route_artifact.artifact_id,
+                route_artifact.version,
+                route_artifact.input_hash,
+            )
+            if route_artifact is not None
+            else None,
+            CurrencyCode.VND,
+        )
+        expected_hash = self._node_input_hash(
+            run,
+            WorkflowNode.BANKING_DISCOVERY_HANDOFF,
+            identity_inputs,
+        )
+        if self._node_completed(existing) and existing.input_hash == expected_hash:
+            return None
+        node = await self._start_node(
+            run,
+            WorkflowNode.BANKING_DISCOVERY_HANDOFF,
+            identity_inputs=identity_inputs,
+        )
+        result = await self._services.decision_banking_handoff(
+            evaluation_case_id=run.evaluation_case_id
+        )
+        await self._finish_node(
+            node,
+            self._result_node_status(result.status, result.component_status),
+            result.generated_artifacts,
+            waiting_for=tuple(
+                item.requirement_code for item in result.missing_data_requests
+            ),
+            failure_reason="; ".join(result.validation_errors) or None,
+        )
+        return result
+
+    async def _pause_for_banking_handoff_input(
+        self,
+        run: CaseWorkflowRun,
+        result: BankingDiscoveryHandoffExecutionResult,
+    ) -> None:
+        request_ids = tuple(
+            item.request_id for item in result.missing_data_requests
+        )
+        updated = await self._save_run(
+            run,
+            status=WorkflowStatus.WAITING_FOR_INPUT,
+            current_stage=WorkflowNode.BANKING_DISCOVERY_HANDOFF.value,
+            pending_request_ids=request_ids,
+            resume_stage=WorkflowNode.BANKING_DISCOVERY_HANDOFF.value,
+            failure_reason=None,
+        )
+        await self._event(
+            updated,
+            "WORKFLOW_WAITING_FOR_INPUT",
+            WorkflowNode.BANKING_DISCOVERY_HANDOFF,
+            {"request_ids": list(request_ids)},
+        )
+
+    async def _banking_internal_discovery(
+        self, run: CaseWorkflowRun
+    ) -> BankingDiscoveryExecutionResult | None:
+        if run.evaluation_case_id is None:  # pragma: no cover
+            raise RuntimeError("Cannot run Banking without an evaluation case.")
+        artifacts = await self._artifacts.list_by_case(run.evaluation_case_id)
+        request_artifact = self._latest(
+            artifacts, ArtifactType.BANKING_DISCOVERY_REQUEST
+        )
+        request_artifact_id = (
+            request_artifact.artifact_id if request_artifact is not None else None
+        )
+        case_artifact = self._latest(artifacts, ArtifactType.EVALUATION_CASE)
+        case_artifact_id = (
+            case_artifact.artifact_id if case_artifact is not None else None
+        )
+        supplement_artifact = self._latest(
+            artifacts, ArtifactType.BANKING_INPUT_SUPPLEMENT
+        )
+        supplement_artifact_id = (
+            supplement_artifact.artifact_id
+            if supplement_artifact is not None
+            else None
+        )
+        identity_inputs = (
+            case_artifact_id,
+            request_artifact_id,
+            supplement_artifact_id,
+            self._services.banking_policy_hash,
+            self._services.banking_advisor_configuration_hash,
+            CurrencyCode.VND,
+        )
+        expected_hash = self._node_input_hash(
+            run,
+            WorkflowNode.BANKING_INTERNAL_DISCOVERY,
+            identity_inputs,
+        )
+        existing = await self._workflows.get_node(
+            run.workflow_run_id, WorkflowNode.BANKING_INTERNAL_DISCOVERY.value
+        )
+        if self._node_completed(existing) and existing.input_hash == expected_hash:
+            return None
+        node = await self._start_node(
+            run,
+            WorkflowNode.BANKING_INTERNAL_DISCOVERY,
+            identity_inputs=identity_inputs,
+        )
+        result = await self._services.banking_internal_discovery(
+            evaluation_case_id=run.evaluation_case_id
+        )
+        await self._finish_node(
+            node,
+            self._result_node_status(result.status, result.component_status),
+            result.generated_artifacts,
+            waiting_for=tuple(
+                item.requirement_code for item in result.missing_data_requests
+            ),
+            failure_reason="; ".join(result.validation_errors) or None,
+        )
+        return result
+
+    async def _pause_for_banking_discovery_input(
+        self,
+        run: CaseWorkflowRun,
+        result: BankingDiscoveryExecutionResult,
+    ) -> None:
+        request_ids = tuple(item.request_id for item in result.missing_data_requests)
+        updated = await self._save_run(
+            run,
+            status=WorkflowStatus.WAITING_FOR_INPUT,
+            current_stage=WorkflowNode.BANKING_INTERNAL_DISCOVERY.value,
+            pending_request_ids=request_ids,
+            resume_stage=WorkflowNode.BANKING_INTERNAL_DISCOVERY.value,
+            failure_reason=None,
+        )
+        await self._event(
+            updated,
+            "WORKFLOW_WAITING_FOR_INPUT",
+            WorkflowNode.BANKING_INTERNAL_DISCOVERY,
+            {"request_ids": list(request_ids)},
+        )
+
+    async def _banking_precheck_readiness(
+        self, run: CaseWorkflowRun
+    ) -> BankingPrecheckReadinessExecutionResult | None:
+        if run.evaluation_case_id is None:  # pragma: no cover
+            raise RuntimeError("Cannot assess Banking readiness without a case.")
+        artifacts = await self._artifacts.list_by_case(run.evaluation_case_id)
+        case_artifact = self._latest(artifacts, ArtifactType.EVALUATION_CASE)
+        matrix_artifact = self._latest(
+            artifacts, ArtifactType.BANKING_OPTION_MATRIX
+        )
+        supplement_artifact = self._latest(
+            artifacts, ArtifactType.BANKING_INPUT_SUPPLEMENT
+        )
+        identity_inputs = (
+            *(
+                item.artifact_id
+                for item in (case_artifact, matrix_artifact, supplement_artifact)
+                if item is not None
+            ),
+            self._services.banking_policy_hash,
+            CurrencyCode.VND,
+        )
+        expected_hash = self._node_input_hash(
+            run,
+            WorkflowNode.BANKING_PRECHECK_READINESS,
+            identity_inputs,
+        )
+        existing = await self._workflows.get_node(
+            run.workflow_run_id, WorkflowNode.BANKING_PRECHECK_READINESS.value
+        )
+        if self._node_completed(existing) and existing.input_hash == expected_hash:
+            return None
+        node = await self._start_node(
+            run,
+            WorkflowNode.BANKING_PRECHECK_READINESS,
+            identity_inputs=identity_inputs,
+        )
+        result = await self._services.banking_precheck_readiness(
+            evaluation_case_id=run.evaluation_case_id
+        )
+        await self._finish_node(
+            node,
+            self._result_node_status(result.status, result.component_status),
+            result.generated_artifacts,
+            failure_reason="; ".join(result.validation_errors) or None,
+        )
+        return result
+
+    async def _decision_post_banking_review(
+        self, run: CaseWorkflowRun
+    ) -> DecisionPostBankingExecutionResult | None:
+        if run.evaluation_case_id is None:  # pragma: no cover
+            raise RuntimeError("Cannot review Banking readiness without a case.")
+        artifacts = await self._artifacts.list_by_case(run.evaluation_case_id)
+        matrix_artifact = self._latest(
+            artifacts, ArtifactType.BANKING_OPTION_MATRIX
+        )
+        readiness_artifact = self._latest(
+            artifacts, ArtifactType.BANKING_PRECHECK_READINESS
+        )
+        identity_inputs = tuple(
+            (item.artifact_type, item.artifact_id, item.version, item.input_hash)
+            for item in (matrix_artifact, readiness_artifact)
+            if item is not None
+        )
+        expected_hash = self._node_input_hash(
+            run,
+            WorkflowNode.DECISION_POST_BANKING_REVIEW,
+            identity_inputs,
+        )
+        existing = await self._workflows.get_node(
+            run.workflow_run_id, WorkflowNode.DECISION_POST_BANKING_REVIEW.value
+        )
+        if self._node_completed(existing) and existing.input_hash == expected_hash:
+            return None
+        node = await self._start_node(
+            run,
+            WorkflowNode.DECISION_POST_BANKING_REVIEW,
+            identity_inputs=identity_inputs,
+        )
+        result = await self._services.decision_post_banking_review(
+            evaluation_case_id=run.evaluation_case_id
+        )
+        await self._finish_node(
+            node,
+            self._result_node_status(result.status, result.component_status),
+            result.generated_artifacts,
+            waiting_for=tuple(
+                item.requirement_code for item in result.missing_data_requests
+            ),
+            failure_reason="; ".join(result.validation_errors) or None,
+        )
+        return result
+
+    async def _banking_precheck_submission_proposal(
+        self, run: CaseWorkflowRun
+    ) -> BankingPrecheckSubmissionProposalExecutionResult | None:
+        if run.evaluation_case_id is None:  # pragma: no cover
+            raise RuntimeError("Cannot prepare a Banking proposal without a case.")
+        artifacts = await self._artifacts.list_by_case(run.evaluation_case_id)
+        matrix_artifact = self._latest(
+            artifacts, ArtifactType.BANKING_OPTION_MATRIX
+        )
+        readiness_artifact = self._latest(
+            artifacts, ArtifactType.BANKING_PRECHECK_READINESS
+        )
+        review_artifact = self._latest(
+            artifacts, ArtifactType.DECISION_POST_BANKING_REVIEW
+        )
+        identity_inputs = tuple(
+            item.artifact_id
+            for item in (matrix_artifact, readiness_artifact, review_artifact)
+            if item is not None
+        )
+        expected_hash = self._node_input_hash(
+            run,
+            WorkflowNode.BANKING_PRECHECK_SUBMISSION_PROPOSAL,
+            identity_inputs,
+        )
+        existing = await self._workflows.get_node(
+            run.workflow_run_id,
+            WorkflowNode.BANKING_PRECHECK_SUBMISSION_PROPOSAL.value,
+        )
+        if self._node_completed(existing) and existing.input_hash == expected_hash:
+            return None
+        node = await self._start_node(
+            run,
+            WorkflowNode.BANKING_PRECHECK_SUBMISSION_PROPOSAL,
+            identity_inputs=identity_inputs,
+        )
+        result = await self._services.banking_precheck_submission_proposal(
+            evaluation_case_id=run.evaluation_case_id
+        )
+        await self._finish_node(
+            node,
+            self._result_node_status(result.status, result.component_status),
+            result.generated_artifacts,
+            failure_reason="; ".join(result.validation_errors) or None,
+        )
+        return result
+
+    async def _banking_precheck_execution(
+        self,
+        run: CaseWorkflowRun,
+        *,
+        proposal_artifact: ArtifactEnvelope,
+        approval_request_id: str,
+    ) -> BankingPrecheckResultExecutionResult | None:
+        """Execute one exact approved proposal with durable node idempotency."""
+        if run.evaluation_case_id is None:  # pragma: no cover
+            raise RuntimeError("Cannot execute a Banking precheck without a case.")
+        identity_inputs = (
+            proposal_artifact.artifact_id,
+            proposal_artifact.version,
+            proposal_artifact.input_hash,
+            approval_request_id,
+            self._services.banking_precheck_adapter_id,
+            self._services.banking_precheck_adapter_configuration_hash,
+        )
+        expected_hash = self._node_input_hash(
+            run,
+            WorkflowNode.BANKING_PRECHECK_EXECUTION,
+            identity_inputs,
+        )
+        existing = await self._workflows.get_node(
+            run.workflow_run_id,
+            WorkflowNode.BANKING_PRECHECK_EXECUTION.value,
+        )
+        if self._node_completed(existing) and existing.input_hash == expected_hash:
+            return await self._invoke_banking_precheck_execution(
+                evaluation_case_id=run.evaluation_case_id,
+                workflow_run_id=run.workflow_run_id,
+                approval_request_id=approval_request_id,
+                proposal_artifact_id=proposal_artifact.artifact_id,
+                reuse_existing_only=True,
+            )
+        node = await self._start_node(
+            run,
+            WorkflowNode.BANKING_PRECHECK_EXECUTION,
+            identity_inputs=identity_inputs,
+        )
+        result = await self._invoke_banking_precheck_execution(
+            evaluation_case_id=run.evaluation_case_id,
+            workflow_run_id=run.workflow_run_id,
+            approval_request_id=approval_request_id,
+            proposal_artifact_id=proposal_artifact.artifact_id,
+            reuse_existing_only=False,
+        )
+        await self._finish_node(
+            node,
+            self._result_node_status(result.status, result.component_status),
+            result.generated_artifacts,
+            failure_reason="; ".join(result.validation_errors) or None,
+        )
+        return result
+
+    async def _invoke_banking_precheck_execution(
+        self,
+        *,
+        evaluation_case_id: str,
+        workflow_run_id: str,
+        approval_request_id: str,
+        proposal_artifact_id: str,
+        reuse_existing_only: bool,
+    ) -> BankingPrecheckResultExecutionResult:
+        """Keep unexpected provider/infrastructure details out of durable state."""
+        try:
+            return await self._services.banking_precheck_execution(
+                evaluation_case_id=evaluation_case_id,
+                workflow_run_id=workflow_run_id,
+                approval_request_id=approval_request_id,
+                proposal_artifact_id=proposal_artifact_id,
+                reuse_existing_only=reuse_existing_only,
+            )
+        except Exception:
+            return BankingPrecheckResultExecutionResult(
+                status=WorkflowStatus.FAILED_SAFE,
+                component_status=ComponentStatus.FAILED_SAFE,
+                current_node=WorkflowNode.BANKING_PRECHECK_EXECUTION.value,
+                validation_errors=(_BANKING_PRECHECK_EXECUTION_FAILURE,),
+            )
+
+    async def _decision_post_precheck_review(
+        self,
+        run: CaseWorkflowRun,
+        *,
+        result_set_artifact: ArtifactEnvelope,
+    ) -> DecisionPostPrecheckExecutionResult | None:
+        """Run or revalidate the exact Decision review for one result envelope."""
+        if run.evaluation_case_id is None:  # pragma: no cover
+            raise RuntimeError("Cannot review a precheck result without a case.")
+        identity_inputs = (
+            result_set_artifact.artifact_id,
+            result_set_artifact.version,
+            result_set_artifact.input_hash,
+        )
+        expected_hash = self._node_input_hash(
+            run,
+            WorkflowNode.DECISION_POST_PRECHECK_REVIEW,
+            identity_inputs,
+        )
+        existing = await self._workflows.get_node(
+            run.workflow_run_id,
+            WorkflowNode.DECISION_POST_PRECHECK_REVIEW.value,
+        )
+        if self._node_completed(existing) and existing.input_hash == expected_hash:
+            return await self._services.decision_post_precheck_review(
+                evaluation_case_id=run.evaluation_case_id,
+                workflow_run_id=run.workflow_run_id,
+                result_set_artifact_id=result_set_artifact.artifact_id,
+            )
+        node = await self._start_node(
+            run,
+            WorkflowNode.DECISION_POST_PRECHECK_REVIEW,
+            identity_inputs=identity_inputs,
+        )
+        result = await self._services.decision_post_precheck_review(
+            evaluation_case_id=run.evaluation_case_id,
+            workflow_run_id=run.workflow_run_id,
+            result_set_artifact_id=result_set_artifact.artifact_id,
+        )
+        await self._finish_node(
+            node,
+            self._result_node_status(result.status, result.component_status),
+            result.generated_artifacts,
+            waiting_for=tuple(
+                item.requirement_code for item in result.missing_data_requests
+            ),
+            failure_reason="; ".join(result.validation_errors) or None,
+        )
+        return result
+
+    async def _decision_document_handoff(
+        self,
+        run: CaseWorkflowRun,
+        *,
+        review_artifact: ArtifactEnvelope,
+        result_set_artifact: ArtifactEnvelope,
+    ) -> DecisionDocumentHandoffExecutionResult | None:
+        """Create requests from the exact conditional review/result pair."""
+        if run.evaluation_case_id is None:  # pragma: no cover
+            raise RuntimeError("Cannot hand off documents without a case.")
+        identity_inputs = (
+            review_artifact.artifact_id,
+            review_artifact.version,
+            review_artifact.input_hash,
+            result_set_artifact.artifact_id,
+            result_set_artifact.version,
+            result_set_artifact.input_hash,
+        )
+        expected_hash = self._node_input_hash(
+            run,
+            WorkflowNode.DECISION_DOCUMENT_HANDOFF,
+            identity_inputs,
+        )
+        existing = await self._workflows.get_node(
+            run.workflow_run_id,
+            WorkflowNode.DECISION_DOCUMENT_HANDOFF.value,
+        )
+        if self._node_completed(existing) and existing.input_hash == expected_hash:
+            return await self._services.decision_document_handoff(
+                evaluation_case_id=run.evaluation_case_id,
+                workflow_run_id=run.workflow_run_id,
+                review_artifact_id=review_artifact.artifact_id,
+                result_set_artifact_id=result_set_artifact.artifact_id,
+            )
+        node = await self._start_node(
+            run,
+            WorkflowNode.DECISION_DOCUMENT_HANDOFF,
+            identity_inputs=identity_inputs,
+        )
+        result = await self._services.decision_document_handoff(
+            evaluation_case_id=run.evaluation_case_id,
+            workflow_run_id=run.workflow_run_id,
+            review_artifact_id=review_artifact.artifact_id,
+            result_set_artifact_id=result_set_artifact.artifact_id,
+        )
+        await self._finish_node(
+            node,
+            self._result_node_status(result.status, result.component_status),
+            result.generated_artifacts,
+            failure_reason="; ".join(result.validation_errors) or None,
+        )
+        return result
+
+    async def _document_preparation(
+        self,
+        run: CaseWorkflowRun,
+        *,
+        request_artifact: ArtifactEnvelope,
+    ) -> DocumentSkillExecutionResult | None:
+        """Prepare or rebuild one masked package from exact supplement lineage."""
+        if run.evaluation_case_id is None:  # pragma: no cover
+            raise RuntimeError("Cannot prepare documents without a case.")
+        request = DocumentPreparationRequest.model_validate(request_artifact.payload)
+        artifacts = await self._artifacts.list_by_case(run.evaluation_case_id)
+        case_artifact = self._latest(artifacts, ArtifactType.EVALUATION_CASE)
+        if case_artifact is None:
+            raise RuntimeError("Document preparation has no EvaluationCase artifact.")
+        supplements: list[ArtifactEnvelope] = []
+        for artifact in artifacts:
+            if (
+                artifact.artifact_type
+                is not ArtifactType.DOCUMENT_EVIDENCE_SUPPLEMENT
+                or artifact.validation_status
+                not in {ValidationStatus.VALID, ValidationStatus.VALID_WITH_WARNINGS}
+            ):
+                continue
+            supplement = DocumentEvidenceSupplement.model_validate(artifact.payload)
+            if supplement.preparation_request_id == request.request_id:
+                supplements.append(artifact)
+        supplements.sort(key=lambda item: (item.version, item.artifact_id))
+        input_artifacts = (case_artifact, request_artifact, *supplements)
+        identity_inputs = (
+            tuple(
+                (item.artifact_id, item.version, item.input_hash)
+                for item in input_artifacts
+            ),
+            self._services.document_masking_policy_hash,
+            self._services.document_tokenizer_key_version,
+        )
+        expected_hash = self._node_input_hash(
+            run,
+            WorkflowNode.DOCUMENT_PREPARATION,
+            identity_inputs,
+        )
+        existing = await self._workflows.get_node(
+            run.workflow_run_id,
+            WorkflowNode.DOCUMENT_PREPARATION.value,
+        )
+        if self._node_completed(existing) and existing.input_hash == expected_hash:
+            return await self._services.document_preparation(
+                evaluation_case_id=run.evaluation_case_id,
+                workflow_run_id=run.workflow_run_id,
+                preparation_request_artifact_id=request_artifact.artifact_id,
+            )
+        node = await self._start_node(
+            run,
+            WorkflowNode.DOCUMENT_PREPARATION,
+            identity_inputs=identity_inputs,
+        )
+        result = await self._services.document_preparation(
+            evaluation_case_id=run.evaluation_case_id,
+            workflow_run_id=run.workflow_run_id,
+            preparation_request_artifact_id=request_artifact.artifact_id,
+        )
+        await self._finish_node(
+            node,
+            self._result_node_status(result.status, result.component_status),
+            result.generated_artifacts,
+            waiting_for=tuple(
+                item.request_id for item in result.missing_data_requests
+            ),
+            failure_reason="; ".join(result.validation_errors) or None,
+        )
+        return result
+
+    async def _pause_for_document_input(
+        self,
+        run: CaseWorkflowRun,
+        result: DocumentSkillExecutionResult,
+    ) -> None:
+        """Persist a precise, typed Document evidence wait contract."""
+        package = result.package_draft
+        requests = result.missing_data_requests
+        request_ids = tuple(item.request_id for item in requests)
+        valid_wait = (
+            result.component_status is ComponentStatus.WAITING_FOR_INPUT
+            and package is not None
+            and package.readiness is DocumentPackageReadiness.WAITING_FOR_INPUT
+            and bool(request_ids)
+            and len(set(request_ids)) == len(request_ids)
+            and requests == package.missing_data_requests
+            and all(
+                item.status is MissingRequestStatus.OPEN
+                and item.evaluation_case_id == run.evaluation_case_id
+                and item.raised_by == "DOCUMENT_SKILL"
+                for item in requests
+            )
+        )
+        if not valid_wait:
+            await self._fail(
+                run,
+                WorkflowNode.DOCUMENT_PREPARATION,
+                "Document returned an invalid missing-evidence wait contract.",
+            )
+            return
+        updated = await self._save_run(
+            run,
+            status=WorkflowStatus.WAITING_FOR_INPUT,
+            current_stage=WorkflowNode.DOCUMENT_PREPARATION.value,
+            pending_request_ids=request_ids,
+            resume_stage=WorkflowNode.DOCUMENT_PREPARATION.value,
+            failure_reason=None,
+        )
+        await self._event(
+            updated,
+            "WORKFLOW_WAITING_FOR_DOCUMENT_INPUT",
+            WorkflowNode.DOCUMENT_PREPARATION,
+            {"request_ids": list(request_ids)},
+        )
+
+    async def _pause_for_post_precheck_input(
+        self,
+        run: CaseWorkflowRun,
+        result: DecisionPostPrecheckExecutionResult,
+    ) -> None:
+        """Persist only a precise evidence request returned by the review."""
+        review = result.review
+        requests = result.missing_data_requests
+        request_ids = tuple(item.request_id for item in requests)
+        valid_wait = (
+            result.component_status is ComponentStatus.WAITING_FOR_INPUT
+            and review is not None
+            and review.outcome
+            is DecisionPostPrecheckOutcome.FOLLOW_UP_EVIDENCE_REQUIRED
+            and bool(request_ids)
+            and len(set(request_ids)) == len(request_ids)
+            and request_ids
+            == tuple(item.request_id for item in review.missing_data_requests)
+            and review.required_input_fields
+            == tuple(dict.fromkeys(item.field for item in requests))
+            and all(
+                item.status is MissingRequestStatus.OPEN
+                and item.evaluation_case_id == run.evaluation_case_id
+                for item in requests
+            )
+        )
+        if not valid_wait:
+            await self._fail(
+                run,
+                WorkflowNode.DECISION_POST_PRECHECK_REVIEW,
+                "Decision returned an invalid post-precheck evidence wait contract.",
+            )
+            return
+        updated = await self._save_run(
+            run,
+            status=WorkflowStatus.WAITING_FOR_INPUT,
+            current_stage=WorkflowNode.DECISION_POST_PRECHECK_REVIEW.value,
+            pending_request_ids=request_ids,
+            resume_stage=WorkflowNode.DECISION_POST_PRECHECK_REVIEW.value,
+            failure_reason=None,
+        )
+        await self._event(
+            updated,
+            "WORKFLOW_WAITING_FOR_INPUT",
+            WorkflowNode.DECISION_POST_PRECHECK_REVIEW,
+            {"request_ids": list(request_ids)},
+        )
+
+    async def _pause_for_post_banking_input(
+        self,
+        run: CaseWorkflowRun,
+        result: DecisionPostBankingExecutionResult,
+    ) -> None:
+        review = result.review
+        requests = result.missing_data_requests
+        request_ids = tuple(item.request_id for item in requests)
+        review_request_ids = (
+            tuple(item.request_id for item in review.missing_data_requests)
+            if review is not None
+            else ()
+        )
+        valid_wait = (
+            result.component_status is ComponentStatus.WAITING_FOR_INPUT
+            and review is not None
+            and review.outcome is DecisionPostBankingOutcome.BANKING_INPUT_REQUIRED
+            and bool(request_ids)
+            and len(set(request_ids)) == len(request_ids)
+            and request_ids == review_request_ids
+            and review.required_input_fields == tuple(item.field for item in requests)
+            and all(
+                item.status is MissingRequestStatus.OPEN
+                and item.evaluation_case_id == run.evaluation_case_id
+                for item in requests
+            )
+        )
+        if not valid_wait:
+            await self._fail(
+                run,
+                WorkflowNode.DECISION_POST_BANKING_REVIEW,
+                "Decision returned an invalid post-Banking input wait contract.",
+            )
+            return
+        updated = await self._save_run(
+            run,
+            status=WorkflowStatus.WAITING_FOR_INPUT,
+            current_stage=WorkflowNode.DECISION_POST_BANKING_REVIEW.value,
+            pending_request_ids=request_ids,
+            resume_stage=WorkflowNode.DECISION_POST_BANKING_REVIEW.value,
+            failure_reason=None,
+        )
+        await self._event(
+            updated,
+            "WORKFLOW_WAITING_FOR_INPUT",
+            WorkflowNode.DECISION_POST_BANKING_REVIEW,
+            {"request_ids": list(request_ids)},
+        )
+
+    async def _decision_initial_route(
+        self, run: CaseWorkflowRun
+    ) -> DecisionRouteExecutionResult | None:
+        if run.evaluation_case_id is None:  # pragma: no cover
+            raise RuntimeError("Cannot plan a Decision route without an evaluation case.")
+        artifacts = await self._artifacts.list_by_case(run.evaluation_case_id)
+        authoritative = tuple(
+            (
+                self._latest_risk_checkpoint_registry(artifacts)
+                if artifact_type is ArtifactType.APPROVAL_CHECKPOINTS
+                else self._latest(artifacts, artifact_type)
+            )
+            for artifact_type in (
+                ArtifactType.EVALUATION_CASE,
+                ArtifactType.FINANCE_FACTS,
+                ArtifactType.OPERATIONS_FACTS,
+                ArtifactType.INITIAL_RISK_ASSESSMENT,
+                ArtifactType.APPROVAL_CHECKPOINTS,
+            )
+        )
+        identity_inputs = tuple(
+            (item.artifact_type, item.artifact_id, item.version, item.input_hash)
+            for item in authoritative
+            if item is not None
+        )
+        expected_hash = self._node_input_hash(
+            run,
+            WorkflowNode.DECISION_ROUTE_PLANNING,
+            identity_inputs,
+        )
+        existing = await self._workflows.get_node(
+            run.workflow_run_id, WorkflowNode.DECISION_ROUTE_PLANNING.value
+        )
+        if self._node_completed(existing) and existing.input_hash == expected_hash:
+            return None
+        node = await self._start_node(
+            run,
+            WorkflowNode.DECISION_ROUTE_PLANNING,
+            identity_inputs=identity_inputs,
+        )
+        result = await self._services.decision_initial_route(
+            evaluation_case_id=run.evaluation_case_id
+        )
+        await self._finish_node(
+            node,
+            self._result_node_status(result.status, result.component_status),
+            result.generated_artifacts,
+            waiting_for=tuple(
+                item.requirement_code for item in result.missing_data_requests
+            ),
+            failure_reason="; ".join(result.validation_errors) or None,
+        )
+        return result
+
+    @staticmethod
+    def _latest_risk_checkpoint_registry(
+        artifacts: tuple[ArtifactEnvelope, ...],
+    ) -> ArtifactEnvelope | None:
+        """Select Risk's registry, excluding later proposal-scoped policy versions."""
+        candidates: list[ArtifactEnvelope] = []
+        for artifact in artifacts:
+            if artifact.artifact_type is not ArtifactType.APPROVAL_CHECKPOINTS:
+                continue
+            try:
+                checkpoint_set = ApprovalCheckpointSet.model_validate(artifact.payload)
+            except ValueError:
+                continue
+            if not checkpoint_set.policy_coverages:
+                candidates.append(artifact)
+        return max(candidates, key=lambda item: item.version, default=None)
+
+    async def _pause_for_decision_input(
+        self,
+        run: CaseWorkflowRun,
+        result: DecisionRouteExecutionResult,
+    ) -> None:
+        request_ids = tuple(
+            item.request_id for item in result.missing_data_requests
+        )
+        updated = await self._save_run(
+            run,
+            status=WorkflowStatus.WAITING_FOR_INPUT,
+            current_stage=WorkflowNode.DECISION_ROUTE_PLANNING.value,
+            pending_request_ids=request_ids,
+            resume_stage=WorkflowNode.DECISION_ROUTE_PLANNING.value,
+            failure_reason=None,
+        )
+        await self._event(
+            updated,
+            "WORKFLOW_WAITING_FOR_INPUT",
+            WorkflowNode.DECISION_ROUTE_PLANNING,
+            {"request_ids": list(request_ids)},
+        )
+
+    async def _pause_from_upstream(
+        self,
+        run: CaseWorkflowRun,
+        finance: FinanceExecutionResult | None,
+        operations: OperationsExecutionResult | None,
+    ) -> None:
+        results = tuple(item for item in (finance, operations) if item is not None)
+        if any(item.status is WorkflowStatus.WAITING_FOR_INPUT for item in results):
+            status = WorkflowStatus.WAITING_FOR_INPUT
+            event_type = "WORKFLOW_WAITING_FOR_INPUT"
+        else:
+            status = WorkflowStatus.FAILED_SAFE
+            event_type = "NODE_FAILED_SAFE"
+        reason = "; ".join(
+            error for item in results for error in item.validation_errors
+        ) or "An upstream Initial Assessment node did not complete."
+        updated = await self._save_run(
+            run,
+            status=status,
+            current_stage=WorkflowNode.INITIAL_ASSESSMENT.value,
+            failure_reason=reason,
+        )
+        await self._event(updated, event_type, WorkflowNode.INITIAL_ASSESSMENT)
+
+    async def _fail(
+        self, run: CaseWorkflowRun, node: WorkflowNode, reason: str
+    ) -> None:
+        existing = await self._workflows.get_node(run.workflow_run_id, node.value)
+        if existing is not None:
+            await self._finish_node(
+                existing,
+                WorkflowNodeStatus.FAILED_SAFE,
+                (),
+                failure_reason=reason,
+            )
+        failed = await self._save_run(
+            run,
+            status=WorkflowStatus.FAILED_SAFE,
+            current_stage=node.value,
+            failure_reason=reason,
+        )
+        await self._event(
+            failed,
+            "NODE_FAILED_SAFE",
+            node,
+            {"reason": reason},
+        )
+
+    async def _start_node(
+        self,
+        run: CaseWorkflowRun,
+        node: WorkflowNode,
+        *,
+        identity_inputs: tuple[object, ...] = (),
+    ) -> WorkflowNodeState:
+        previous = await self._workflows.get_node(run.workflow_run_id, node.value)
+        state = WorkflowNodeState(
+            workflow_run_id=run.workflow_run_id,
+            node=node,
+            status=WorkflowNodeStatus.RUNNING,
+            attempt=(previous.attempt if previous is not None else 0) + 1,
+            input_hash=self._node_input_hash(run, node, identity_inputs),
+            output_artifact_ids=(
+                previous.output_artifact_ids if previous is not None else ()
+            ),
+            started_at=self._clock(),
+        )
+        await self._workflows.save_node(state)
+        await self._event(run, "NODE_STARTED", node, {"attempt": state.attempt})
+        return state
+
+    @staticmethod
+    def _node_input_hash(
+        run: CaseWorkflowRun,
+        node: WorkflowNode,
+        identity_inputs: tuple[object, ...] = (),
+    ) -> str:
+        if not identity_inputs:
+            return deterministic_id(
+                "NIN",
+                run.dataset_snapshot_hash,
+                run.evaluation_case_id,
+                node,
+                run.as_of_date,
+            )
+        return deterministic_id(
+            "NIN",
+            run.dataset_snapshot_hash,
+            run.evaluation_case_id,
+            node,
+            run.as_of_date,
+            identity_inputs,
+        )
+
+    async def _finish_node(
+        self,
+        node: WorkflowNodeState,
+        status: WorkflowNodeStatus,
+        artifacts: tuple[ArtifactEnvelope, ...],
+        *,
+        waiting_for: tuple[str, ...] = (),
+        failure_reason: str | None = None,
+    ) -> None:
+        artifact_ids = tuple(
+            dict.fromkeys(
+                (*node.output_artifact_ids, *(item.artifact_id for item in artifacts))
+            )
+        )
+        completed = node.model_copy(
+            update={
+                "status": status,
+                "output_artifact_ids": artifact_ids,
+                "waiting_for": waiting_for,
+                "failure_reason": failure_reason,
+                "completed_at": (
+                    self._clock()
+                    if status
+                    in {
+                        WorkflowNodeStatus.COMPLETED,
+                        WorkflowNodeStatus.COMPLETED_WITH_WARNINGS,
+                        WorkflowNodeStatus.FAILED_SAFE,
+                    }
+                    else None
+                ),
+            }
+        )
+        await self._workflows.save_node(completed)
+        await self._events.append(
+            workflow_run_id=node.workflow_run_id,
+            event_type=(
+                "NODE_COMPLETED"
+                if self._node_completed(completed)
+                else "NODE_WAITING"
+                if status
+                in {
+                    WorkflowNodeStatus.WAITING_FOR_DEPENDENCIES,
+                    WorkflowNodeStatus.WAITING_FOR_INPUT,
+                }
+                else "NODE_FAILED_SAFE"
+            ),
+            node=node.node,
+            metadata={
+                "status": status.value,
+                "artifact_ids": list(artifact_ids),
+                "waiting_for": list(waiting_for),
+            },
+            created_at=self._clock(),
+        )
+
+    async def _save_run(
+        self,
+        run: CaseWorkflowRun,
+        *,
+        status: WorkflowStatus,
+        current_stage: str,
+        evaluation_case_id: str | None = None,
+        pending_request_ids: tuple[str, ...] | None = None,
+        resume_stage: str | None = None,
+        blocked_action: ProtectedAction | None = None,
+        failure_reason: str | None = None,
+    ) -> CaseWorkflowRun:
+        update: dict[str, object] = {
+            "status": status,
+            "current_stage": current_stage,
+            "resume_stage": resume_stage,
+            "blocked_action": blocked_action,
+            "failure_reason": failure_reason,
+            "updated_at": self._clock(),
+        }
+        if evaluation_case_id is not None:
+            update["evaluation_case_id"] = evaluation_case_id
+        if pending_request_ids is not None:
+            update["pending_request_ids"] = pending_request_ids
+        updated = run.model_copy(update=update)
+        await self._workflows.save_run(updated)
+        return updated
+
+    async def _event(
+        self,
+        run: CaseWorkflowRun,
+        event_type: str,
+        node: WorkflowNode | None,
+        metadata: dict[str, object] | None = None,
+    ) -> None:
+        await self._events.append(
+            workflow_run_id=run.workflow_run_id,
+            event_type=event_type,
+            node=node,
+            metadata=dict(metadata or {}),
+            created_at=self._clock(),
+        )
+
+    async def _require_run(self, workflow_run_id: str) -> CaseWorkflowRun:
+        run = await self._workflows.get_run(workflow_run_id)
+        if run is None:
+            raise CaseWorkflowNotFoundError("Workflow run was not found.")
+        return run
+
+    @staticmethod
+    def _node_completed(node: WorkflowNodeState | None) -> bool:
+        return node is not None and node.status in {
+            WorkflowNodeStatus.COMPLETED,
+            WorkflowNodeStatus.COMPLETED_WITH_WARNINGS,
+        }
+
+    @staticmethod
+    def _component_node_status(status: ComponentStatus) -> WorkflowNodeStatus:
+        if status is ComponentStatus.COMPLETED:
+            return WorkflowNodeStatus.COMPLETED
+        if status is ComponentStatus.COMPLETED_WITH_WARNINGS:
+            return WorkflowNodeStatus.COMPLETED_WITH_WARNINGS
+        if status is ComponentStatus.WAITING_FOR_INPUT:
+            return WorkflowNodeStatus.WAITING_FOR_INPUT
+        return WorkflowNodeStatus.FAILED_SAFE
+
+    @classmethod
+    def _result_node_status(
+        cls, workflow_status: WorkflowStatus, component_status: ComponentStatus
+    ) -> WorkflowNodeStatus:
+        if workflow_status is WorkflowStatus.COMPLETED:
+            return cls._component_node_status(component_status)
+        if workflow_status is WorkflowStatus.WAITING_FOR_INPUT:
+            return WorkflowNodeStatus.WAITING_FOR_INPUT
+        if workflow_status is WorkflowStatus.WAITING_FOR_DEPENDENCIES:
+            return WorkflowNodeStatus.WAITING_FOR_DEPENDENCIES
+        return WorkflowNodeStatus.FAILED_SAFE
+
+    @staticmethod
+    def _upstream_completed(
+        finance: FinanceExecutionResult | None,
+        operations: OperationsExecutionResult | None,
+    ) -> bool:
+        return all(
+            item is None or item.status is WorkflowStatus.COMPLETED
+            for item in (finance, operations)
+        )
+
+    @staticmethod
+    def _latest(
+        artifacts: tuple[ArtifactEnvelope, ...], artifact_type: ArtifactType
+    ) -> ArtifactEnvelope | None:
+        matches = tuple(item for item in artifacts if item.artifact_type is artifact_type)
+        return max(matches, key=lambda item: item.version, default=None)

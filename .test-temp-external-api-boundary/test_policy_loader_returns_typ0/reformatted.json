@@ -1,0 +1,18 @@
+{
+      "configuration_id": "OPC_BANKING_PRECHECK_SIMULATION",
+      "configuration_version": "banking-precheck-simulation-v1",
+      "scenarios": [
+            {
+                  "api_id": "API-002",
+                  "api_provider": "VietinBank",
+                  "message": "Simulated, non-binding response only; no provider eligibility or approval decision was made.",
+                  "non_binding": true,
+                  "outcome": "NO_RECOMMENDATION",
+                  "reason_codes": [
+                        "SIMULATED_NO_PROVIDER_DECISION"
+                  ],
+                  "required_follow_up_fields": [],
+                  "scenario_id": "API-002-SIMULATED-NO-PROVIDER-DECISION"
+            }
+      ]
+}

@@ -65,6 +65,22 @@ def test_swagger_exposes_operations_endpoint(operations_client: TestClient) -> N
     assert "/api/cases/{evaluation_case_id}/operations-assessment" in paths
 
 
+def test_swagger_assigns_each_endpoint_to_one_section(
+    operations_client: TestClient,
+) -> None:
+    paths = operations_client.get("/openapi.json").json()["paths"]
+    expected_tags = {
+        "/api/contracts": ["Planner"],
+        "/api/planner/evaluate": ["Planner"],
+        "/api/cases/{evaluation_case_id}/finance-assessment": ["Finance"],
+        "/api/cases/{evaluation_case_id}/operations-assessment": ["Operations"],
+        "/api/cases/{evaluation_case_id}/artifacts": ["Artifacts"],
+    }
+    for path, tags in expected_tags.items():
+        operation = next(iter(paths[path].values()))
+        assert operation["tags"] == tags
+
+
 def test_operations_runs_for_every_actual_contract_without_downstream_outputs(
     operations_client: TestClient,
 ) -> None:

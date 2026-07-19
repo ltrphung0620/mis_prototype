@@ -4,13 +4,15 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from opc_mis.domain.enums import ProtectedAction
+
 
 class ActionCommand(BaseModel):
     """A request for the Orchestrator to route a protected action through governance."""
 
     model_config = ConfigDict(frozen=True)
 
-    action_type: str
+    action_type: ProtectedAction
     evaluation_case_id: str
     payload_artifact_id: str
     requested_by: str

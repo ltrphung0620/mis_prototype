@@ -6,6 +6,8 @@ from opc_mis.domain.dataset import ValidationIssue
 from opc_mis.domain.validation import valid_date_like, valid_identifier, valid_numeric
 
 IDENTIFIER_FIELDS = {
+    "api_id",
+    "bank_product_id",
     "contract_id",
     "customer_id",
     "order_id",
@@ -16,6 +18,8 @@ IDENTIFIER_FIELDS = {
     "alert_id",
     "txn_id",
     "account_id",
+    "rule_id",
+    "source_field",
 }
 
 NUMERIC_FIELDS = {
@@ -37,6 +41,10 @@ NUMERIC_FIELDS = {
     "opex",
     "cash_reserve_minimum",
     "projected_closing_cash",
+    "annual_rate_or_fee",
+    "processing_fee_rate",
+    "collateral_ratio",
+    "minimum_amount",
 }
 
 DATE_FIELDS = {
@@ -78,6 +86,28 @@ TEXT_FIELDS = {
     "direction",
     "counterparty_id",
     "txn_status",
+    "product_name",
+    "automation_level",
+    "fit_note",
+    "provider",
+    "method",
+    "endpoint",
+    "required_fields",
+    "payload_example",
+    "recommended_core_role",
+    "catalog_status",
+    "extension_rule",
+    "applies_to",
+    "possible_issue",
+    "team_visible_meaning",
+    "required_handling",
+    "requires_human_approval",
+    "sensitive_fields",
+    "note",
+    "masked_example",
+    "tokenized_example",
+    "allowed_for_partner_api",
+    "reason",
 }
 
 

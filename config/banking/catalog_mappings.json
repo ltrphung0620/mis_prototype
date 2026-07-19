@@ -1,0 +1,28 @@
+{
+  "policy_id": "OPC_BANKING_CATALOG_MAPPING",
+  "mapping_version": "banking-catalog-v1",
+  "bindings": [
+    {
+      "binding_id": "PERFORMANCE_BOND_BASELINE",
+      "need_type": "PERFORMANCE_BOND",
+      "bank_product_ids": [
+        "BANKPROD-002"
+      ],
+      "precheck_api_by_product": {
+        "BANKPROD-002": "API-002"
+      },
+      "precheck_field_sources_by_api": {
+        "API-002": {
+          "contract_id": "EVALUATION_CASE",
+          "amount": "BANKING_INPUT_SUPPLEMENT",
+          "company_profile": "OPC_PROFILE"
+        }
+      },
+      "handling_rule_ids": [
+        "API-H-002",
+        "API-H-006"
+      ],
+      "allowed_product_combinations": []
+    }
+  ]
+}
