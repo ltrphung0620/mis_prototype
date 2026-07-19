@@ -52,7 +52,10 @@ BANKING_PRECHECK_EXECUTION
        -> full-coverage conditional result: DECISION_DOCUMENT_HANDOFF
           -> one preparation request per viable result; no selection
           -> Workflow continues only when exactly one request exists
-       -> other typed result: DECISION_POST_PRECHECK_REVIEW_COMPLETED
+          -> masked DOCUMENT_RELEASE_PACKAGE_READY
+          -> INTERNAL_DECISION_PACKAGE_ASSEMBLY
+       -> other typed non-actionable result: DECISION_POST_PRECHECK_REVIEW_COMPLETED
+          -> INTERNAL_DECISION_PACKAGE_ASSEMBLY
 ```
 
 Evidence intake is not approval and does not reinterpret the prior result. The API excludes a
@@ -65,6 +68,11 @@ The review remains a neutral classifier: it does not prepare documents. A separa
 handoff converts validated full-coverage conditional items into independent
 `DOCUMENT_PREPARATION_REQUEST` drafts. Master Workflow does not select among them; it invokes
 Document only when there is exactly one viable request. Partial coverage remains deferred.
+
+Non-actionable outcomes (`ALL_OPTIONS_NOT_ELIGIBLE`, `NO_PROVIDER_RECOMMENDATION`,
+`PRECHECK_SERVICE_UNAVAILABLE`, and `MIXED_NON_ACTIONABLE_RESULTS`) converge directly on the
+Internal Decision Package. A conditional outcome converges only after Document has produced its
+ready masked release package. An explicit evidence gap remains paused and emits no partial package.
 
 ## Current CON-004 behavior
 
@@ -84,4 +92,8 @@ The configured mock supplies eligibility, conditional guarantee, echoed VND amou
 document/condition codes for workflow testing. TeamPack contains no real VietinBank response, so
 this still is not a provider recommendation, official offer or bank approval. If this is the only
 viable full-coverage request, Document preparation begins and pauses for a signed-contract
-reference; any later external release has a separate Founder checkpoint.
+reference; after the masked release package is ready, Workflow assembles the Internal Decision
+Package. Any later external release has a separate Founder checkpoint.
+
+See [Internal Decision Package](INTERNAL_DECISION_PACKAGE.md) for the exact convergence paths and
+the distinction between a preserved provider outcome and a later Decision recommendation.

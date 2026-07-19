@@ -833,7 +833,7 @@ Mọi current result vẫn có `BankingPrecheckResultAuthority.SIMULATED_NON_BIN
 | `DOCUMENT_CHECKLIST` | Một item/evidence status cho mỗi provider document code. |
 | `DOCUMENT_PACKAGE_DRAFT` | Internal sanitized draft, có thể còn blocking requests. |
 | `DOCUMENT_EVIDENCE_SUPPLEMENT` | Immutable opaque document reference và content hash giải quyết exact request. |
-| `DOCUMENT_RELEASE_PACKAGE` | Complete masked candidate stored for the future Internal Decision Package; chưa authorize/chưa gửi. |
+| `DOCUMENT_RELEASE_PACKAGE` | Complete masked candidate consumed by the conditional Internal Decision Package path; chưa authorize/chưa gửi. |
 
 Master Workflow tự tiếp tục chỉ khi có đúng một `DOCUMENT_PREPARATION_REQUEST`. Nhiều request không
 được chọn theo array order; route fail safe cho tới khi Decision selection được implement.
@@ -944,9 +944,10 @@ làm executable policy/algorithm selector.
 
 ## 22. Document release Governance state
 
-`DOCUMENT_RELEASE_PACKAGE_READY` chỉ là internal Decision milestone. Workflow persist package nhưng
-không tạo `ActionCommand`, `ApprovalRequest`, `WAITING_FOR_APPROVAL`, hoặc external-send authority.
-Summary tại boundary này phải giữ:
+`DOCUMENT_RELEASE_PACKAGE_READY` là internal Document milestone. Workflow persist package rồi có
+thể tiếp tục sang `INTERNAL_DECISION_PACKAGE_ASSEMBLY`, nhưng không tạo `ActionCommand`,
+`ApprovalRequest`, `WAITING_FOR_APPROVAL`, hoặc external-send authority. Summary tại boundary này
+phải giữ:
 
 ```text
 document_release_authorized         = false
@@ -955,7 +956,26 @@ document_external_release_performed = false
 
 Checkpoint `SEND_DOCUMENT_TO_EXTERNAL_PARTNER` đã được Initial Risk đăng ký vẫn ở trạng thái dormant;
 registration không tự pause workflow. Approval `SUBMIT_BANKING_PRECHECK` không được tái sử dụng.
-Một phase Decision tương lai phải tạo Internal Decision Package và exact evidence-bound
-recommendation/proposal để Founder xem phương án. Chỉ proposal tương lai đó mới được kích hoạt
-checkpoint gửi tài liệu; raw `DOCUMENT_RELEASE_PACKAGE` không phải approval subject. Final Decision
+Internal Decision Package chỉ tổng hợp evidence và cũng không phải approval subject. Một phase
+Decision sau đó phải tạo exact evidence-bound recommendation/proposal để Founder xem phương án.
+Chỉ proposal tương lai đó mới được kích hoạt checkpoint gửi tài liệu. Final Decision
 recommendation/proposal, connector authorization và external delivery chưa được implement.
+
+## 23. Internal Decision Package enums
+
+`ArtifactType.INTERNAL_DECISION_PACKAGE` là evidence dossier deterministic đã validate. Nó dùng
+`InternalDecisionPackageReadiness.READY`; không có trạng thái partial-ready.
+
+`InternalDecisionAssemblyPath` gồm:
+
+- `DIRECT_ROUTE`;
+- `BANKING_NO_VIABLE_OPTION`;
+- `BANKING_NO_PRECHECK_PATH`;
+- `BANKING_PRECHECK_DECLINED`;
+- `BANKING_NON_ACTIONABLE`; và
+- `CONDITIONAL_DOCUMENT_READY`.
+
+Mỗi path bắt buộc phải khớp với exact route/review/Governance/Document artifacts tương ứng. Package
+ready luôn giữ `recommendation_performed`, `selection_performed`, `approval_requested` và
+`external_action_performed` bằng `false`. Xem
+[Internal Decision Package](INTERNAL_DECISION_PACKAGE.md) để biết source và validation rules.

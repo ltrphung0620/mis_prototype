@@ -250,9 +250,13 @@ def test_pending_precheck_approval_resumes_after_restart_without_release_gate(
             assert resumed["pending_approval_ids"] == []
             assert resumed["resume_stage"] is None
             assert resumed["blocked_action"] is None
-            assert resumed["current_stage"] == "DOCUMENT_RELEASE_PACKAGE_READY"
+            assert resumed["current_stage"] == "INTERNAL_DECISION_PACKAGE_READY"
             assert len(resumed["document_release_package_ids"]) == 1
             assert resumed["document_release_package_ready"] is True
+            assert resumed["internal_decision_package_ready"] is True
+            assert resumed["internal_decision_assembly_path"] == (
+                "CONDITIONAL_DOCUMENT_READY"
+            )
             assert resumed["ready_for_internal_decision"] is True
             assert resumed["document_release_authorized"] is False
             assert resumed["document_external_release_performed"] is False
@@ -280,6 +284,7 @@ def test_pending_precheck_approval_resumes_after_restart_without_release_gate(
             assert "PROTECTED_ACTION_ALLOWED" in event_types
             assert "WORKFLOW_RESUME_REQUESTED" in event_types
             assert "DOCUMENT_RELEASE_PACKAGE_READY" in event_types
+            assert "INTERNAL_DECISION_PACKAGE_READY" in event_types
             assert "DOCUMENT_EXTERNAL_RELEASE_PROPOSAL" not in event_types
             assert "DOCUMENT_EXTERNAL_RELEASE_AUTHORIZED" not in event_types
             assert "DOCUMENT_EXTERNAL_RELEASE_DECLINED" not in event_types

@@ -5,7 +5,7 @@
 Document Skill prepares a bank-facing dossier candidate **inside OPC** from one validated Decision
 handoff. It classifies provider requirements, creates blocking requests for genuinely missing
 documents, applies data minimization and deterministic masking, and produces a release candidate
-for the future Internal Decision Package.
+that Workflow can pass to Internal Decision Package assembly.
 
 Document Skill does not select a bank/product, approve a protected action, persist artifacts,
 change workflow state, call an external connector, send a file, or create the final Decision Card.
@@ -29,13 +29,15 @@ BANKING_PRECHECK_RESULT_SET (SIMULATED_NON_BINDING)
     │     → rebuild checklist/package without mutating old artifacts
     └── no blocking gap
           → DOCUMENT_RELEASE_PACKAGE_READY
-          → persist as future Internal Decision Package input
+          → INTERNAL_DECISION_PACKAGE_ASSEMBLY
+          → persist as the conditional path's masked source
           → no approval request and no external send
 ```
 
-The current implementation stops at the internal package-ready boundary. It does not implement the
-Internal Decision Package, final Decision recommendation/proposal, real VietinBank call, or external
-send.
+Document Skill itself stops at the internal package-ready boundary. Master Workflow may then
+assemble `INTERNAL_DECISION_PACKAGE`; that downstream artifact is an evidence dossier only. The
+final Decision recommendation/proposal, real VietinBank call, and external send remain
+unimplemented.
 
 ## 1. Decision-to-Document handoff
 
@@ -175,8 +177,8 @@ through a dedicated secure document port.
   `external_release_performed = false`.
 
 When readiness becomes `READY_FOR_INTERNAL_DECISION`, Document also returns
-`DOCUMENT_RELEASE_PACKAGE`. It is a complete internal candidate stored for the future Internal
-Decision Package, not an approval subject or proof of release. It retains exact
+`DOCUMENT_RELEASE_PACKAGE`. It is a complete internal candidate consumed by the conditional
+Internal Decision Package path, not an approval subject or proof of release. It retains exact
 checklist/document codes, provider conditions, limitations and the same sanitized payload/masking
 proof. Its typed per-document manifest contains only document code/status,
 limitation codes, opaque source reference IDs and evidence IDs. It contains no raw bytes or
@@ -242,8 +244,8 @@ See [Data Masking Policy](DATA_MASKING_POLICY.md) and
 ## 7. Dormant Governance checkpoint and future Decision trigger
 
 Creating `DOCUMENT_RELEASE_PACKAGE` does not propose an external release. Workflow persists it as
-an internal input for the future Decision phase and creates no `ActionCommand`, `ApprovalRequest`,
-or Founder pause. At this boundary the summary remains:
+an internal input, then may assemble the Internal Decision Package without creating an
+`ActionCommand`, `ApprovalRequest`, or Founder pause. At this boundary the summary remains:
 
 ```text
 document_release_authorized         = false
@@ -255,12 +257,13 @@ Initial Risk may already have registered the evidence-backed checkpoint for
 dormant while only `DOCUMENT_RELEASE_PACKAGE` exists. Approval for
 `SUBMIT_BANKING_PRECHECK` cannot be reused for a later document send.
 
-A future Decision phase must first build the Internal Decision Package, produce an exact
-evidence-bound recommendation/proposal, and present that proposed option to the Founder. Only that
-future validated proposal may activate `SEND_DOCUMENT_TO_EXTERNAL_PARTNER`; the raw release package
-must never be the approval subject by itself. The final Decision recommendation/proposal,
-authorization-to-connector transition, actual send, provider receipt, retry and delivery
-reconciliation are not implemented in this phase.
+Internal Decision Package assembly preserves the validated release package and its masking proof,
+but still does not activate `SEND_DOCUMENT_TO_EXTERNAL_PARTNER`. A later Decision phase must
+produce an exact evidence-bound recommendation/proposal and present the proposed option to the
+Founder. Only that later validated proposal may activate the checkpoint; neither the raw release
+package nor the Internal Decision Package is an external-release approval subject by itself. The
+final Decision recommendation/proposal, authorization-to-connector transition, actual send,
+provider receipt, retry and delivery reconciliation are not implemented.
 
 ## 8. Responsibility boundary
 
@@ -273,7 +276,7 @@ This phase does not:
 - verify a human signature or the legal validity of a document reference;
 - let Founder approval bypass masking/secret suppression;
 - send the artifact envelope or raw evidence closure as an outbound payload;
-- prepare the final internal Decision package or Decision Card;
+- assemble the Internal Decision Package or create a Decision Card;
 - request Founder approval merely because a release package is ready; or
 - perform an actual external release.
 
@@ -282,3 +285,6 @@ artifact inspection API has no authentication/RBAC, so it must not be exposed be
 prototype environment. A future connector must serialize only the validated `sanitized_payload`,
 never the full artifact/evidence closure. Moving all raw evidence behind a reference-only evidence
 vault is a known future hardening item.
+
+See [Internal Decision Package](INTERNAL_DECISION_PACKAGE.md) for the downstream convergence and
+evidence-bound assembly rules.

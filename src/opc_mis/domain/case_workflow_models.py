@@ -28,6 +28,10 @@ from opc_mis.domain.enums import (
     WorkflowNodeStatus,
     WorkflowStatus,
 )
+from opc_mis.domain.internal_decision_package_models import (
+    InternalDecisionAssemblyPath,
+    InternalDecisionPackageReadiness,
+)
 from opc_mis.domain.workflow import WorkflowNode
 
 
@@ -164,6 +168,14 @@ class WorkflowRunSummary(BaseModel):
     ready_for_internal_decision: bool = False
     document_release_authorized: bool = False
     document_external_release_performed: bool = False
+    internal_decision_package_id: str | None = None
+    internal_decision_assembly_path: InternalDecisionAssemblyPath | None = None
+    internal_decision_package_readiness: (
+        InternalDecisionPackageReadiness | None
+    ) = None
+    internal_decision_source_artifact_ids: tuple[str, ...] = ()
+    internal_decision_governance_reference_ids: tuple[str, ...] = ()
+    internal_decision_package_ready: bool = False
     pending_approval_ids: tuple[str, ...] = ()
     pending_missing_data_ids: tuple[str, ...] = ()
     resume_stage: str | None = None

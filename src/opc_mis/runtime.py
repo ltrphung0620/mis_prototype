@@ -21,6 +21,12 @@ from opc_mis.business.agents.decision.document_handoff_component import (
 from opc_mis.business.agents.decision.document_handoff_context import (
     DecisionDocumentHandoffContextLoader,
 )
+from opc_mis.business.agents.decision.internal_package_component import (
+    InternalDecisionPackageAssembler,
+)
+from opc_mis.business.agents.decision.internal_package_context import (
+    InternalDecisionPackageContextLoader,
+)
 from opc_mis.business.agents.decision.post_banking_component import (
     DecisionPostBankingReviewer,
 )
@@ -153,6 +159,7 @@ from opc_mis.domain.enums import (
     ComponentStatus,
     CurrencyCode,
     DecisionHandoffMode,
+    DecisionPostBankingOutcome,
     DecisionPostPrecheckOutcome,
     DecisionRouteMode,
     DecisionRouteOutcome,
@@ -163,6 +170,10 @@ from opc_mis.domain.enums import (
     WorkflowStatus,
 )
 from opc_mis.domain.finance_models import FinanceExecutionResult
+from opc_mis.domain.internal_decision_package_models import (
+    InternalDecisionAssemblyPath,
+    InternalDecisionPackageExecutionResult,
+)
 from opc_mis.domain.lineage import deterministic_id
 from opc_mis.domain.masking_models import MaskableScalar, MaskedPayload
 from opc_mis.domain.operations_models import OperationsExecutionResult
@@ -269,6 +280,9 @@ from opc_mis.workflow.document_evidence_orchestrator import (
 )
 from opc_mis.workflow.document_orchestrator import DocumentOrchestrator
 from opc_mis.workflow.finance_orchestrator import FinanceAssessmentOrchestrator
+from opc_mis.workflow.internal_decision_package_orchestrator import (
+    InternalDecisionPackageOrchestrator,
+)
 from opc_mis.workflow.operations_orchestrator import OperationsAssessmentOrchestrator
 from opc_mis.workflow.orchestrator import PlannerIntakeOrchestrator
 from opc_mis.workflow.risk_orchestrator import RiskAssessmentOrchestrator
@@ -317,6 +331,10 @@ class BankingPrecheckSubmissionCaseNotFoundError(LookupError):
 
 class DocumentCaseNotFoundError(LookupError):
     """Raised when Decision or Document inputs cannot be resolved exactly."""
+
+
+class InternalDecisionPackageCaseNotFoundError(LookupError):
+    """Raised when exact package assembly inputs cannot be resolved."""
 
 
 class _UnavailableMaskingService:
@@ -640,6 +658,18 @@ class PlannerRuntime:
         self._banking_precheck_policy_orchestrator = (
             BankingPrecheckPolicyOrchestrator(artifacts=self._artifacts)
         )
+        self._internal_decision_package_orchestrator = (
+            InternalDecisionPackageOrchestrator(
+                assembler=InternalDecisionPackageAssembler(
+                    context_loader=InternalDecisionPackageContextLoader(
+                        artifacts=self._artifacts,
+                        approvals=self._approval_requests,
+                    )
+                ),
+                artifacts=self._artifacts,
+                evidence_validator=EvidenceValidator(),
+            )
+        )
         self._case_workflow_orchestrator = CaseWorkflowOrchestrator(
             services=self,
             workflows=self._case_workflows,
@@ -663,6 +693,7 @@ class PlannerRuntime:
         self._decision_post_precheck_locks: dict[str, asyncio.Lock] = {}
         self._decision_document_handoff_locks: dict[str, asyncio.Lock] = {}
         self._document_locks: dict[str, asyncio.Lock] = {}
+        self._internal_decision_package_locks: dict[str, asyncio.Lock] = {}
         self._document_evidence_locks: dict[str, asyncio.Lock] = {}
         self._document_evidence_submission_locks: dict[str, asyncio.Lock] = {}
         self._banking_input_locks: dict[str, asyncio.Lock] = {}
@@ -1699,6 +1730,45 @@ class PlannerRuntime:
             preparation_request_artifact_id=request.artifact_id,
         )
 
+    async def internal_decision_package(
+        self,
+        *,
+        evaluation_case_id: str,
+        workflow_run_id: str,
+        assembly_path: InternalDecisionAssemblyPath,
+        input_artifact_ids: tuple[str, ...],
+        approval_request_id: str | None = None,
+    ) -> InternalDecisionPackageExecutionResult:
+        """Assemble one exact, validated dossier selected by the workflow."""
+        lock = self._internal_decision_package_locks.setdefault(
+            evaluation_case_id, asyncio.Lock()
+        )
+        async with lock:
+            artifacts = await self._artifacts.list_by_case(evaluation_case_id)
+            case_artifact = self._latest(
+                artifacts, ArtifactType.EVALUATION_CASE
+            )
+            if case_artifact is None:
+                raise InternalDecisionPackageCaseNotFoundError(
+                    "Internal Decision Package requires a validated EvaluationCase."
+                )
+            evaluation_case = EvaluationCase.model_validate(case_artifact.payload)
+            context = ExecutionContext(
+                evaluation_case_id=evaluation_case_id,
+                dataset_id=self.dataset_id,
+                workflow_run_id=workflow_run_id,
+                input_artifact_ids=input_artifact_ids,
+                requested_scope=evaluation_case.evaluation_scope,
+                component_input={
+                    "assembly_path": assembly_path.value,
+                    "approval_request_id": approval_request_id,
+                },
+                current_node=(
+                    WorkflowNode.INTERNAL_DECISION_PACKAGE_ASSEMBLY.value
+                ),
+            )
+            return await self._internal_decision_package_orchestrator.run(context)
+
     async def document_evidence_supplement(
         self,
         *,
@@ -2115,6 +2185,31 @@ class PlannerRuntime:
                     metadata={},
                     created_at=now,
                 )
+            elif (
+                route_plan is not None
+                and route_plan.route_outcome
+                is DecisionRouteOutcome.DIRECT_INTERNAL_DECISION
+            ):
+                now = datetime.now(UTC)
+                run = run.model_copy(
+                    update={
+                        "status": WorkflowStatus.PENDING,
+                        "current_stage": (
+                            WorkflowNode.INTERNAL_DECISION_PACKAGE_ASSEMBLY.value
+                        ),
+                        "updated_at": now,
+                    }
+                )
+                await self._case_workflows.save_run(run)
+                await self._runtime_events.append(
+                    workflow_run_id=workflow_run_id,
+                    event_type=(
+                        "WORKFLOW_EXTENDED_TO_INTERNAL_DECISION_PACKAGE"
+                    ),
+                    node=WorkflowNode.INTERNAL_DECISION_PACKAGE_ASSEMBLY,
+                    metadata={"assembly_path": "DIRECT_ROUTE"},
+                    created_at=now,
+                )
         elif (
             run.status is WorkflowStatus.COMPLETED
             and run.current_stage == WorkflowNode.BANKING_DISCOVERY_REQUESTED.value
@@ -2213,6 +2308,104 @@ class PlannerRuntime:
                     event_type="WORKFLOW_EXTENDED_TO_DECISION_DOCUMENT_HANDOFF",
                     node=WorkflowNode.DECISION_DOCUMENT_HANDOFF,
                     metadata={},
+                    created_at=now,
+                )
+            elif review is not None and review.outcome in {
+                DecisionPostPrecheckOutcome.ALL_OPTIONS_NOT_ELIGIBLE,
+                DecisionPostPrecheckOutcome.NO_PROVIDER_RECOMMENDATION,
+                DecisionPostPrecheckOutcome.PRECHECK_SERVICE_UNAVAILABLE,
+                DecisionPostPrecheckOutcome.MIXED_NON_ACTIONABLE_RESULTS,
+            }:
+                now = datetime.now(UTC)
+                run = run.model_copy(
+                    update={
+                        "status": WorkflowStatus.PENDING,
+                        "current_stage": (
+                            WorkflowNode.INTERNAL_DECISION_PACKAGE_ASSEMBLY.value
+                        ),
+                        "pending_request_ids": (),
+                        "resume_stage": None,
+                        "blocked_action": None,
+                        "failure_reason": None,
+                        "updated_at": now,
+                    }
+                )
+                await self._case_workflows.save_run(run)
+                await self._runtime_events.append(
+                    workflow_run_id=workflow_run_id,
+                    event_type=(
+                        "WORKFLOW_EXTENDED_TO_INTERNAL_DECISION_PACKAGE"
+                    ),
+                    node=WorkflowNode.INTERNAL_DECISION_PACKAGE_ASSEMBLY,
+                    metadata={"assembly_path": "BANKING_NON_ACTIONABLE"},
+                    created_at=now,
+                )
+        elif (
+            run.status is WorkflowStatus.COMPLETED
+            and run.current_stage
+            in {
+                WorkflowNode.DECISION_POST_BANKING_REVIEW.value,
+                WorkflowNode.BANKING_PRECHECK_DECLINED.value,
+                WorkflowNode.DOCUMENT_RELEASE_PACKAGE_READY.value,
+                WorkflowNode.READY_FOR_INTERNAL_DECISION.value,
+            }
+            and run.evaluation_case_id is not None
+        ):
+            assembly_path: str | None = None
+            if (
+                run.current_stage
+                == WorkflowNode.DECISION_POST_BANKING_REVIEW.value
+            ):
+                artifacts = await self._artifacts.list_by_case(
+                    run.evaluation_case_id
+                )
+                review_artifact = self._latest(
+                    artifacts, ArtifactType.DECISION_POST_BANKING_REVIEW
+                )
+                review = (
+                    DecisionPostBankingReview.model_validate(
+                        review_artifact.payload
+                    )
+                    if review_artifact is not None
+                    else None
+                )
+                if review is not None and review.outcome in {
+                    DecisionPostBankingOutcome.NO_VIABLE_OPTION,
+                    DecisionPostBankingOutcome.NO_PRECHECK_PATH,
+                }:
+                    assembly_path = (
+                        "BANKING_NO_VIABLE_OPTION"
+                        if review.outcome
+                        is DecisionPostBankingOutcome.NO_VIABLE_OPTION
+                        else "BANKING_NO_PRECHECK_PATH"
+                    )
+            elif run.current_stage == WorkflowNode.BANKING_PRECHECK_DECLINED.value:
+                assembly_path = "BANKING_PRECHECK_DECLINED"
+            else:
+                assembly_path = "CONDITIONAL_DOCUMENT_READY"
+            if assembly_path is not None:
+                now = datetime.now(UTC)
+                run = run.model_copy(
+                    update={
+                        "status": WorkflowStatus.PENDING,
+                        "current_stage": (
+                            WorkflowNode.INTERNAL_DECISION_PACKAGE_ASSEMBLY.value
+                        ),
+                        "pending_request_ids": (),
+                        "resume_stage": None,
+                        "blocked_action": None,
+                        "failure_reason": None,
+                        "updated_at": now,
+                    }
+                )
+                await self._case_workflows.save_run(run)
+                await self._runtime_events.append(
+                    workflow_run_id=workflow_run_id,
+                    event_type=(
+                        "WORKFLOW_EXTENDED_TO_INTERNAL_DECISION_PACKAGE"
+                    ),
+                    node=WorkflowNode.INTERNAL_DECISION_PACKAGE_ASSEMBLY,
+                    metadata={"assembly_path": assembly_path},
                     created_at=now,
                 )
         elif (

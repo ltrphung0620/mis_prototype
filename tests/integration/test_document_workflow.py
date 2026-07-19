@@ -207,7 +207,7 @@ def test_document_wait_resume_creates_internal_package_without_release_approval(
         document_wait=document_wait,
     )
     assert package_ready["status"] == "COMPLETED"
-    assert package_ready["current_stage"] == "DOCUMENT_RELEASE_PACKAGE_READY"
+    assert package_ready["current_stage"] == "INTERNAL_DECISION_PACKAGE_READY"
     assert package_ready["resume_stage"] is None
     assert package_ready["blocked_action"] is None
     assert package_ready["pending_approval_ids"] == []
@@ -218,6 +218,11 @@ def test_document_wait_resume_creates_internal_package_without_release_approval(
     assert package_ready["document_pending_codes"] == []
     assert len(package_ready["document_evidence_supplement_ids"]) == 1
     assert package_ready["document_release_package_ready"] is True
+    assert package_ready["internal_decision_package_ready"] is True
+    assert package_ready["internal_decision_assembly_path"] == (
+        "CONDITIONAL_DOCUMENT_READY"
+    )
+    assert package_ready["internal_decision_package_id"]
     assert package_ready["ready_for_internal_decision"] is True
     assert package_ready["document_release_authorized"] is False
     assert package_ready["document_external_release_performed"] is False
@@ -266,6 +271,7 @@ def test_document_wait_resume_creates_internal_package_without_release_approval(
     events = client.get(f"/api/workflows/{workflow_run_id}/events").json()
     event_types = {item["event_type"] for item in events}
     assert "DOCUMENT_RELEASE_PACKAGE_READY" in event_types
+    assert "INTERNAL_DECISION_PACKAGE_READY" in event_types
     assert "DOCUMENT_EXTERNAL_RELEASE_PROPOSAL" not in event_types
     assert "DOCUMENT_EXTERNAL_RELEASE_AUTHORIZED" not in event_types
     assert "DOCUMENT_EXTERNAL_RELEASE_DECLINED" not in event_types
@@ -284,7 +290,7 @@ def test_package_ready_cannot_be_released_through_the_generic_action_api(
         evaluation_case_id=evaluation_case_id,
         document_wait=document_wait,
     )
-    assert package_ready["current_stage"] == "DOCUMENT_RELEASE_PACKAGE_READY"
+    assert package_ready["current_stage"] == "INTERNAL_DECISION_PACKAGE_READY"
     artifacts = client.get(f"/api/cases/{evaluation_case_id}/artifacts").json()
     release_artifact = next(
         item
@@ -312,8 +318,9 @@ def test_package_ready_cannot_be_released_through_the_generic_action_api(
     )
     unchanged = client.get(f"/api/workflows/{workflow_run_id}").json()
     assert unchanged["status"] == "COMPLETED"
-    assert unchanged["current_stage"] == "DOCUMENT_RELEASE_PACKAGE_READY"
+    assert unchanged["current_stage"] == "INTERNAL_DECISION_PACKAGE_READY"
     assert unchanged["document_release_package_ready"] is True
+    assert unchanged["internal_decision_package_ready"] is True
     assert unchanged["ready_for_internal_decision"] is True
     assert unchanged["document_release_authorized"] is False
     assert unchanged["document_external_release_performed"] is False

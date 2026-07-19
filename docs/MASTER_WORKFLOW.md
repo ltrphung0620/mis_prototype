@@ -15,7 +15,7 @@ POST /api/cases/run
   -> INITIAL_ASSESSMENT_COMPLETED
   -> DECISION_ROUTE_PLANNING
   -> DECISION_ROUTE_PLANNED
-      -> direct route: complete
+      -> direct route: INTERNAL_DECISION_PACKAGE_ASSEMBLY
       -> Banking route:
            BANKING_DISCOVERY_HANDOFF
            BANKING_INTERNAL_DISCOVERY
@@ -39,10 +39,15 @@ POST /api/cases/run
                              -> missing signed contract: WAITING_FOR_INPUT
                              -> document supplement: auto-resume
                              -> DOCUMENT_RELEASE_PACKAGE_READY
-                             -> store for future INTERNAL_DECISION_PACKAGE
-                                (no Founder approval and no external send)
+                             -> INTERNAL_DECISION_PACKAGE_ASSEMBLY
                           -> other typed result: DECISION_POST_PRECHECK_REVIEW_COMPLETED
+                             -> INTERNAL_DECISION_PACKAGE_ASSEMBLY
                    -> rejected: BANKING_PRECHECK_DECLINED
+                      -> INTERNAL_DECISION_PACKAGE_ASSEMBLY
+             -> no viable option/no precheck path:
+                INTERNAL_DECISION_PACKAGE_ASSEMBLY
+  -> INTERNAL_DECISION_PACKAGE_READY
+     (evidence dossier only; no recommendation, approval, or external send)
 ```
 
 `BANKING_PRECHECK_READY` is now an internal handoff milestone. The next component creates only a
@@ -78,7 +83,7 @@ flowchart TD
 
     Q --> R[DECISION_ROUTE_PLANNING]
     R --> S{Explicit Banking need?}
-    S -- No --> T[Complete at DECISION_ROUTE_PLANNED]
+    S -- No --> T[DIRECT_ROUTE]
     S -- Yes --> U[BANKING_DISCOVERY_HANDOFF]
     U --> V[Persist immutable BANKING_DISCOVERY_REQUEST with amount null]
     V --> W[BANKING_INTERNAL_DISCOVERY]
@@ -90,7 +95,9 @@ flowchart TD
     AB --> AC[WAITING_FOR_INPUT at DECISION_POST_BANKING_REVIEW]
     AA -- No --> AD{Ready option exists?}
     AD -- Yes --> AE[BANKING_PRECHECK_READY]
-    AD -- No --> AF[Persist typed non-ready outcome]
+    AD -- No --> AF{Typed non-ready outcome}
+    AF -- No viable option or no precheck path --> AF1[Persist review]
+    AF -- Unsupported mapping --> FAILMAP[Fail safe; do not guess policy mapping]
 
     AE --> AQ[Persist BANKING_PRECHECK_SUBMISSION_PROPOSAL]
     AQ --> AR[Build proposal-scoped policy from TeamPack API facts and Risk amount rule]
@@ -121,9 +128,15 @@ flowchart TD
     BG8 --> BG3
     BG5 -- No --> BG9[Persist DOCUMENT_RELEASE_PACKAGE]
     BG9 --> BG10[DOCUMENT_RELEASE_PACKAGE_READY]
-    BG10 --> BG11[Store as future Internal Decision Package input]
-    BG11 --> BG12[No approval request and no external send]
+    BG10 --> IDP[INTERNAL_DECISION_PACKAGE_ASSEMBLY]
+    BG0 --> IDP
+    T --> IDP
+    AF1 --> IDP
+    IDP --> IDPR[Persist INTERNAL_DECISION_PACKAGE]
+    IDPR --> IDPREADY[INTERNAL_DECISION_PACKAGE_READY]
+    IDPREADY --> BG12[No recommendation, approval request, or external send]
     AU -- Reject --> AW[Close Banking route at BANKING_PRECHECK_DECLINED]
+    AW --> IDP
     AS -- Missing or invalid policy/input --> FAIL[Fail closed at APPROVAL_GATE]
 
     BE --> BG[Authorized staff submits evidence reference]
@@ -241,10 +254,13 @@ DatasetSnapshot
          -> BANKING_PRECHECK_RESULTS_READY
          -> DECISION_POST_PRECHECK_REVIEW v1
              -> no explicit gap: DECISION_POST_PRECHECK_REVIEW_COMPLETED
+                -> INTERNAL_DECISION_PACKAGE_ASSEMBLY
              -> explicit missing evidence: WAITING_FOR_INPUT
                  -> BANKING_PRECHECK_EVIDENCE_SUPPLEMENT
                  -> BANKING_PRECHECK_RETRY_REQUIRED
       -> no ready option: typed non-ready outcome
+         -> INTERNAL_DECISION_PACKAGE_ASSEMBLY
+  -> INTERNAL_DECISION_PACKAGE_READY
 ```
 
 No earlier artifact is updated in place. Matrix version 1 preserves the original null amount and
@@ -268,7 +284,10 @@ configuration hash, and the accepted supplement when one exists. Therefore:
 - Phase B1 request identity binds the permit, proposal envelope, proposal item, and canonical
   request hash; and
 - an identical authorized execution reuses the same validated result set instead of invoking a
-  second logical simulation.
+  second logical simulation; and
+- Internal Decision Package identity depends on its assembly path, exact validated source-envelope
+  identities, and stable rejected-decision substance. Full Governance audit references remain in
+  the payload, while workflow/request IDs and timestamps are excluded from artifact identity.
 
 This is narrow, explicit supplement-driven invalidation. It is not generic transitive `STALE` or
 arbitrary DataPatch support.
@@ -378,13 +397,12 @@ amount rule triggers, Governance persists `AUTHORIZED_WITHOUT_HUMAN` instead of 
 the gate. Either authorization is bound to the exact policy and proposal ID, version, and hash.
 
 Founder approval authorizes only `SUBMIT_BANKING_PRECHECK` for that proposal. It does not authorize
-a final commitment, external document release, bank/product selection, or final contract decision;
-the Document branch only prepares an internal input for the future Decision phase. The later
-Decision recommendation/proposal and external-release gate remain future work. Founder rejection
-closes only the Banking route
-at `BANKING_PRECHECK_DECLINED`, completes the current workflow slice with event
-`next_route = INTERNAL_DECISION_CONTINUATION`, creates no precheck result set, does not invoke the
-adapter, and does not block the whole case. The Internal Decision Package itself is future work.
+a final commitment, external document release, bank/product selection, or final contract decision.
+Founder rejection closes only the Banking route at `BANKING_PRECHECK_DECLINED`, creates no precheck
+result set, does not invoke the adapter, and does not block the whole case. Workflow then preserves
+the exact rejected request as a Governance reference while assembling the Internal Decision
+Package. That reference records what happened; it is not a new approval request or an instruction
+to reverse the decision.
 
 The server configuration currently maps `API-002`/`VietinBank` to a controlled
 `CONDITIONAL_PRECHECK` with `SIMULATED_CONDITIONAL_PRECHECK`, `ELIGIBLE`, conditional guarantee,
@@ -402,23 +420,29 @@ or demo data from becoming an accidental banking decision.
 Document preparation is a separate internal capability. Missing `SIGNED_CONTRACT` creates a
 blocking request and pauses the same workflow. Resolving it with an exact opaque document reference
 and content SHA-256 creates an immutable supplement and rebuilds the package. A ready
-`DOCUMENT_RELEASE_PACKAGE` is persisted as input for the future Internal Decision Package. It does
-not trigger Governance, create an ApprovalRequest, or authorize an external send. The registered
-`SEND_DOCUMENT_TO_EXTERNAL_PARTNER` checkpoint stays dormant. Precheck authorization cannot be
-reused; only a future evidence-bound Decision proposal may activate that separate checkpoint.
+`DOCUMENT_RELEASE_PACKAGE` is persisted as the masked Document input for Internal Decision Package
+assembly. It does not trigger Governance, create an ApprovalRequest, or authorize an external
+send. The registered `SEND_DOCUMENT_TO_EXTERNAL_PARTNER` checkpoint stays dormant. Precheck
+authorization cannot be reused; only a later evidence-bound Decision recommendation/proposal may
+activate that separate checkpoint.
 
-## Current boundary
+## Internal Decision Package convergence and current boundary
 
-The current TeamPack Banking branch pauses for its own precheck approval, runs only the simulated
-adapter after authorization, and uses `BANKING_PRECHECK_RESULTS_READY` as a milestone. The current
-`API-002` scenario then routes its single full-coverage conditional result into internal Document
-preparation. Missing signed-contract evidence produces a second input pause; a ready sanitized
-package produces the internal `DOCUMENT_RELEASE_PACKAGE_READY` handoff without an approval pause.
+Every eligible nonblocked Decision branch now converges at
+`INTERNAL_DECISION_PACKAGE_ASSEMBLY`: direct route, no viable Banking option, no configured
+precheck path, Founder-declined Banking precheck, non-actionable precheck result, or a conditional
+Document path with a ready masked release package. A pending input, pending approval, unsupported
+mapping, masking failure, or other failed-safe state cannot produce a partial package.
 
-The current slice completes at `DOCUMENT_RELEASE_PACKAGE_READY` with
+The resulting `INTERNAL_DECISION_PACKAGE` is a deterministic snapshot of already validated
+evidence and branch outcomes. It creates no new Finance/Risk facts, performs no bank/product
+selection, and makes no accept/negotiate/reject recommendation. It creates no `ActionCommand` or
+`ApprovalRequest` and keeps `recommendation_performed`, `selection_performed`,
+`approval_requested`, and `external_action_performed` false. The successful workflow milestone is
+`INTERNAL_DECISION_PACKAGE_READY`.
+
+For the conditional Document branch, the source `DOCUMENT_RELEASE_PACKAGE` still has
 `document_release_authorized = false` and `document_external_release_performed = false`. No real
-external precheck/API call, external document send, bank/product selection or ranking,
-partial-coverage optimizer, Internal Decision Package, Final Risk Check, deterministic final
-recommendation/proposal or Decision Card is implemented in this branch. `NO_RECOMMENDATION`
-remains a valid generic outcome for other scenarios, but it is not the configured current
-`API-002` result.
+external precheck/API call, external document send, partial-coverage optimizer, Final Risk Check,
+deterministic final recommendation/proposal, or Decision Card is implemented. See
+[Internal Decision Package](INTERNAL_DECISION_PACKAGE.md) for exact path and source rules.

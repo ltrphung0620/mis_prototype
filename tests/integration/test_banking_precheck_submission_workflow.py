@@ -490,7 +490,14 @@ def test_api_policy_approval_can_be_rejected_without_blocking_the_case() -> None
         assert rejected.json()["gate_status"] == "REJECTED"
         continued = _wait_for_pause_or_completion(client, workflow_run_id)
         assert continued["status"] == "COMPLETED"
-        assert continued["current_stage"] == "BANKING_PRECHECK_DECLINED"
+        assert continued["current_stage"] == "INTERNAL_DECISION_PACKAGE_READY"
+        assert continued["internal_decision_package_ready"] is True
+        assert continued["internal_decision_assembly_path"] == (
+            "BANKING_PRECHECK_DECLINED"
+        )
+        assert continued["internal_decision_governance_reference_ids"] == [
+            requests[0]["request_id"]
+        ]
         assert continued["blocked_action"] is None
         assert continued["banking_precheck_result_set_id"] is None
 

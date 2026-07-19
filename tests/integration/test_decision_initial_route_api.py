@@ -106,7 +106,7 @@ def test_initial_route_is_generic_across_actual_contracts(
         assert summary["current_stage"] == (
             "DECISION_POST_BANKING_REVIEW"
             if banking_signal
-            else "DECISION_ROUTE_PLANNED"
+            else "INTERNAL_DECISION_PACKAGE_READY"
         )
         assert summary["decision_route_outcome"] == expected
         assert bool(summary["banking_discovery_request_id"]) is banking_signal
@@ -118,6 +118,13 @@ def test_initial_route_is_generic_across_actual_contracts(
         )
         assert summary["decision_post_banking_outcome"] == (
             "BANKING_INPUT_REQUIRED" if banking_signal else None
+        )
+        assert summary["internal_decision_package_ready"] is (not banking_signal)
+        assert summary["internal_decision_assembly_path"] == (
+            None if banking_signal else "DIRECT_ROUTE"
+        )
+        assert bool(summary["internal_decision_package_id"]) is (
+            not banking_signal
         )
         assert route["contract_id"] == contract_id
         assert route["route_outcome"] == expected

@@ -11,6 +11,7 @@ INITIAL_ASSESSMENT_COMPLETED
       -> BANKING_DISCOVERY_REQUIRED
       or DIRECT_INTERNAL_DECISION
   -> DECISION_ROUTE_PLANNED
+      -> INTERNAL_DECISION_PACKAGE_ASSEMBLY (for DIRECT_INTERNAL_DECISION)
       -> BANKING_DISCOVERY_HANDOFF (only for BANKING_DISCOVERY_REQUIRED)
       -> BANKING_DISCOVERY_REQUESTED
       -> BANKING_INTERNAL_DISCOVERY (owned by Workflow and Banking Skill)
@@ -24,8 +25,8 @@ INITIAL_ASSESSMENT_COMPLETED
 Decision's internal Banking discovery handoff is implemented as the immediate conditional step.
 Banking then builds internal mock-catalog options and deterministic readiness. A separate Decision
 post-Banking component reviews that readiness. Neither component changes the Initial Route artifact
-or selects an option. External Banking execution, Document preparation, deterministic Decision
-policy, and Decision Card composition remain unimplemented.
+or selects an option. A direct route now proceeds to deterministic Internal Decision Package
+assembly. That package is not Decision policy or a Decision Card.
 
 ## Authoritative inputs
 
@@ -60,7 +61,7 @@ The route output requests a business capability, not a concrete workflow node:
 - `BANKING_INTERNAL_DISCOVERY`; or
 - `INTERNAL_DECISION_PACKAGE`.
 
-The Master Workflow owns mapping that business outcome to a future node.
+The Master Workflow owns mapping that business outcome to the corresponding downstream node.
 
 ## Approval checkpoints
 
@@ -142,3 +143,6 @@ amount, Decision post-Banking review—not Initial Route—creates the durable `
 
 Reaching `BANKING_PRECHECK_READY` later does not revise the Initial Route and does not mean that an
 external precheck, approval, bank selection, document, or Decision Card exists.
+
+See [Internal Decision Package](INTERNAL_DECISION_PACKAGE.md) for the direct-route convergence and
+the downstream evidence-dossier boundary.

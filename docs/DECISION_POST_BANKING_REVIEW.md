@@ -13,9 +13,9 @@ BANKING_PRECHECK_READINESS
            -> durable MissingDataRequest
            -> WAITING_FOR_INPUT
       -> BANKING_PRECHECK_READY
-      -> NO_PRECHECK_PATH
-      -> UNSUPPORTED_PRECHECK_MAPPING
-      -> NO_VIABLE_OPTION
+      -> NO_PRECHECK_PATH -> INTERNAL_DECISION_PACKAGE_ASSEMBLY
+      -> UNSUPPORTED_PRECHECK_MAPPING -> FAILED_SAFE
+      -> NO_VIABLE_OPTION -> INTERNAL_DECISION_PACKAGE_ASSEMBLY
 ```
 
 Workflow Orchestrator maps the business outcome to persisted state. Decision business code returns
@@ -54,9 +54,9 @@ The indexes describe readiness; they are not a bank/product selection.
 |---|---|
 | `BANKING_PRECHECK_READY` | At least one option is ready for a later protected precheck submission. |
 | `BANKING_INPUT_REQUIRED` | Readiness identifies an explicit user-input field that is still missing. |
-| `NO_PRECHECK_PATH` | No configured precheck path exists for the assessed options. |
-| `UNSUPPORTED_PRECHECK_MAPPING` | Catalog requirements cannot be matched safely to explicit policy sources. |
-| `NO_VIABLE_OPTION` | Deterministic option requirements are not met. |
+| `NO_PRECHECK_PATH` | No configured precheck path exists for the assessed options; preserve that outcome in the Internal Decision Package. |
+| `UNSUPPORTED_PRECHECK_MAPPING` | Catalog requirements cannot be matched safely to explicit policy sources; fail safe rather than assemble a misleading package. |
+| `NO_VIABLE_OPTION` | Deterministic option requirements are not met; preserve that outcome in the Internal Decision Package. |
 
 Only the first outcome maps to the intermediate milestone `BANKING_PRECHECK_READY`. That milestone
 does not authorize or execute an external action; it allows the next Banking component to prepare
@@ -136,3 +136,8 @@ Decision post-Banking review does not:
 - prepare or release documents;
 - make the final accept/negotiate/reject recommendation; or
 - create a Decision Card.
+
+For `NO_PRECHECK_PATH` and `NO_VIABLE_OPTION`, Workflow assembles the exact validated Banking
+discovery/readiness/review evidence into `INTERNAL_DECISION_PACKAGE`. This is a neutral dossier,
+not a claim that the contract should be accepted or rejected. See
+[Internal Decision Package](INTERNAL_DECISION_PACKAGE.md).

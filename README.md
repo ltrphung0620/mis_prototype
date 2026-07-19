@@ -19,9 +19,10 @@ and persists `BANKING_PRECHECK_RESULT_SET`. Decision then preserves and classifi
 option/product result in `DECISION_POST_PRECHECK_REVIEW`. The current `API-002` mock returns one
 full-coverage conditional result, so Decision creates a Document handoff. Workflow accepts it only
 when exactly one viable request exists, prepares a minimized/masked internal dossier, pauses for a
-missing signed-contract reference, and resumes to create `DOCUMENT_RELEASE_PACKAGE`. That package
-is stored as an input for the future Internal Decision Package; creating it does not trigger a
-Founder approval or request an external send.
+missing signed-contract reference, and resumes to create `DOCUMENT_RELEASE_PACKAGE`. Workflow then
+assembles a deterministic `INTERNAL_DECISION_PACKAGE` from the exact validated evidence. Direct,
+no-viable-option, no-precheck-path, rejected-precheck, and non-actionable-precheck branches converge
+on the same assembly phase without requiring Document preparation.
 
 `BANKING_PRECHECK_READY` means only that the evidence required for a later external precheck is
 ready. `BANKING_PRECHECK_SUBMISSION_AUTHORIZED` is an internal authorization transition, not the
@@ -33,11 +34,13 @@ requirements are non-binding workflow-test assumptions. Partial coverage and mul
 selection are deferred.
 
 Document preparation is internal only. A complete `DOCUMENT_RELEASE_PACKAGE` remains an
-unauthorized internal Decision input with `document_external_release_performed = false`. The
-registered `SEND_DOCUMENT_TO_EXTERNAL_PARTNER` checkpoint stays dormant at package readiness. A
-future Decision phase must first create an evidence-bound recommendation/proposal for Founder
-review; that later proposal, not the raw release package, is what may activate the send checkpoint.
-That Decision recommendation/proposal and the external connector are not implemented yet.
+unauthorized internal Decision input with `document_external_release_performed = false`.
+`INTERNAL_DECISION_PACKAGE` is an evidence dossier, not a recommendation, Decision Card,
+bank-option selection, approval request, or release authorization. The registered
+`SEND_DOCUMENT_TO_EXTERNAL_PARTNER` checkpoint stays dormant. A later Decision policy must create
+an evidence-bound recommendation/proposal for Founder review; only that later proposal may become
+the subject of a protected external-release action. That recommendation/proposal and the external
+connector are not implemented yet.
 The release candidate preserves provider condition codes, aggregated evidence limitations and a
 reference-only per-document manifest. An opaque document reference and caller-declared SHA-256
 bind metadata only: the prototype does not verify repository existence, file contents, signatures
@@ -94,8 +97,8 @@ roles, not authenticated principals.
 
 - `GET /api/contracts` to list exact contract IDs from the configured TeamPack;
 - `POST /api/cases/run` to run through Decision Initial Route, Banking readiness, proposal creation,
-  the automatic Governance pauses, approved simulated precheck, and conditional internal Document
-  preparation when applicable;
+  the automatic Governance pauses, approved simulated precheck, conditional internal Document
+  preparation when applicable, and deterministic Internal Decision Package assembly;
 - `GET /api/workflows/{workflow_run_id}` to poll durable node and artifact status;
 - `GET /api/workflows/{workflow_run_id}/events` to poll ordered workflow events;
 - `POST /api/workflows/{workflow_run_id}/resume` for a genuine blocking wait/failure whose external
@@ -171,9 +174,9 @@ read the exact pending signed-contract request and submit reference metadata:
 `evidence_note` is a controlled enum, not free text. The server does not accept raw bytes, paths,
 URLs, arbitrary reference text, or client-controlled `provided_by`. The `DOCREF-<UUIDv4>` value is
 still caller-declared metadata in this prototype and is not repository-verified. After
-auto-resume, inspect `DOCUMENT_RELEASE_PACKAGE` as an internal input for the future Decision phase.
-No Founder request is created merely because this package is ready, and no external release is
-authorized or performed.
+auto-resume, inspect `DOCUMENT_RELEASE_PACKAGE` as the masked Document input and
+`INTERNAL_DECISION_PACKAGE` as the converged evidence dossier. No Founder request is created merely
+because either package is ready, and no external release is authorized or performed.
 
 The server reads `data/input/MISTalent2026_OPC_AgenticAI_TeamPack_v3.xlsx` by default. Override it
 with `OPC_MIS_TEAM_PACK_PATH` and optionally set `OPC_MIS_DATASET_ID`.
@@ -246,4 +249,7 @@ handling, the governed submission proposal, simulated non-binding results, mock 
 OpenAI boundaries. See
 [Decision Post-Banking Review](docs/DECISION_POST_BANKING_REVIEW.md) for the deterministic route and
 the `BANKING_PRECHECK_READY` handoff boundary. See [Document Skill](docs/DOCUMENT_SKILL.md) for
-conditional handoff, missing-document resume, data masking, and the internal Decision handoff.
+conditional handoff, missing-document resume, data masking, and the internal Decision handoff. See
+[Internal Decision Package](docs/INTERNAL_DECISION_PACKAGE.md) for convergence paths, evidence
+lineage, deterministic identity, readiness behavior, and its strict no-decision/no-release
+boundary.

@@ -87,6 +87,12 @@ from opc_mis.domain.enums import (
 )
 from opc_mis.domain.evidence import EvidenceRef
 from opc_mis.domain.finance_models import FinanceAssessment, FinanceFacts
+from opc_mis.domain.internal_decision_package_models import (
+    InternalDecisionPackage,
+    InternalDecisionPackageReadiness,
+    internal_decision_governance_identity,
+    internal_decision_package_id,
+)
 from opc_mis.domain.lineage import deterministic_id
 from opc_mis.domain.masking_models import (
     MaskableScalar,
@@ -294,6 +300,10 @@ class EvidenceValidator:
             )
         elif draft.artifact_type is ArtifactType.DOCUMENT_EVIDENCE_SUPPLEMENT:
             self._validate_document_evidence_supplement(
+                draft, evidence_ids, checks, blocking_errors
+            )
+        elif draft.artifact_type is ArtifactType.INTERNAL_DECISION_PACKAGE:
+            self._validate_internal_decision_package(
                 draft, evidence_ids, checks, blocking_errors
             )
 
@@ -3914,6 +3924,75 @@ class EvidenceValidator:
                 )
         if not errors:
             checks.append("DOCUMENT_RELEASE_PACKAGE_BOUNDARY_VALID")
+
+    @staticmethod
+    def _validate_internal_decision_package(
+        draft: ArtifactDraft,
+        evidence_ids: set[str],
+        checks: list[str],
+        errors: list[str],
+    ) -> None:
+        """Validate a read-only evidence dossier with no decision authority."""
+        try:
+            package = InternalDecisionPackage.model_validate(draft.payload)
+        except ValueError as exc:
+            errors.append(f"Invalid INTERNAL_DECISION_PACKAGE schema: {exc}")
+            return
+        if package.evaluation_case_id != draft.evaluation_case_id:
+            errors.append(
+                "INTERNAL_DECISION_PACKAGE case identity does not match its draft."
+            )
+        ordered_evidence_ids = tuple(
+            evidence.evidence_id for evidence in draft.evidence_refs
+        )
+        if (
+            package.evidence_ids != ordered_evidence_ids
+            or set(package.evidence_ids) != evidence_ids
+        ):
+            errors.append(
+                "INTERNAL_DECISION_PACKAGE evidence index is not exact."
+            )
+        if any(
+            not set(source.evidence_ids).issubset(evidence_ids)
+            for source in package.source_artifacts
+        ):
+            errors.append(
+                "INTERNAL_DECISION_PACKAGE source references unknown evidence."
+            )
+        expected_package_id = internal_decision_package_id(
+            assembly_path=package.assembly_path,
+            source_artifacts=package.source_artifacts,
+            governance_references=package.governance_references,
+        )
+        if package.package_id != expected_package_id:
+            errors.append("INTERNAL_DECISION_PACKAGE has an unstable package_id.")
+        expected_identity = {
+            "assembly_path": package.assembly_path,
+            "source_artifacts": tuple(
+                item.model_dump(mode="json") for item in package.source_artifacts
+            ),
+            "governance_references": tuple(
+                internal_decision_governance_identity(item)
+                for item in package.governance_references
+            ),
+        }
+        if draft.identity_inputs != expected_identity:
+            errors.append(
+                "INTERNAL_DECISION_PACKAGE artifact identity inputs are not exact."
+            )
+        if (
+            package.readiness is not InternalDecisionPackageReadiness.READY
+            or package.missing_data_requests
+            or package.recommendation_performed
+            or package.selection_performed
+            or package.approval_requested
+            or package.external_action_performed
+        ):
+            errors.append(
+                "INTERNAL_DECISION_PACKAGE exceeds its read-only assembly boundary."
+            )
+        if not errors:
+            checks.append("INTERNAL_DECISION_PACKAGE_BOUNDARY_VALID")
 
     @staticmethod
     def _validate_document_package_common(

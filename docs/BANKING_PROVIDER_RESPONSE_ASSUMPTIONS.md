@@ -118,8 +118,8 @@ tham chiếu bất biến gồm opaque `document_reference_id`, `content_sha256`
 API không nhận raw bytes, filesystem path hoặc URL. Sau khi exact request được resolve, Workflow
 rebuild checklist/package từ artifact supplement mới, không sửa artifact cũ.
 
-Khi package hoàn chỉnh, hệ thống tạo `DOCUMENT_RELEASE_PACKAGE`. Artifact này được lưu làm input
-cho Internal Decision Package tương lai, với:
+Khi package hoàn chỉnh, hệ thống tạo `DOCUMENT_RELEASE_PACKAGE`. Artifact này được lưu làm masked
+input cho nhánh `CONDITIONAL_DOCUMENT_READY` của Internal Decision Package, với:
 
 ```text
 release_authorized         = false
@@ -128,10 +128,11 @@ external_release_performed = false
 
 Việc package sẵn sàng không tạo protected action, `ApprovalRequest`, hoặc Founder pause. Checkpoint
 `SEND_DOCUMENT_TO_EXTERNAL_PARTNER` đã được đăng ký từ Risk vẫn dormant. Approval trước đó cho
-`SUBMIT_BANKING_PRECHECK` không được tái sử dụng. Một phase Decision tương lai phải tạo exact
+`SUBMIT_BANKING_PRECHECK` không được tái sử dụng. Internal Decision Package chỉ tổng hợp exact
+evidence; nó không chọn option hay request approval. Một phase Decision sau đó phải tạo exact
 evidence-bound recommendation/proposal để Founder đồng ý với phương án; chỉ proposal đó mới được
-kích hoạt checkpoint gửi tài liệu. Internal Decision Package, final recommendation/proposal,
-connector và việc gửi tài liệu thật ra VietinBank đều chưa được implement.
+kích hoạt checkpoint gửi tài liệu. Final recommendation/proposal, connector và việc gửi tài liệu
+thật ra VietinBank đều chưa được implement.
 
 ## 6. Company-profile assumption
 

@@ -84,6 +84,11 @@ from opc_mis.domain.enums import (
     WorkflowStatus,
 )
 from opc_mis.domain.finance_models import FinanceExecutionResult
+from opc_mis.domain.internal_decision_package_models import (
+    InternalDecisionAssemblyPath,
+    InternalDecisionPackage,
+    InternalDecisionPackageExecutionResult,
+)
 from opc_mis.domain.lineage import deterministic_id
 from opc_mis.domain.operations_models import OperationsExecutionResult
 from opc_mis.domain.planner_models import PlannerExecutionResult
@@ -207,6 +212,16 @@ class AutomaticWorkflowServices(Protocol):
         workflow_run_id: str,
         preparation_request_artifact_id: str,
     ) -> DocumentSkillExecutionResult: ...
+
+    async def internal_decision_package(
+        self,
+        *,
+        evaluation_case_id: str,
+        workflow_run_id: str,
+        assembly_path: InternalDecisionAssemblyPath,
+        input_artifact_ids: tuple[str, ...],
+        approval_request_id: str | None = None,
+    ) -> InternalDecisionPackageExecutionResult: ...
 
     async def request_workflow_protected_action(
         self,
@@ -732,9 +747,24 @@ class CaseWorkflowOrchestrator:
                                 result_set_artifact=result_artifact,
                             )
                             return
-                        await self._complete(
+                        if post_precheck.outcome not in {
+                            DecisionPostPrecheckOutcome.ALL_OPTIONS_NOT_ELIGIBLE,
+                            DecisionPostPrecheckOutcome.NO_PROVIDER_RECOMMENDATION,
+                            DecisionPostPrecheckOutcome.PRECHECK_SERVICE_UNAVAILABLE,
+                            DecisionPostPrecheckOutcome.MIXED_NON_ACTIONABLE_RESULTS,
+                        }:
+                            await self._fail(
+                                refreshed,
+                                active_node,
+                                "Decision post-precheck outcome cannot enter internal "
+                                "package assembly.",
+                            )
+                            return
+                        await self._assemble_internal_decision_package(
                             refreshed,
-                            WorkflowNode.DECISION_POST_PRECHECK_REVIEW_COMPLETED,
+                            assembly_path=(
+                                InternalDecisionAssemblyPath.BANKING_NON_ACTIONABLE
+                            ),
                         )
                         return
                     if (
@@ -756,9 +786,14 @@ class CaseWorkflowOrchestrator:
                                 "next_route": "INTERNAL_DECISION_CONTINUATION",
                             },
                         )
-                        await self._complete(
+                        await self._assemble_internal_decision_package(
                             refreshed,
-                            WorkflowNode.BANKING_PRECHECK_DECLINED,
+                            assembly_path=(
+                                InternalDecisionAssemblyPath.BANKING_PRECHECK_DECLINED
+                            ),
+                            approval_request_id=(
+                                approval_result.approval_request.request_id
+                            ),
                         )
                         return
                     refreshed = await self._require_run(run.workflow_run_id)
@@ -775,11 +810,32 @@ class CaseWorkflowOrchestrator:
                         "by Governance.",
                     )
                     return
-                await self._complete(
-                    run, WorkflowNode.DECISION_POST_BANKING_REVIEW
+                if review.outcome not in {
+                    DecisionPostBankingOutcome.NO_VIABLE_OPTION,
+                    DecisionPostBankingOutcome.NO_PRECHECK_PATH,
+                }:
+                    await self._fail(
+                        run,
+                        active_node,
+                        "Decision post-Banking outcome cannot enter internal "
+                        "package assembly.",
+                    )
+                    return
+                assembly_path = (
+                    InternalDecisionAssemblyPath.BANKING_NO_VIABLE_OPTION
+                    if review.outcome
+                    is DecisionPostBankingOutcome.NO_VIABLE_OPTION
+                    else InternalDecisionAssemblyPath.BANKING_NO_PRECHECK_PATH
+                )
+                await self._assemble_internal_decision_package(
+                    run,
+                    assembly_path=assembly_path,
                 )
                 return
-            await self._complete(run, WorkflowNode.DECISION_ROUTE_PLANNED)
+            await self._assemble_internal_decision_package(
+                run,
+                assembly_path=InternalDecisionAssemblyPath.DIRECT_ROUTE,
+            )
         except Exception as exc:  # persisted fail-safe boundary for background execution
             await self._fail(run, active_node, f"{type(exc).__name__}: {exc}")
 
@@ -887,7 +943,7 @@ class CaseWorkflowOrchestrator:
             {
                 "release_package_id": release_package.release_package_id,
                 "release_package_artifact_id": release_artifact.artifact_id,
-                "ready_for_internal_decision": True,
+                "ready_for_internal_decision_assembly": True,
                 "release_authorized": False,
                 "external_release_performed": False,
             },
@@ -898,10 +954,297 @@ class CaseWorkflowOrchestrator:
             WorkflowNode.READY_FOR_INTERNAL_DECISION,
             {
                 "release_package_artifact_id": release_artifact.artifact_id,
+                "ready_for_internal_decision_assembly": True,
                 "external_release_action_proposed": False,
             },
         )
-        await self._complete(run, WorkflowNode.DOCUMENT_RELEASE_PACKAGE_READY)
+        await self._assemble_internal_decision_package(
+            run,
+            assembly_path=(
+                InternalDecisionAssemblyPath.CONDITIONAL_DOCUMENT_READY
+            ),
+        )
+
+    async def _assemble_internal_decision_package(
+        self,
+        run: CaseWorkflowRun,
+        *,
+        assembly_path: InternalDecisionAssemblyPath,
+        approval_request_id: str | None = None,
+    ) -> None:
+        """Converge one eligible branch into a validated read-only dossier."""
+        if run.evaluation_case_id is None:  # pragma: no cover
+            raise RuntimeError(
+                "Cannot assemble an Internal Decision Package without a case."
+            )
+        run = await self._require_run(run.workflow_run_id)
+        run = await self._save_run(
+            run,
+            status=WorkflowStatus.RUNNING,
+            current_stage=(
+                WorkflowNode.INTERNAL_DECISION_PACKAGE_ASSEMBLY.value
+            ),
+            pending_request_ids=(),
+            failure_reason=None,
+        )
+        source_artifacts, identity_inputs = (
+            await self._internal_decision_source_artifacts(
+                evaluation_case_id=run.evaluation_case_id,
+                assembly_path=assembly_path,
+                approval_request_id=approval_request_id,
+            )
+        )
+        expected_hash = self._node_input_hash(
+            run,
+            WorkflowNode.INTERNAL_DECISION_PACKAGE_ASSEMBLY,
+            identity_inputs,
+        )
+        existing = await self._workflows.get_node(
+            run.workflow_run_id,
+            WorkflowNode.INTERNAL_DECISION_PACKAGE_ASSEMBLY.value,
+        )
+        should_finish_node = not (
+            self._node_completed(existing)
+            and existing is not None
+            and existing.input_hash == expected_hash
+        )
+        node = (
+            await self._start_node(
+                run,
+                WorkflowNode.INTERNAL_DECISION_PACKAGE_ASSEMBLY,
+                identity_inputs=identity_inputs,
+            )
+            if should_finish_node
+            else existing
+        )
+        if node is None:  # pragma: no cover - guarded by branch above
+            raise RuntimeError("Internal Decision Package node was not initialized.")
+        result = await self._services.internal_decision_package(
+            evaluation_case_id=run.evaluation_case_id,
+            workflow_run_id=run.workflow_run_id,
+            assembly_path=assembly_path,
+            input_artifact_ids=tuple(
+                item.artifact_id for item in source_artifacts
+            ),
+            approval_request_id=approval_request_id,
+        )
+        if should_finish_node:
+            await self._finish_node(
+                node,
+                self._result_node_status(result.status, result.component_status),
+                result.generated_artifacts,
+                waiting_for=tuple(
+                    item.requirement_code
+                    for item in result.missing_data_requests
+                ),
+                failure_reason="; ".join(result.validation_errors) or None,
+            )
+        if result.status is WorkflowStatus.WAITING_FOR_INPUT:
+            requirement_codes = tuple(
+                item.requirement_code for item in result.missing_data_requests
+            )
+            await self._fail(
+                run,
+                WorkflowNode.INTERNAL_DECISION_PACKAGE_ASSEMBLY,
+                "Internal Decision Package is missing required upstream artifacts; "
+                "no user-input resolver exists for this system-integrity gap: "
+                + ", ".join(requirement_codes),
+            )
+            return
+        if result.status is not WorkflowStatus.COMPLETED:
+            await self._fail(
+                run,
+                WorkflowNode.INTERNAL_DECISION_PACKAGE_ASSEMBLY,
+                "Internal Decision Package assembly failed safely: "
+                + "; ".join(result.validation_errors),
+            )
+            return
+        packages = tuple(
+            item
+            for item in result.generated_artifacts
+            if item.artifact_type is ArtifactType.INTERNAL_DECISION_PACKAGE
+            and item.validation_status
+            in {ValidationStatus.VALID, ValidationStatus.VALID_WITH_WARNINGS}
+        )
+        if len(packages) != 1 or result.package is None:
+            await self._fail(
+                run,
+                WorkflowNode.INTERNAL_DECISION_PACKAGE_ASSEMBLY,
+                "Internal Decision Package assembly did not return one exact "
+                "validated package.",
+            )
+            return
+        package_artifact = packages[0]
+        package = InternalDecisionPackage.model_validate(package_artifact.payload)
+        if (
+            package != result.package
+            or package.assembly_path is not assembly_path
+            or package.source_artifact_ids
+            != tuple(item.artifact_id for item in source_artifacts)
+        ):
+            await self._fail(
+                run,
+                WorkflowNode.INTERNAL_DECISION_PACKAGE_ASSEMBLY,
+                "Internal Decision Package output differs from its exact branch inputs.",
+            )
+            return
+        await self._event(
+            run,
+            "INTERNAL_DECISION_PACKAGE_READY",
+            WorkflowNode.INTERNAL_DECISION_PACKAGE_READY,
+            {
+                "package_id": package.package_id,
+                "package_artifact_id": package_artifact.artifact_id,
+                "assembly_path": package.assembly_path.value,
+                "recommendation_performed": False,
+                "approval_requested": False,
+                "external_action_performed": False,
+            },
+        )
+        await self._complete(
+            run,
+            WorkflowNode.INTERNAL_DECISION_PACKAGE_READY,
+        )
+
+    async def _internal_decision_source_artifacts(
+        self,
+        *,
+        evaluation_case_id: str,
+        assembly_path: InternalDecisionAssemblyPath,
+        approval_request_id: str | None,
+    ) -> tuple[tuple[ArtifactEnvelope, ...], tuple[object, ...]]:
+        """Resolve only explicit, validated artifacts required by one path."""
+        artifacts = await self._artifacts.list_by_case(evaluation_case_id)
+        required_types: list[ArtifactType] = [
+            ArtifactType.EVALUATION_CASE,
+            ArtifactType.FINANCE_FACTS,
+            ArtifactType.FINANCE_ASSESSMENT,
+            ArtifactType.OPERATIONS_FACTS,
+            ArtifactType.OPERATIONS_ASSESSMENT,
+            ArtifactType.INITIAL_RISK_ASSESSMENT,
+            ArtifactType.APPROVAL_CHECKPOINTS,
+            ArtifactType.DECISION_ROUTE_PLAN,
+        ]
+        if assembly_path is not InternalDecisionAssemblyPath.DIRECT_ROUTE:
+            required_types.extend(
+                (
+                    ArtifactType.BANKING_DISCOVERY_REQUEST,
+                    ArtifactType.BANKING_OPTION_MATRIX,
+                    ArtifactType.BANKING_DISCOVERY_RESULT,
+                    ArtifactType.BANKING_PRECHECK_READINESS,
+                    ArtifactType.DECISION_POST_BANKING_REVIEW,
+                )
+            )
+        if assembly_path is InternalDecisionAssemblyPath.BANKING_PRECHECK_DECLINED:
+            required_types.append(
+                ArtifactType.BANKING_PRECHECK_SUBMISSION_PROPOSAL
+            )
+        if assembly_path in {
+            InternalDecisionAssemblyPath.BANKING_NON_ACTIONABLE,
+            InternalDecisionAssemblyPath.CONDITIONAL_DOCUMENT_READY,
+        }:
+            required_types.extend(
+                (
+                    ArtifactType.BANKING_PRECHECK_SUBMISSION_PROPOSAL,
+                    ArtifactType.BANKING_PRECHECK_RESULT_SET,
+                    ArtifactType.DECISION_POST_PRECHECK_REVIEW,
+                )
+            )
+        if (
+            assembly_path
+            is InternalDecisionAssemblyPath.CONDITIONAL_DOCUMENT_READY
+        ):
+            required_types.extend(
+                (
+                    ArtifactType.DOCUMENT_PREPARATION_REQUEST,
+                    ArtifactType.DOCUMENT_RELEASE_PACKAGE,
+                )
+            )
+
+        selected: list[ArtifactEnvelope] = []
+        identity: list[object] = [assembly_path, approval_request_id]
+        for artifact_type in required_types:
+            artifact = (
+                self._latest_risk_checkpoint_registry(artifacts)
+                if artifact_type is ArtifactType.APPROVAL_CHECKPOINTS
+                else self._latest_validated(artifacts, artifact_type)
+            )
+            identity.append(
+                (
+                    artifact_type,
+                    artifact.artifact_id,
+                    artifact.version,
+                    artifact.input_hash,
+                )
+                if artifact is not None
+                else (artifact_type, None)
+            )
+            if artifact is not None:
+                selected.append(artifact)
+            if artifact_type is ArtifactType.BANKING_DISCOVERY_RESULT:
+                matrix_artifact = next(
+                    (
+                        item
+                        for item in selected
+                        if item.artifact_type is ArtifactType.BANKING_OPTION_MATRIX
+                    ),
+                    None,
+                )
+                advice = self._latest_advice_for_matrix(
+                    artifacts,
+                    matrix_artifact,
+                )
+                identity.append(
+                    (
+                        ArtifactType.BANKING_OPTION_ADVICE,
+                        advice.artifact_id,
+                        advice.version,
+                        advice.input_hash,
+                    )
+                    if advice is not None
+                    else (ArtifactType.BANKING_OPTION_ADVICE, None)
+                )
+                if advice is not None:
+                    selected.append(advice)
+        if approval_request_id is not None:
+            approval = await self._approvals.get(approval_request_id)
+            policy_artifact = (
+                next(
+                    (
+                        item
+                        for item in artifacts
+                        if item.artifact_id == approval.policy_artifact_id
+                        and item.artifact_type
+                        is ArtifactType.APPROVAL_CHECKPOINTS
+                        and item.validation_status
+                        in {
+                            ValidationStatus.VALID,
+                            ValidationStatus.VALID_WITH_WARNINGS,
+                        }
+                    ),
+                    None,
+                )
+                if approval is not None
+                and approval.policy_artifact_id is not None
+                else None
+            )
+            identity.append(
+                (
+                    "APPROVAL_POLICY_ARTIFACT",
+                    policy_artifact.artifact_id,
+                    policy_artifact.version,
+                    policy_artifact.input_hash,
+                )
+                if policy_artifact is not None
+                else ("APPROVAL_POLICY_ARTIFACT", None)
+            )
+            if (
+                policy_artifact is not None
+                and policy_artifact.artifact_id
+                not in {item.artifact_id for item in selected}
+            ):
+                selected.append(policy_artifact)
+        return tuple(selected), tuple(identity)
 
     async def summary(self, workflow_run_id: str) -> WorkflowRunSummary:
         """Build a compact status view from durable workflow and artifact state."""
@@ -953,6 +1296,11 @@ class CaseWorkflowOrchestrator:
         document_release_package_ids: tuple[str, ...] = ()
         document_evidence_supplement_ids: tuple[str, ...] = ()
         document_pending_codes = ()
+        internal_decision_package_id: str | None = None
+        internal_decision_assembly_path: InternalDecisionAssemblyPath | None = None
+        internal_decision_package_readiness = None
+        internal_decision_source_artifact_ids: tuple[str, ...] = ()
+        internal_decision_governance_reference_ids: tuple[str, ...] = ()
         pending_approvals: tuple[str, ...] = ()
         if run.evaluation_case_id is not None:
             artifacts = await self._artifacts.list_by_case(run.evaluation_case_id)
@@ -1173,6 +1521,22 @@ class CaseWorkflowOrchestrator:
                     key=lambda item: (item.version, item.artifact_id),
                 )
             )
+            internal_package_artifact = self._latest(
+                artifacts, ArtifactType.INTERNAL_DECISION_PACKAGE
+            )
+            if internal_package_artifact is not None:
+                internal_package = InternalDecisionPackage.model_validate(
+                    internal_package_artifact.payload
+                )
+                internal_decision_package_id = internal_package.package_id
+                internal_decision_assembly_path = internal_package.assembly_path
+                internal_decision_package_readiness = internal_package.readiness
+                internal_decision_source_artifact_ids = (
+                    internal_package.source_artifact_ids
+                )
+                internal_decision_governance_reference_ids = (
+                    internal_package.governance_reference_ids
+                )
             requests = await self._approvals.list_by_case(run.evaluation_case_id)
             pending_approvals = tuple(
                 item.request_id
@@ -1279,13 +1643,30 @@ class CaseWorkflowOrchestrator:
             document_pending_codes=document_pending_codes,
             document_release_package_ready=bool(document_release_package_ids),
             ready_for_internal_decision=(
-                bool(document_release_package_ids)
+                internal_decision_package_id is not None
                 and run.status is WorkflowStatus.COMPLETED
                 and run.current_stage
-                == WorkflowNode.DOCUMENT_RELEASE_PACKAGE_READY.value
+                == WorkflowNode.INTERNAL_DECISION_PACKAGE_READY.value
             ),
             document_release_authorized=False,
             document_external_release_performed=False,
+            internal_decision_package_id=internal_decision_package_id,
+            internal_decision_assembly_path=internal_decision_assembly_path,
+            internal_decision_package_readiness=(
+                internal_decision_package_readiness
+            ),
+            internal_decision_source_artifact_ids=(
+                internal_decision_source_artifact_ids
+            ),
+            internal_decision_governance_reference_ids=(
+                internal_decision_governance_reference_ids
+            ),
+            internal_decision_package_ready=(
+                internal_decision_package_id is not None
+                and run.status is WorkflowStatus.COMPLETED
+                and run.current_stage
+                == WorkflowNode.INTERNAL_DECISION_PACKAGE_READY.value
+            ),
             pending_approval_ids=pending_approvals,
             pending_missing_data_ids=run.pending_request_ids,
             resume_stage=run.resume_stage,
@@ -2766,7 +3147,14 @@ class CaseWorkflowOrchestrator:
         """Select Risk's registry, excluding later proposal-scoped policy versions."""
         candidates: list[ArtifactEnvelope] = []
         for artifact in artifacts:
-            if artifact.artifact_type is not ArtifactType.APPROVAL_CHECKPOINTS:
+            if (
+                artifact.artifact_type is not ArtifactType.APPROVAL_CHECKPOINTS
+                or artifact.validation_status
+                not in {
+                    ValidationStatus.VALID,
+                    ValidationStatus.VALID_WITH_WARNINGS,
+                }
+            ):
                 continue
             try:
                 checkpoint_set = ApprovalCheckpointSet.model_validate(artifact.payload)
@@ -3041,4 +3429,48 @@ class CaseWorkflowOrchestrator:
         artifacts: tuple[ArtifactEnvelope, ...], artifact_type: ArtifactType
     ) -> ArtifactEnvelope | None:
         matches = tuple(item for item in artifacts if item.artifact_type is artifact_type)
+        return max(matches, key=lambda item: item.version, default=None)
+
+    @staticmethod
+    def _latest_validated(
+        artifacts: tuple[ArtifactEnvelope, ...], artifact_type: ArtifactType
+    ) -> ArtifactEnvelope | None:
+        matches = tuple(
+            item
+            for item in artifacts
+            if item.artifact_type is artifact_type
+            and item.validation_status
+            in {ValidationStatus.VALID, ValidationStatus.VALID_WITH_WARNINGS}
+        )
+        return max(matches, key=lambda item: item.version, default=None)
+
+    @staticmethod
+    def _latest_advice_for_matrix(
+        artifacts: tuple[ArtifactEnvelope, ...],
+        matrix_artifact: ArtifactEnvelope | None,
+    ) -> ArtifactEnvelope | None:
+        """Keep optional advice only when it explicitly binds the chosen matrix."""
+        if matrix_artifact is None:
+            return None
+        try:
+            matrix = BankingOptionMatrix.model_validate(matrix_artifact.payload)
+        except ValueError:
+            return None
+        matches: list[ArtifactEnvelope] = []
+        for artifact in artifacts:
+            if (
+                artifact.artifact_type is not ArtifactType.BANKING_OPTION_ADVICE
+                or artifact.validation_status
+                not in {
+                    ValidationStatus.VALID,
+                    ValidationStatus.VALID_WITH_WARNINGS,
+                }
+            ):
+                continue
+            try:
+                advice = BankingOptionAdvice.model_validate(artifact.payload)
+            except ValueError:
+                continue
+            if advice.matrix_id == matrix.matrix_id:
+                matches.append(artifact)
         return max(matches, key=lambda item: item.version, default=None)

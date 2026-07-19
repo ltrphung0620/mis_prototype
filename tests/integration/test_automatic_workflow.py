@@ -245,7 +245,7 @@ def test_con004_pauses_for_amount_then_for_submission_approval(
     )
     final = complete_banking_pause_if_required(workflow_client, approval_wait)
     assert final["status"] == "COMPLETED"
-    assert final["current_stage"] == "DOCUMENT_RELEASE_PACKAGE_READY"
+    assert final["current_stage"] == "INTERNAL_DECISION_PACKAGE_READY"
     assert final["banking_discovery_status"] == "OPTIONS_READY"
     assert final["banking_input_supplement_id"] == accepted["supplement"][
         "supplement_id"
@@ -268,6 +268,10 @@ def test_con004_pauses_for_amount_then_for_submission_approval(
     assert final["banking_precheck_guarantee_decisions"] == ["CONDITIONAL"]
     assert final["banking_precheck_supported_amounts"] == [BANKING_TEST_AMOUNT]
     assert final["document_release_package_ready"] is True
+    assert final["internal_decision_package_ready"] is True
+    assert final["internal_decision_assembly_path"] == (
+        "CONDITIONAL_DOCUMENT_READY"
+    )
     assert final["ready_for_internal_decision"] is True
     assert final["document_release_authorized"] is False
     assert final["document_external_release_performed"] is False
@@ -301,6 +305,7 @@ def test_con004_pauses_for_amount_then_for_submission_approval(
         "DECISION_DOCUMENT_HANDOFF",
         "DOCUMENT_PREPARATION",
         "DOCUMENT_INPUT_INTAKE",
+        "INTERNAL_DECISION_PACKAGE_ASSEMBLY",
         "APPROVAL_GATE",
     }
     assert all(
@@ -335,6 +340,7 @@ def test_con004_pauses_for_amount_then_for_submission_approval(
         "DOCUMENT_PACKAGE_DRAFT",
         "DOCUMENT_EVIDENCE_SUPPLEMENT",
         "DOCUMENT_RELEASE_PACKAGE",
+        "INTERNAL_DECISION_PACKAGE",
     }.issubset(artifact_types)
     final_artifacts = workflow_client.get(f"/api/cases/{case_id}/artifacts").json()
     requests = [
@@ -607,7 +613,7 @@ def test_pending_workflow_recovers_after_runtime_restart(
             completed = complete_banking_pause_if_required(client, terminal)
             assert completed["status"] == "COMPLETED"
             assert completed["current_stage"] == (
-                "DOCUMENT_RELEASE_PACKAGE_READY"
+                "INTERNAL_DECISION_PACKAGE_READY"
             )
             assert completed["banking_precheck_result_set_id"]
             assert completed["decision_post_precheck_review_id"]
