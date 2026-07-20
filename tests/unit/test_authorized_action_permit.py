@@ -226,17 +226,14 @@ def test_exact_approved_latest_subject_issues_stable_ephemeral_permit() -> None:
     asyncio.run(scenario())
 
 
-def test_historical_reuse_reconstructs_id_without_executable_permit() -> None:
+def test_newer_registry_preserving_exact_precheck_scope_keeps_permit_valid() -> None:
     async def scenario() -> None:
         arranged = await _arrange()
         originally_issued = await _issue(arranged)
         await _save_globally_superseding_policy(arranged)
 
-        with pytest.raises(
-            AuthorizationPermitError,
-            match="policy artifact is no longer current",
-        ):
-            await _issue(arranged)
+        current = await _issue(arranged)
+        assert current == originally_issued
 
         artifacts_before = await arranged.artifacts.list_by_case(CASE_ID)
         approvals_before = await arranged.approvals.list_by_case(CASE_ID)
@@ -252,6 +249,37 @@ def test_historical_reuse_reconstructs_id_without_executable_permit() -> None:
         assert not isinstance(historical_id, AuthorizedActionPermit)
         assert await arranged.artifacts.list_by_case(CASE_ID) == artifacts_before
         assert await arranged.approvals.list_by_case(CASE_ID) == approvals_before
+
+    asyncio.run(scenario())
+
+
+def test_newer_registry_changing_precheck_scope_invalidates_permit() -> None:
+    async def scenario() -> None:
+        arranged = await _arrange()
+        superseding = await _save_globally_superseding_policy(arranged)
+        registry = ApprovalCheckpointSet.model_validate(superseding.payload)
+        changed_checkpoint = registry.checkpoints[0].model_copy(
+            update={"approver_role": "CFO"}
+        )
+        changed_registry = registry.model_copy(
+            update={"checkpoints": (changed_checkpoint,)}
+        )
+        await arranged.artifacts.save(
+            superseding.model_copy(
+                update={
+                    "artifact_id": "ART-CHANGED-PRECHECK-POLICY-V3",
+                    "version": 3,
+                    "input_hash": "HASH-CHANGED-PRECHECK-POLICY-V3",
+                    "payload": changed_registry.model_dump(mode="json"),
+                }
+            )
+        )
+
+        with pytest.raises(
+            AuthorizationPermitError,
+            match="policy artifact is no longer current",
+        ):
+            await _issue(arranged)
 
     asyncio.run(scenario())
 

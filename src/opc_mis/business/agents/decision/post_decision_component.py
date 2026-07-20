@@ -97,12 +97,24 @@ class ExternalDocumentSubmissionProposalBuilder:
         snapshot = update.document_release_package
         if (
             update.outcome is not PostDecisionOutcome.FINAL_DECISION_ACCEPTED
-            or update.recommendation is not DecisionRecommendation.ACCEPT
+            or update.recommendation
+            not in {
+                DecisionRecommendation.ACCEPT,
+                DecisionRecommendation.NEGOTIATE_CONDITIONS_TO_ACCEPT,
+            }
             or not update.external_document_release_required
             or snapshot is None
         ):
             raise ValueError(
-                "Only an approved ACCEPT route with an exact package may propose release"
+                "Only an approved accepted route with an exact package may propose release"
+            )
+        if (
+            update.recommendation
+            is DecisionRecommendation.NEGOTIATE_CONDITIONS_TO_ACCEPT
+            and update.negotiation_outcome_artifact is None
+        ):
+            raise ValueError(
+                "Conditional acceptance requires an approved negotiation outcome"
             )
         if (
             card.decision_card_id != update.decision_card_id

@@ -48,6 +48,8 @@ function actionExplanation(action: ProtectedAction): ReactElement {
   switch (action) {
     case "CONFIRM_FINAL_CONTRACT_DECISION":
       return <p>Quyết định này sẽ ghi nhận phê duyệt cuối cùng trên Decision Card để hoàn tất quy trình.</p>;
+    case "CONFIRM_NEGOTIATION_OUTCOME":
+      return <p>Xác nhận bản ghi phản hồi cuối của khách hàng. Nếu có điều kiện bị từ chối, case sẽ được đóng; nếu tất cả được chấp thuận, hợp đồng được ghi nhận là đã đáp ứng điều kiện.</p>;
     case "SUBMIT_BANKING_PRECHECK":
       return <p>Lưu ý: Đây chỉ là yêu cầu khảo sát thông tin sơ bộ với ngân hàng, không phải chấp thuận cấp tín dụng hay bảo lãnh chính thức.</p>;
     case "SEND_DOCUMENT_TO_EXTERNAL_PARTNER":

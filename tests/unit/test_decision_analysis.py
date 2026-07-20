@@ -30,6 +30,7 @@ from opc_mis.domain.decision_models import (
     AIDecisionComposition,
     AIDecisionProposalDraft,
     AIDecisionReasonDraft,
+    AIDecisionRecommendedActionDraft,
     DecisionAnalysisSource,
     DecisionCalculationCode,
     DecisionConditionStatus,
@@ -140,6 +141,19 @@ def _composition(packet, recommendation=None):
             recommendation=chosen,
             executive_summary="Evidence supports the selected guarded disposition.",
             reasons=reasons,
+            recommended_actions=(
+                tuple(
+                    AIDecisionRecommendedActionDraft(
+                        reason_code=item.code,
+                        action="Founder should address this reason before deciding.",
+                        source_reference_ids=item.source_reference_ids,
+                        evidence_ids=item.evidence_ids,
+                    )
+                    for item in reasons
+                )
+                if chosen is not DecisionRecommendation.NOT_EVALUABLE
+                else ()
+            ),
             conditions=conditions,
             selected_negotiation_strategy_ids=strategy_ids,
             confidence=(

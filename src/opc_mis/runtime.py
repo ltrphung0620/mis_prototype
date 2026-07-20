@@ -202,6 +202,13 @@ from opc_mis.domain.internal_decision_package_models import (
 )
 from opc_mis.domain.lineage import deterministic_id
 from opc_mis.domain.masking_models import MaskableScalar, MaskedPayload
+from opc_mis.domain.negotiation_models import (
+    NegotiationOutcome,
+    NegotiationOutcomeExecutionResult,
+    NegotiationOutcomeInput,
+    NegotiationTermsSentInput,
+    negotiation_outcome_action_payload,
+)
 from opc_mis.domain.operations_models import OperationsExecutionResult
 from opc_mis.domain.planner_models import EvaluationCase, PlannerExecutionResult
 from opc_mis.domain.post_decision_models import (
@@ -335,6 +342,7 @@ from opc_mis.workflow.finance_orchestrator import FinanceAssessmentOrchestrator
 from opc_mis.workflow.internal_decision_package_orchestrator import (
     InternalDecisionPackageOrchestrator,
 )
+from opc_mis.workflow.negotiation_orchestrator import NegotiationOrchestrator
 from opc_mis.workflow.operations_orchestrator import OperationsAssessmentOrchestrator
 from opc_mis.workflow.orchestrator import PlannerIntakeOrchestrator
 from opc_mis.workflow.post_decision_orchestrator import PostDecisionOrchestrator
@@ -793,6 +801,10 @@ class PlannerRuntime:
                 validator=EvidenceValidator(),
             )
         )
+        self._negotiation_orchestrator = NegotiationOrchestrator(
+            artifacts=self._artifacts,
+            validator=EvidenceValidator(),
+        )
         self._post_decision_orchestrator = PostDecisionOrchestrator(
             update_component=PostDecisionUpdateComponent(
                 context_loader=ApprovedDecisionCardContextLoader(
@@ -842,6 +854,7 @@ class PlannerRuntime:
         self._decision_analysis_locks: dict[str, asyncio.Lock] = {}
         self._decision_card_locks: dict[str, asyncio.Lock] = {}
         self._post_decision_locks: dict[str, asyncio.Lock] = {}
+        self._negotiation_submission_locks: dict[str, asyncio.Lock] = {}
         self._external_submission_locks: dict[str, asyncio.Lock] = {}
         self._document_evidence_locks: dict[str, asyncio.Lock] = {}
         self._document_evidence_submission_locks: dict[str, asyncio.Lock] = {}
@@ -2075,6 +2088,58 @@ class PlannerRuntime:
             )
             return await self._post_decision_orchestrator.run_update(context)
 
+    async def negotiation_outcome(
+        self,
+        *,
+        evaluation_case_id: str,
+        submission: NegotiationOutcomeInput,
+    ) -> NegotiationOutcomeExecutionResult:
+        """Validate and persist customer responses for every approved condition."""
+        _, evaluation_case = await self._decision_case(evaluation_case_id)
+        context = ExecutionContext(
+            evaluation_case_id=evaluation_case_id,
+            dataset_id=self.dataset_id,
+            workflow_run_id=submission.workflow_run_id,
+            input_artifact_ids=(submission.decision_card_artifact_id,),
+            requested_scope=evaluation_case.evaluation_scope,
+            component_input=submission.model_dump(mode="json"),
+            current_node=WorkflowNode.NEGOTIATION_OUTCOME_RECEIVED.value,
+        )
+        return await self._negotiation_orchestrator.record(
+            context=context,
+            submission=submission,
+        )
+
+    async def finalize_negotiation(
+        self,
+        *,
+        evaluation_case_id: str,
+        workflow_run_id: str,
+        original_update_artifact: ArtifactEnvelope,
+        outcome_artifact: ArtifactEnvelope,
+        approval_request: ApprovalRequest,
+    ) -> ArtifactEnvelope:
+        """Persist the accepted/closed post-negotiation route."""
+        _, evaluation_case = await self._decision_case(evaluation_case_id)
+        context = ExecutionContext(
+            evaluation_case_id=evaluation_case_id,
+            dataset_id=self.dataset_id,
+            workflow_run_id=workflow_run_id,
+            input_artifact_ids=(
+                original_update_artifact.artifact_id,
+                outcome_artifact.artifact_id,
+            ),
+            requested_scope=evaluation_case.evaluation_scope,
+            component_input={"approval_request_id": approval_request.request_id},
+            current_node=WorkflowNode.POST_DECISION_UPDATE.value,
+        )
+        return await self._negotiation_orchestrator.finalize(
+            context=context,
+            original_update_artifact=original_update_artifact,
+            outcome_artifact=outcome_artifact,
+            approval_request=approval_request,
+        )
+
     async def external_document_submission_proposal(
         self,
         *,
@@ -2334,6 +2399,7 @@ class PlannerRuntime:
             ProtectedAction.SUBMIT_BANKING_PRECHECK,
             ProtectedAction.SEND_DOCUMENT_TO_EXTERNAL_PARTNER,
             ProtectedAction.CONFIRM_FINAL_CONTRACT_DECISION,
+            ProtectedAction.CONFIRM_NEGOTIATION_OUTCOME,
         }:
             raise ApprovalConflictError(
                 f"{action_type.value} can only be proposed automatically from its "
@@ -2367,6 +2433,7 @@ class PlannerRuntime:
         supported_actions = {
             ProtectedAction.SUBMIT_BANKING_PRECHECK,
             ProtectedAction.CONFIRM_FINAL_CONTRACT_DECISION,
+            ProtectedAction.CONFIRM_NEGOTIATION_OUTCOME,
             ProtectedAction.SEND_DOCUMENT_TO_EXTERNAL_PARTNER,
         }
         if (
@@ -2384,6 +2451,9 @@ class PlannerRuntime:
             ),
             ProtectedAction.CONFIRM_FINAL_CONTRACT_DECISION: (
                 WorkflowNode.FINAL_DECISION_APPROVAL.value
+            ),
+            ProtectedAction.CONFIRM_NEGOTIATION_OUTCOME: (
+                WorkflowNode.NEGOTIATION_FINAL_CONFIRMATION.value
             ),
             ProtectedAction.SEND_DOCUMENT_TO_EXTERNAL_PARTNER: (
                 WorkflowNode.EXTERNAL_DOCUMENT_SUBMISSION_PROPOSAL.value
@@ -2466,6 +2536,33 @@ class PlannerRuntime:
             checkpoint_artifact = (
                 await self._decision_approval_policy_orchestrator.register(
                     decision_card_artifact=artifact,
+                    context=ExecutionContext(
+                        evaluation_case_id=command.evaluation_case_id,
+                        dataset_id=self.dataset_id,
+                        workflow_run_id=workflow_run_id,
+                        input_artifact_ids=(artifact.artifact_id,),
+                        requested_scope=run.requested_scope,
+                        component_input={
+                            "protected_action": command.action_type.value
+                        },
+                        current_node=WorkflowNode.APPROVAL_GATE.value,
+                    ),
+                )
+            )
+            checkpoint_artifact_id = checkpoint_artifact.artifact_id
+        elif command.action_type is ProtectedAction.CONFIRM_NEGOTIATION_OUTCOME:
+            if artifact.artifact_type is not ArtifactType.NEGOTIATION_OUTCOME:
+                raise ValueError(
+                    "Negotiation confirmation must reference its exact outcome artifact."
+                )
+            outcome = NegotiationOutcome.model_validate(artifact.payload)
+            if command.payload != negotiation_outcome_action_payload(outcome):
+                raise ValueError(
+                    "The negotiation confirmation command differs from its outcome."
+                )
+            checkpoint_artifact = (
+                await self._decision_approval_policy_orchestrator.register_negotiation(
+                    negotiation_outcome_artifact=artifact,
                     context=ExecutionContext(
                         evaluation_case_id=command.evaluation_case_id,
                         dataset_id=self.dataset_id,
@@ -2602,6 +2699,21 @@ class PlannerRuntime:
                 metadata={"contract_id": contract_id},
                 created_at=now,
             )
+        elif (
+            run.status is WorkflowStatus.FAILED_SAFE
+            and run.current_stage
+            == WorkflowNode.DECISION_CARD_COMPOSITION.value
+        ):
+            decision_node = await self._case_workflows.get_node(
+                workflow_run_id,
+                WorkflowNode.DECISION_CARD_COMPOSITION.value,
+            )
+            if (
+                decision_node is not None
+                and decision_node.status is WorkflowNodeStatus.FAILED_SAFE
+                and decision_node.output_artifact_ids
+            ):
+                run = await self._case_workflow_orchestrator.resume(workflow_run_id)
         elif (
             run.status is WorkflowStatus.COMPLETED
             and run.current_stage
@@ -3177,6 +3289,67 @@ class PlannerRuntime:
             if refreshed is not None:
                 run = refreshed
         return WorkflowStartResult(
+            workflow_run_id=run.workflow_run_id,
+            evaluation_case_id=run.evaluation_case_id,
+            contract_id=run.contract_id,
+            status=run.status,
+            status_url=f"/api/workflows/{run.workflow_run_id}",
+        )
+
+    async def confirm_negotiation_terms_sent(
+        self,
+        *,
+        evaluation_case_id: str,
+        confirmation: NegotiationTermsSentInput,
+    ) -> WorkflowStartResult:
+        """Confirm manual delivery and advance to customer-response intake."""
+        lock = self._negotiation_submission_locks.setdefault(
+            confirmation.workflow_run_id, asyncio.Lock()
+        )
+        async with lock:
+            run = await self._case_workflow_orchestrator.confirm_negotiation_terms_sent(
+                evaluation_case_id=evaluation_case_id,
+                confirmation=confirmation,
+            )
+            if self._runner_started:
+                await self._workflow_runner.enqueue(run.workflow_run_id)
+            else:
+                await self._case_workflow_orchestrator.execute(run.workflow_run_id)
+                refreshed = await self._case_workflows.get_run(run.workflow_run_id)
+                if refreshed is not None:
+                    run = refreshed
+        return WorkflowStartResult(
+            workflow_run_id=run.workflow_run_id,
+            evaluation_case_id=run.evaluation_case_id,
+            contract_id=run.contract_id,
+            status=run.status,
+            status_url=f"/api/workflows/{run.workflow_run_id}",
+        )
+
+    async def submit_negotiation_outcome(
+        self,
+        *,
+        evaluation_case_id: str,
+        submission: NegotiationOutcomeInput,
+    ) -> tuple[NegotiationOutcomeExecutionResult, WorkflowStartResult]:
+        """Persist the response set and advance to final Founder confirmation."""
+        lock = self._negotiation_submission_locks.setdefault(
+            submission.workflow_run_id, asyncio.Lock()
+        )
+        async with lock:
+            result, run = await self._case_workflow_orchestrator.submit_negotiation_outcome(
+                evaluation_case_id=evaluation_case_id,
+                submission=submission,
+            )
+            if result.status is WorkflowStatus.COMPLETED:
+                if self._runner_started:
+                    await self._workflow_runner.enqueue(run.workflow_run_id)
+                else:
+                    await self._case_workflow_orchestrator.execute(run.workflow_run_id)
+                    refreshed = await self._case_workflows.get_run(run.workflow_run_id)
+                    if refreshed is not None:
+                        run = refreshed
+        return result, WorkflowStartResult(
             workflow_run_id=run.workflow_run_id,
             evaluation_case_id=run.evaluation_case_id,
             contract_id=run.contract_id,

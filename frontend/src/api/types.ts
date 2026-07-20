@@ -93,6 +93,8 @@ export type DashboardInteractionType =
   | "BANKING_AMOUNT_INPUT"
   | "BANKING_PRECHECK_EVIDENCE"
   | "DOCUMENT_EVIDENCE"
+  | "NEGOTIATION_TERMS_SENT_CONFIRMATION"
+  | "NEGOTIATION_OUTCOME_INPUT"
   | "UNSUPPORTED_INPUT";
 
 export interface DashboardPendingInteractionDto extends JsonRecord {

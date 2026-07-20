@@ -103,6 +103,7 @@ from opc_mis.domain.internal_decision_package_models import (
     internal_decision_governance_identity,
     internal_decision_package_id,
 )
+from opc_mis.domain.negotiation_models import NegotiationOutcome
 from opc_mis.domain.lineage import deterministic_id
 from opc_mis.domain.masking_models import (
     MaskableScalar,
@@ -340,6 +341,10 @@ class EvidenceValidator:
             )
         elif draft.artifact_type is ArtifactType.POST_DECISION_UPDATE:
             self._validate_post_decision_update(
+                draft, evidence_ids, checks, blocking_errors
+            )
+        elif draft.artifact_type is ArtifactType.NEGOTIATION_OUTCOME:
+            self._validate_negotiation_outcome(
                 draft, evidence_ids, checks, blocking_errors
             )
         elif (
@@ -4784,6 +4789,18 @@ class EvidenceValidator:
                 else update.document_release_package.model_dump(mode="json")
             ),
         }
+        if update.negotiation_outcome_artifact is not None:
+            expected_identity.update(
+                {
+                    "negotiation_outcome_artifact": (
+                        update.negotiation_outcome_artifact.model_dump(mode="json")
+                    ),
+                    "negotiation_outcome_id": update.negotiation_outcome_id,
+                    "negotiation_approval_request_id": (
+                        update.negotiation_approval_request_id
+                    ),
+                }
+            )
         if draft.identity_inputs != expected_identity:
             errors.append(
                 "POST_DECISION_UPDATE artifact identity inputs are not exact."
@@ -4796,6 +4813,46 @@ class EvidenceValidator:
             errors.append("POST_DECISION_UPDATE exceeds its routing boundary.")
         if not errors:
             checks.append("POST_DECISION_UPDATE_BOUNDARY_VALID")
+
+    @staticmethod
+    def _validate_negotiation_outcome(
+        draft: ArtifactDraft,
+        evidence_ids: set[str],
+        checks: list[str],
+        errors: list[str],
+    ) -> None:
+        """Validate a complete response set without treating it as approved."""
+        try:
+            outcome = NegotiationOutcome.model_validate(draft.payload)
+        except ValueError as exc:
+            errors.append(f"Invalid NEGOTIATION_OUTCOME schema: {exc}")
+            return
+        if outcome.evaluation_case_id != draft.evaluation_case_id:
+            errors.append("NEGOTIATION_OUTCOME case identity does not match its draft.")
+        ordered_evidence_ids = tuple(item.evidence_id for item in draft.evidence_refs)
+        if (
+            outcome.evidence_ids != ordered_evidence_ids
+            or set(outcome.evidence_ids) != evidence_ids
+        ):
+            errors.append("NEGOTIATION_OUTCOME evidence index is not exact.")
+        if any(
+            not set(item.evidence_ids).issubset(evidence_ids)
+            for item in outcome.condition_outcomes
+        ):
+            errors.append("NEGOTIATION_OUTCOME condition evidence is not exact.")
+        expected_identity = {
+            "decision_card": outcome.decision_card_artifact.model_dump(mode="json"),
+            "condition_outcomes": tuple(
+                item.model_dump(mode="json") for item in outcome.condition_outcomes
+            ),
+            "founder_summary": outcome.founder_summary,
+        }
+        if draft.identity_inputs != expected_identity:
+            errors.append("NEGOTIATION_OUTCOME artifact identity inputs are not exact.")
+        if outcome.confirmation_requested:
+            errors.append("NEGOTIATION_OUTCOME exceeds its pre-approval boundary.")
+        if not errors:
+            checks.append("NEGOTIATION_OUTCOME_BOUNDARY_VALID")
 
     @staticmethod
     def _validate_external_document_submission_proposal(

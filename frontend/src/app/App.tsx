@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { ArtifactAssessmentView, type ArtifactEnvelope } from "../features/artifacts";
 import { DecisionCardModal, DecisionDashboard } from "../features/decision";
 import { ApprovalDialog, type ApprovalDecision } from "../features/governance";
+import { NegotiationConfirmDialog, NegotiationOutcomeForm } from "../features/negotiation";
 import { InputPanel } from "../features/input/InputPanel";
 import {
   MissingDataDialog,
@@ -24,6 +25,7 @@ import {
   pendingApproval,
   pendingDecisionApproval,
   pendingMissingInteraction,
+  pendingNegotiationInteraction,
   pendingNotEvaluableReview,
   selectAssessmentArtifact,
 } from "./dashboardIntegration";
@@ -86,11 +88,15 @@ export function App() {
     submitBankingAmount,
     submitPrecheckEvidence,
     submitDocument,
+    confirmTermsSent,
+    submitNegotiation,
   } = useWorkflowDashboard();
   const [assessment, setAssessment] = useState<ArtifactEnvelope | null>(null);
   const [decisionCardOpen, setDecisionCardOpen] = useState(false);
   const [approvalOpen, setApprovalOpen] = useState(false);
   const [missingDataOpen, setMissingDataOpen] = useState(false);
+  const [negotiationOpen, setNegotiationOpen] = useState(false);
+  const [negotiationConfirmOpen, setNegotiationConfirmOpen] = useState(false);
   const [lastAutoApprovalId, setLastAutoApprovalId] = useState<string | null>(null);
   const [lastAutoReviewKey, setLastAutoReviewKey] = useState<string | null>(null);
 
@@ -118,6 +124,10 @@ export function App() {
   );
   const missingInteraction = useMemo(
     () => (dashboard ? pendingMissingInteraction(dashboard) : null),
+    [dashboard],
+  );
+  const negotiationInteraction = useMemo(
+    () => (dashboard ? pendingNegotiationInteraction(dashboard) : null),
     [dashboard],
   );
   const notEvaluableReview = useMemo(
@@ -152,6 +162,22 @@ export function App() {
   );
   const isFinalDecisionAction =
     activeApproval?.command.action_type === "CONFIRM_FINAL_CONTRACT_DECISION";
+  const isNegotiationOutcomeApproval =
+    activeApproval?.command.action_type === "CONFIRM_NEGOTIATION_OUTCOME";
+  const negotiationOutcomeArtifact = useMemo(
+    () =>
+      isNegotiationOutcomeApproval && activeApproval
+        ? runArtifacts.find(
+            (item) =>
+              item.artifact_id === activeApproval.subject_artifact_id &&
+              item.artifact_type === "NEGOTIATION_OUTCOME" &&
+              item.version === activeApproval.subject_artifact_version &&
+              item.input_hash === activeApproval.subject_input_hash &&
+              ["VALID", "VALID_WITH_WARNINGS"].includes(item.validation_status),
+          ) ?? null
+        : null,
+    [activeApproval, isNegotiationOutcomeApproval, runArtifacts],
+  );
   const currentCardReference = useMemo(
     () =>
       dashboard && currentCard
@@ -205,6 +231,8 @@ export function App() {
     setDecisionCardOpen(false);
     setApprovalOpen(false);
     setMissingDataOpen(false);
+    setNegotiationOpen(false);
+    setNegotiationConfirmOpen(false);
     setLastAutoApprovalId(null);
     setLastAutoReviewKey(null);
   }, [state.workflowRunId]);
@@ -213,7 +241,12 @@ export function App() {
     const requestId = activeApproval?.request_id ?? null;
     if (requestId && requestId !== lastAutoApprovalId) {
       if (isFinalDecisionAction && !isFinalDecisionApproval) return;
-      if (isFinalDecisionApproval) {
+      if (isNegotiationOutcomeApproval) {
+        setNegotiationConfirmOpen(true);
+        setDecisionCardOpen(false);
+        setApprovalOpen(false);
+        setMissingDataOpen(false);
+      } else if (isFinalDecisionApproval) {
         setDecisionCardOpen(true);
         setApprovalOpen(false);
         setMissingDataOpen(false);
@@ -228,8 +261,16 @@ export function App() {
     activeApproval?.request_id,
     isFinalDecisionAction,
     isFinalDecisionApproval,
+    isNegotiationOutcomeApproval,
     lastAutoApprovalId,
   ]);
+
+  const negotiationInteractionKey = negotiationInteraction
+    ? `${negotiationInteraction.interaction_type}:${negotiationInteraction.request_ids.join(",")}`
+    : null;
+  useEffect(() => {
+    if (negotiationInteractionKey) setNegotiationOpen(true);
+  }, [negotiationInteractionKey]);
 
   useEffect(() => {
     if (!dashboard || !notEvaluableReview || !isExactNotEvaluableReview) return;
@@ -265,6 +306,7 @@ export function App() {
       if (succeeded) {
         setApprovalOpen(false);
         setDecisionCardOpen(false);
+        setNegotiationConfirmOpen(false);
       }
     },
     [decideApproval],
@@ -290,6 +332,21 @@ export function App() {
       if (succeeded) setMissingDataOpen(false);
     },
     [submitDocument],
+  );
+  const handleTermsSent = useCallback(async () => {
+    if (!dashboard || !currentCard) return;
+    const succeeded = await confirmTermsSent({
+      workflow_run_id: dashboard.workflowRunId,
+      decision_card_artifact_id: currentCard.artifact_id,
+    });
+    if (succeeded) setNegotiationOpen(false);
+  }, [confirmTermsSent, currentCard, dashboard]);
+  const handleNegotiationOutcome = useCallback(
+    async (payload: Parameters<typeof submitNegotiation>[0]) => {
+      const succeeded = await submitNegotiation(payload);
+      if (succeeded) setNegotiationOpen(false);
+    },
+    [submitNegotiation],
   );
 
   const bootstrapping = state.phase === "bootstrapping";
@@ -353,7 +410,7 @@ export function App() {
         </div>
       ) : null}
 
-      {activeApproval || notEvaluableReview || missingInteraction ? (
+      {activeApproval || notEvaluableReview || missingInteraction || negotiationInteraction ? (
         <section className="workflow-attention" role="status" aria-live="polite">
           <div>
             <strong>
@@ -361,14 +418,16 @@ export function App() {
                 ? "Quy trình đang chờ Founder xác nhận hoặc phê duyệt"
                 : notEvaluableReview
                   ? notEvaluableReview.title_vi
-                : "Quy trình đang chờ bổ sung dữ liệu"}
+                  : negotiationInteraction
+                    ? negotiationInteraction.title_vi
+                    : "Quy trình đang chờ bổ sung dữ liệu"}
             </strong>
             <p>
               {activeApproval
                 ? "Hành động được bảo vệ chưa được thực hiện. Bạn có thể mở lại yêu cầu nếu đã đóng popup."
                 : notEvaluableReview
                   ? notEvaluableReview.instruction_vi
-                : missingInteraction?.instruction_vi}
+                  : negotiationInteraction?.instruction_vi ?? missingInteraction?.instruction_vi}
             </p>
           </div>
           {activeApproval ? (
@@ -376,7 +435,9 @@ export function App() {
               type="button"
               disabled={isFinalDecisionAction && !isFinalDecisionApproval}
               onClick={() =>
-                isFinalDecisionApproval
+                isNegotiationOutcomeApproval
+                  ? setNegotiationConfirmOpen(true)
+                  : isFinalDecisionApproval
                   ? setDecisionCardOpen(true)
                   : setApprovalOpen(true)
               }
@@ -394,6 +455,10 @@ export function App() {
               {isExactNotEvaluableReview
                 ? "Mở Decision Card để xem xét"
                 : "Decision Card hiện hành không khớp yêu cầu xem xét"}
+            </button>
+          ) : negotiationInteraction ? (
+            <button type="button" onClick={() => setNegotiationOpen(true)}>
+              Mở bước đàm phán đang chờ
             </button>
           ) : (
             <button type="button" onClick={() => setMissingDataOpen(true)}>
@@ -490,12 +555,16 @@ export function App() {
                   <button
                     type="button"
                     onClick={() =>
-                      isFinalDecisionApproval
+                      isNegotiationOutcomeApproval
+                        ? setNegotiationConfirmOpen(true)
+                        : isFinalDecisionApproval
                         ? setDecisionCardOpen(true)
                         : setApprovalOpen(true)
                     }
                   >
-                    {isFinalDecisionApproval
+                    {isNegotiationOutcomeApproval
+                      ? "Mở xác nhận kết quả đàm phán"
+                      : isFinalDecisionApproval
                       ? "Mở Decision Card để xem xét"
                       : "Mở yêu cầu xác nhận/phê duyệt đang chờ"}
                   </button>
@@ -563,12 +632,50 @@ export function App() {
         onReject={(requestId) => handleApprovalDecision(requestId, "REJECT")}
       />
       <ApprovalDialog
-        open={approvalOpen}
+        open={approvalOpen && !isNegotiationOutcomeApproval}
         request={approvalView}
         subject={approvalSubject}
         is_current_subject={isCurrentApprovalSubject}
         submitting={submittingInteraction}
         onClose={() => setApprovalOpen(false)}
+        onDecision={handleApprovalDecision}
+      />
+      {negotiationOpen && negotiationInteraction?.interaction_type === "NEGOTIATION_TERMS_SENT_CONFIRMATION" ? (
+        <div className="approval-dialog" role="dialog" aria-modal="true" aria-labelledby="terms-sent-title">
+          <article>
+            <header>
+              <p>Vòng đàm phán có điều kiện</p>
+              <h2 id="terms-sent-title">Xác nhận đã gửi điều kiện đàm phán</h2>
+            </header>
+            <p>Hãy xem lại các điều kiện trên Decision Card trước khi xác nhận. Thao tác này chỉ ghi nhận việc đã gửi; hệ thống không tự gửi email hoặc cập nhật CRM.</p>
+            <ul>
+              {(currentCard?.payload.conditions ?? []).map((condition) => (
+                <li key={condition.condition_id ?? condition.title}><strong>{condition.title}</strong>: {condition.description}</li>
+              ))}
+            </ul>
+            <footer>
+              <button type="button" disabled={submittingInteraction} onClick={() => setNegotiationOpen(false)}>Đóng</button>
+              <button type="button" disabled={submittingInteraction || !currentCard} onClick={() => void handleTermsSent()}>Xác nhận đã gửi cho khách hàng</button>
+            </footer>
+          </article>
+        </div>
+      ) : null}
+      {negotiationOpen && negotiationInteraction?.interaction_type === "NEGOTIATION_OUTCOME_INPUT" && currentCard ? (
+        <NegotiationOutcomeForm
+          workflowRunId={dashboard?.workflowRunId ?? ""}
+          decisionCardArtifactId={currentCard.artifact_id}
+          conditions={currentCard.payload.conditions ?? []}
+          submitting={submittingInteraction}
+          onClose={() => setNegotiationOpen(false)}
+          onSubmit={handleNegotiationOutcome}
+        />
+      ) : null}
+      <NegotiationConfirmDialog
+        open={negotiationConfirmOpen}
+        request={isNegotiationOutcomeApproval ? activeApproval : null}
+        artifact={negotiationOutcomeArtifact}
+        submitting={submittingInteraction}
+        onClose={() => setNegotiationConfirmOpen(false)}
         onDecision={handleApprovalDecision}
       />
       <MissingDataDialog

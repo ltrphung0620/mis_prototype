@@ -254,6 +254,7 @@ class ApprovalRequest(BaseModel):
             self.command.action_type
             in {
                 ProtectedAction.CONFIRM_FINAL_CONTRACT_DECISION,
+                ProtectedAction.CONFIRM_NEGOTIATION_OUTCOME,
                 ProtectedAction.SEND_DOCUMENT_TO_EXTERNAL_PARTNER,
             }
             and self.status is not ApprovalRequestStatus.EXPIRED
@@ -280,3 +281,100 @@ class ApprovalExecutionResult(BaseModel):
     missing_fields: tuple[str, ...] = ()
     reason: str
     runtime_events: tuple[dict[str, Any], ...] = Field(default_factory=tuple)
+
+
+def approval_policy_scope_is_preserved(
+    *,
+    request: ApprovalRequest,
+    bound_registry: ApprovalCheckpointSet,
+    current_registry: ApprovalCheckpointSet,
+) -> bool:
+    """Return whether a newer registry preserves the request's exact action scope.
+
+    Registries are append-only across independent protected actions. Adding a
+    Final Decision checkpoint must not invalidate an unchanged Banking precheck
+    checkpoint, while any mutation or removal inside the request's own scope
+    still fails closed.
+    """
+
+    if (
+        bound_registry.evaluation_case_id != request.evaluation_case_id
+        or current_registry.evaluation_case_id != request.evaluation_case_id
+        or bound_registry.dataset_id != current_registry.dataset_id
+        or bound_registry.contract_id != current_registry.contract_id
+        or not (request.checkpoint_ids or request.policy_coverage_ids)
+    ):
+        return False
+
+    bound_checkpoints = {
+        item.checkpoint_id: item for item in bound_registry.checkpoints
+    }
+    current_checkpoints = {
+        item.checkpoint_id: item for item in current_registry.checkpoints
+    }
+    bound_coverages = {
+        item.coverage_id: item for item in bound_registry.policy_coverages
+    }
+    current_coverages = {
+        item.coverage_id: item for item in current_registry.policy_coverages
+    }
+    if (
+        len(bound_checkpoints) != len(bound_registry.checkpoints)
+        or len(current_checkpoints) != len(current_registry.checkpoints)
+        or len(bound_coverages) != len(bound_registry.policy_coverages)
+        or len(current_coverages) != len(current_registry.policy_coverages)
+    ):
+        return False
+
+    bound_action_checkpoints = {
+        key: value
+        for key, value in bound_checkpoints.items()
+        if value.protected_action is request.command.action_type
+    }
+    current_action_checkpoints = {
+        key: value
+        for key, value in current_checkpoints.items()
+        if value.protected_action is request.command.action_type
+    }
+    if bound_action_checkpoints != current_action_checkpoints:
+        return False
+
+    bound_subject_coverages = {
+        key: value
+        for key, value in bound_coverages.items()
+        if value.protected_action is request.command.action_type
+        and value.subject_artifact_id == request.subject_artifact_id
+    }
+    current_subject_coverages = {
+        key: value
+        for key, value in current_coverages.items()
+        if value.protected_action is request.command.action_type
+        and value.subject_artifact_id == request.subject_artifact_id
+    }
+    if bound_subject_coverages != current_subject_coverages:
+        return False
+
+    for checkpoint_id in request.checkpoint_ids:
+        bound = bound_checkpoints.get(checkpoint_id)
+        current = current_checkpoints.get(checkpoint_id)
+        if (
+            bound is None
+            or current is None
+            or current != bound
+            or bound.protected_action is not request.command.action_type
+        ):
+            return False
+
+    for coverage_id in request.policy_coverage_ids:
+        bound = bound_coverages.get(coverage_id)
+        current = current_coverages.get(coverage_id)
+        if (
+            bound is None
+            or current is None
+            or current != bound
+            or bound.protected_action is not request.command.action_type
+            or bound.subject_artifact_id != request.subject_artifact_id
+        ):
+            return False
+
+    return True

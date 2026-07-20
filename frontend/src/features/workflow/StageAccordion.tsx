@@ -13,8 +13,8 @@ interface StageAccordionProps {
   index: number;
   onOpenAssessment?: (artifactIds: readonly string[]) => void;
   canOpenAssessment?: (artifactIds: readonly string[]) => boolean;
-  playbackState?: "ACTIVE" | "QUEUED" | "REVEALED";
-  revealedMilestoneCount?: number;
+  revealedMilestoneIds?: readonly string[];
+  activeMilestoneId?: string;
 }
 
 const OWNER_LABELS: Readonly<Record<string, string>> = {
@@ -131,23 +131,23 @@ export function StageAccordion({
   index,
   onOpenAssessment,
   canOpenAssessment,
-  playbackState,
-  revealedMilestoneCount,
+  revealedMilestoneIds,
+  activeMilestoneId,
 }: StageAccordionProps) {
-  const displayMilestones = stage.milestones.map((milestone, milestoneIndex) => {
+  const revealedIdSet = new Set(revealedMilestoneIds ?? []);
+  const displayMilestones = stage.milestones.map((milestone) => {
     const confirmedResolved = isResolvedStatus(
       milestone.resolutionStatus ?? milestone.status,
     );
     const revealed =
-      revealedMilestoneCount === undefined ||
-      milestoneIndex < revealedMilestoneCount ||
+      revealedMilestoneIds === undefined ||
+      revealedIdSet.has(milestone.id) ||
       !confirmedResolved;
     if (revealed) return milestone;
     return {
       ...milestone,
       status:
-        playbackState === "ACTIVE" &&
-        milestoneIndex === revealedMilestoneCount
+        activeMilestoneId === milestone.id
           ? "RUNNING"
           : "PENDING",
       statusLabel: undefined,
@@ -155,11 +155,20 @@ export function StageAccordion({
       artifactIds: [],
     };
   });
+  const stageResolvedMilestones = stage.milestones.filter((milestone) =>
+    isResolvedStatus(milestone.resolutionStatus ?? milestone.status),
+  );
+  const allResolvedMilestonesRevealed = stageResolvedMilestones.every((milestone) =>
+    revealedIdSet.has(milestone.id),
+  );
+  const stageHasActiveMilestone = stage.milestones.some(
+    (milestone) => milestone.id === activeMilestoneId,
+  );
   const displayStatus =
-    playbackState !== undefined &&
+    revealedMilestoneIds !== undefined &&
     isResolvedStatus(stage.status) &&
-    playbackState !== "REVEALED"
-      ? playbackState === "ACTIVE"
+    !allResolvedMilestonesRevealed
+      ? stageHasActiveMilestone
         ? "RUNNING"
         : "PENDING"
       : stage.status;

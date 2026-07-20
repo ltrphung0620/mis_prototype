@@ -42,8 +42,8 @@ describe("StageAccordion playback", () => {
       <StageAccordion
         stage={completedStage}
         index={0}
-        playbackState="ACTIVE"
-        revealedMilestoneCount={0}
+        activeMilestoneId="FINANCE_ASSESSMENT"
+        revealedMilestoneIds={[]}
         onOpenAssessment={openAssessment}
         canOpenAssessment={() => true}
       />,
@@ -58,8 +58,7 @@ describe("StageAccordion playback", () => {
       <StageAccordion
         stage={completedStage}
         index={0}
-        playbackState="REVEALED"
-        revealedMilestoneCount={1}
+        revealedMilestoneIds={["FINANCE_ASSESSMENT"]}
         onOpenAssessment={openAssessment}
         canOpenAssessment={() => true}
       />,
@@ -69,6 +68,35 @@ describe("StageAccordion playback", () => {
     expect(openAssessment).toHaveBeenCalledWith(["ART-FINANCE"]);
     expect(screen.getByText("Backend xác nhận đã hoàn tất")).toBeInTheDocument();
     expect(screen.getByText("Tác vụ đã hoàn tất theo backend")).toBeInTheDocument();
+  });
+
+  it("treats an approved Founder task as resolved during playback", () => {
+    const approvedStage: WorkflowStage = {
+      ...completedStage,
+      id: "FINAL_DECISION_APPROVAL",
+      code: "FINAL_DECISION_APPROVAL",
+      milestones: [
+        {
+          ...completedStage.milestones[0],
+          id: "FINAL_DECISION_APPROVAL_TASK",
+          code: "FINAL_DECISION_APPROVAL_TASK",
+          statusLabel: "Founder đã phê duyệt",
+          resolutionStatus: "APPROVED",
+        },
+      ],
+    };
+
+    render(
+      <StageAccordion
+        stage={approvedStage}
+        index={3}
+        activeMilestoneId="FINAL_DECISION_APPROVAL_TASK"
+        revealedMilestoneIds={[]}
+      />,
+    );
+
+    expect(screen.queryByText("Founder đã phê duyệt")).not.toBeInTheDocument();
+    expect(screen.getAllByText("Đang xử lý").length).toBeGreaterThan(0);
   });
 
   it("renders exact rejected and expired labels, applicability reasons, and tones", () => {

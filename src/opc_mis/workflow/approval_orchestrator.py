@@ -9,6 +9,7 @@ from opc_mis.domain.approvals import (
     ApprovalDecisionRecord,
     ApprovalExecutionResult,
     ApprovalRequest,
+    approval_policy_scope_is_preserved,
 )
 from opc_mis.domain.artifacts import ArtifactEnvelope
 from opc_mis.domain.case_workflow_models import CaseWorkflowRun, WorkflowNodeState
@@ -93,6 +94,13 @@ class ApprovalOrchestrator:
         ):
             raise ApprovalConflictError(
                 "Final contract confirmation requires a validated Decision Card."
+            )
+        if (
+            command.action_type is ProtectedAction.CONFIRM_NEGOTIATION_OUTCOME
+            and payload_artifact.artifact_type is not ArtifactType.NEGOTIATION_OUTCOME
+        ):
+            raise ApprovalConflictError(
+                "Negotiation confirmation requires a validated negotiation outcome."
             )
         checkpoint_artifact, checkpoint_set = await self._require_checkpoint_registry(
             command.evaluation_case_id,
@@ -587,6 +595,10 @@ class ApprovalOrchestrator:
             subject = await self._artifacts.get(request.subject_artifact_id)
             if subject is None or subject.artifact_type is not ArtifactType.DECISION_CARD:
                 return "Final Decision confirmation requires a Decision Card."
+        if request.command.action_type is ProtectedAction.CONFIRM_NEGOTIATION_OUTCOME:
+            subject = await self._artifacts.get(request.subject_artifact_id)
+            if subject is None or subject.artifact_type is not ArtifactType.NEGOTIATION_OUTCOME:
+                return "Negotiation confirmation requires a negotiation outcome."
         if not await self._subject_is_current(request):
             return "Approval subject artifact is no longer current."
         if not await self._policy_is_current(request):
@@ -639,7 +651,25 @@ class ApprovalOrchestrator:
             return False
         artifacts = await self._artifacts.list_by_case(request.evaluation_case_id)
         latest = self._latest(artifacts, ArtifactType.APPROVAL_CHECKPOINTS)
-        return latest is not None and latest.artifact_id == artifact.artifact_id
+        if latest is None:
+            return False
+        if latest.artifact_id == artifact.artifact_id:
+            return True
+        if latest.validation_status not in {
+            ValidationStatus.VALID,
+            ValidationStatus.VALID_WITH_WARNINGS,
+        }:
+            return False
+        try:
+            bound_registry = ApprovalCheckpointSet.model_validate(artifact.payload)
+            current_registry = ApprovalCheckpointSet.model_validate(latest.payload)
+        except ValueError:
+            return False
+        return approval_policy_scope_is_preserved(
+            request=request,
+            bound_registry=bound_registry,
+            current_registry=current_registry,
+        )
 
     async def _require_checkpoint_registry(
         self,
@@ -849,6 +879,10 @@ class ApprovalOrchestrator:
             request.command.action_type
             is ProtectedAction.CONFIRM_FINAL_CONTRACT_DECISION
         )
+        negotiation_rejected = (
+            request.command.action_type
+            is ProtectedAction.CONFIRM_NEGOTIATION_OUTCOME
+        )
         if run.status is WorkflowStatus.WAITING_FOR_APPROVAL:
             if continue_without_action:
                 run = await self._resume_run(run, resume_stage=request.resume_stage)
@@ -864,6 +898,20 @@ class ApprovalOrchestrator:
                         "resume_stage": None,
                         "blocked_action": None,
                         "failure_reason": None,
+                        "updated_at": self._clock(),
+                    }
+                )
+                await self._case_workflows.save_run(run)
+            elif negotiation_rejected:
+                run = run.model_copy(
+                    update={
+                        "status": WorkflowStatus.BLOCKED,
+                        "current_stage": WorkflowNode.NEGOTIATION_FINAL_CONFIRMATION.value,
+                        "resume_stage": None,
+                        "blocked_action": request.command.action_type,
+                        "failure_reason": (
+                            "Founder rejected the recorded negotiation outcome."
+                        ),
                         "updated_at": self._clock(),
                     }
                 )

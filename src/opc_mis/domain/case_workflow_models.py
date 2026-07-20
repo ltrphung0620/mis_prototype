@@ -43,6 +43,7 @@ from opc_mis.domain.internal_decision_package_models import (
     InternalDecisionPackageReadiness,
 )
 from opc_mis.domain.post_decision_models import PostDecisionOutcome
+from opc_mis.domain.negotiation_models import NegotiationOutcomeStatus
 from opc_mis.domain.workflow import WorkflowNode
 
 
@@ -205,6 +206,8 @@ class WorkflowRunSummary(BaseModel):
     decision_selected_option_ids: tuple[str, ...] = ()
     post_decision_update_id: str | None = None
     post_decision_outcome: PostDecisionOutcome | None = None
+    negotiation_outcome_id: str | None = None
+    negotiation_outcome_status: NegotiationOutcomeStatus | None = None
     external_document_submission_proposal_id: str | None = None
     external_submission_authorized: bool = False
     ready_for_external_submission: bool = False

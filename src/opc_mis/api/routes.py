@@ -23,6 +23,9 @@ from opc_mis.api.schemas import (
     DocumentEvidenceSupplementResponse,
     DocumentPreparationResponse,
     FinanceAssessmentResponse,
+    NegotiationOutcomeResponse,
+    NegotiationOutcomeSubmissionRequest,
+    NegotiationTermsSentRequest,
     OperationsAssessmentRequest,
     PlannerEvaluationRequest,
     ProtectedActionRequest,
@@ -45,6 +48,10 @@ from opc_mis.domain.case_workflow_models import (
 )
 from opc_mis.domain.document_models import DocumentEvidenceSubmission
 from opc_mis.domain.enums import ProtectedAction, WorkflowStatus
+from opc_mis.domain.negotiation_models import (
+    NegotiationOutcomeInput,
+    NegotiationTermsSentInput,
+)
 from opc_mis.domain.operations_models import OperationsExecutionResult
 from opc_mis.domain.planner_models import PlannerExecutionResult
 from opc_mis.runtime import (
@@ -623,6 +630,66 @@ async def submit_document_evidence(
     if result.status is not WorkflowStatus.COMPLETED:
         response.status_code = status.HTTP_409_CONFLICT
     return DocumentEvidenceSupplementResponse.from_results(result, workflow)
+
+
+@router.post(
+    "/cases/{evaluation_case_id}/negotiation/terms-sent",
+    response_model=WorkflowStartResult,
+    status_code=status.HTTP_202_ACCEPTED,
+    tags=["Decision"],
+    summary="Confirm that conditional negotiation terms were sent manually",
+)
+async def confirm_negotiation_terms_sent(
+    evaluation_case_id: str,
+    payload: NegotiationTermsSentRequest,
+    request: Request,
+) -> WorkflowStartResult:
+    """Advance to response intake without claiming an email or CRM side effect."""
+    try:
+        return await _runtime(request).confirm_negotiation_terms_sent(
+            evaluation_case_id=evaluation_case_id,
+            confirmation=NegotiationTermsSentInput(
+                workflow_run_id=payload.workflow_run_id,
+                decision_card_artifact_id=payload.decision_card_artifact_id,
+            ),
+        )
+    except CaseWorkflowNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except CaseWorkflowConflictError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+
+
+@router.post(
+    "/cases/{evaluation_case_id}/negotiation/outcome",
+    response_model=NegotiationOutcomeResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+    tags=["Decision"],
+    summary="Record all customer responses to the current negotiation conditions",
+)
+async def submit_negotiation_outcome(
+    evaluation_case_id: str,
+    payload: NegotiationOutcomeSubmissionRequest,
+    request: Request,
+    response: Response,
+) -> NegotiationOutcomeResponse:
+    """Persist a complete response set and create the final Founder gate."""
+    try:
+        result, workflow = await _runtime(request).submit_negotiation_outcome(
+            evaluation_case_id=evaluation_case_id,
+            submission=NegotiationOutcomeInput(
+                workflow_run_id=payload.workflow_run_id,
+                decision_card_artifact_id=payload.decision_card_artifact_id,
+                condition_outcomes=payload.condition_outcomes,
+                founder_summary=payload.founder_summary,
+            ),
+        )
+    except CaseWorkflowNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except (CaseWorkflowConflictError, ValueError) as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    if result.status is not WorkflowStatus.COMPLETED:
+        response.status_code = status.HTTP_409_CONFLICT
+    return NegotiationOutcomeResponse(result=result, workflow=workflow)
 
 
 @router.get(

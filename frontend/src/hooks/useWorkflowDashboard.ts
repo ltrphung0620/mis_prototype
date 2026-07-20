@@ -6,16 +6,21 @@ import {
   getContractCatalog,
   getSystemCapabilities,
   getWorkflowDashboard,
+  resumeCaseWorkflow,
   startCaseWorkflow,
   submitBankingAmountSupplement,
   submitBankingPrecheckEvidence,
   submitDocumentEvidence,
+  confirmNegotiationTermsSent,
+  submitNegotiationOutcome,
 } from "../api/client";
 import { createRunRequestId } from "../api/runRequestId";
 import type {
   BankingAmountSupplementPayload,
   BankingPrecheckEvidencePayload,
   DocumentEvidencePayload,
+  NegotiationOutcomePayload,
+  NegotiationTermsSentPayload,
 } from "../api/client";
 import type { ApiApprovalRequest, ApiArtifactEnvelope } from "../api/types";
 import { normalizeWorkflowDashboard } from "../api/normalize";
@@ -165,6 +170,11 @@ export function useWorkflowDashboard() {
   const runSelectedContract = useCallback(async () => {
     if (!state.selectedContractId || !state.catalog) return;
     const contractId = state.selectedContractId;
+    const recoverableRun =
+      state.dashboard?.status.toUpperCase() === "FAILED_SAFE" &&
+      state.dashboard.contractId === contractId
+        ? state.dashboard
+        : null;
     const pendingStart = pendingStartRef.current;
     const runRequestId =
       pendingStart?.contractId === contractId
@@ -173,7 +183,9 @@ export function useWorkflowDashboard() {
     pendingStartRef.current = { contractId, runRequestId };
     dispatch({ type: "RUN_REQUESTED", contractId });
     try {
-      const result = await startCaseWorkflow(contractId, runRequestId);
+      const result = recoverableRun
+        ? await resumeCaseWorkflow(recoverableRun.workflowRunId)
+        : await startCaseWorkflow(contractId, runRequestId);
       pendingStartRef.current = null;
       dispatch({
         type: "RUN_ACCEPTED",
@@ -187,7 +199,7 @@ export function useWorkflowDashboard() {
         retainDashboard: false,
       });
     }
-  }, [state.catalog, state.selectedContractId]);
+  }, [state.catalog, state.dashboard, state.selectedContractId]);
 
   const clearError = useCallback(() => dispatch({ type: "CLEAR_ERROR" }), []);
 
@@ -245,6 +257,24 @@ export function useWorkflowDashboard() {
     [runMutation, state.dashboard?.evaluationCaseId],
   );
 
+  const confirmTermsSent = useCallback(
+    (payload: NegotiationTermsSentPayload) => {
+      const caseId = state.dashboard?.evaluationCaseId;
+      if (!caseId) return Promise.resolve(false);
+      return runMutation(() => confirmNegotiationTermsSent(caseId, payload));
+    },
+    [runMutation, state.dashboard?.evaluationCaseId],
+  );
+
+  const submitNegotiation = useCallback(
+    (payload: NegotiationOutcomePayload) => {
+      const caseId = state.dashboard?.evaluationCaseId;
+      if (!caseId) return Promise.resolve(false);
+      return runMutation(() => submitNegotiationOutcome(caseId, payload));
+    },
+    [runMutation, state.dashboard?.evaluationCaseId],
+  );
+
   return {
     state,
     selectContract,
@@ -257,5 +287,7 @@ export function useWorkflowDashboard() {
     submitBankingAmount,
     submitPrecheckEvidence,
     submitDocument,
+    confirmTermsSent,
+    submitNegotiation,
   };
 }

@@ -11,6 +11,7 @@ from opc_mis.domain.decision_analysis import validate_decision_proposal_prose
 from opc_mis.domain.decision_models import (
     AIDecisionProposalDraft,
     AIDecisionReasonDraft,
+    AIDecisionRecommendedActionDraft,
     DecisionConditionStatus,
     DecisionConfidence,
     DecisionRecommendation,
@@ -20,6 +21,25 @@ from opc_mis.domain.decision_models import (
     decision_packet_input_hash,
 )
 from opc_mis.domain.lineage import deterministic_id
+
+_SAFE_EXECUTIVE_SUMMARIES = {
+    DecisionRecommendation.ACCEPT: (
+        "AI đề xuất chấp nhận hợp đồng dựa trên các lý do được chọn từ hồ sơ."
+    ),
+    DecisionRecommendation.NEGOTIATE_CONDITIONS_TO_ACCEPT: (
+        "AI đề xuất chấp nhận có điều kiện dựa trên các lý do và điều kiện "
+        "được chọn từ hồ sơ."
+    ),
+    DecisionRecommendation.DO_NOT_ACCEPT: (
+        "AI đề xuất từ chối hợp đồng dựa trên các lý do được chọn từ hồ sơ."
+    ),
+    DecisionRecommendation.NOT_EVALUABLE: (
+        "AI chưa thể đưa ra đề xuất có đủ cơ sở từ hồ sơ hiện có."
+    ),
+}
+_SAFE_ATTENTION_TEXT = (
+    "Founder cần xem xét điểm kiểm soát được tham chiếu trước khi quyết định."
+)
 
 
 def canonicalize_decision_proposal(
@@ -45,6 +65,18 @@ def canonicalize_decision_proposal(
         if item.code in reasons_by_code
         else item
         for item in proposal.reasons
+    )
+    canonical_reason_by_code = {item.code: item for item in canonical_reasons}
+    canonical_actions = tuple(
+        AIDecisionRecommendedActionDraft(
+            reason_code=item.reason_code,
+            action=item.action,
+            source_reference_ids=canonical_reason_by_code[item.reason_code].source_reference_ids,
+            evidence_ids=canonical_reason_by_code[item.reason_code].evidence_ids,
+        )
+        if item.reason_code in canonical_reason_by_code
+        else item
+        for item in proposal.recommended_actions
     )
 
     conditions_by_code = {item.code: item for item in packet.condition_candidates}
@@ -89,8 +121,32 @@ def canonicalize_decision_proposal(
     return proposal.model_copy(
         update={
             "reasons": canonical_reasons,
+            "recommended_actions": canonical_actions,
             "conditions": canonical_conditions,
             "selected_negotiation_strategy_ids": tuple(selected_strategy_ids),
+        }
+    )
+
+
+def repair_ungrounded_numeric_prose(
+    proposal: AIDecisionProposalDraft,
+) -> AIDecisionProposalDraft:
+    """Replace only unsafe free prose while preserving every AI selection.
+
+    Recommendation, reason candidates, conditions, option IDs, strategy IDs,
+    confidence, control references, and evidence lineage remain unchanged. This
+    repair never copies, derives, or calculates a numeric value.
+    """
+
+    return proposal.model_copy(
+        update={
+            "executive_summary": _SAFE_EXECUTIVE_SUMMARIES[
+                proposal.recommendation
+            ],
+            "human_attention_points": tuple(
+                item.model_copy(update={"text": _SAFE_ATTENTION_TEXT})
+                for item in proposal.human_attention_points
+            ),
         }
     )
 
@@ -171,6 +227,10 @@ def _validate_candidate_selections(
             tuple(item.code for item in proposal.human_attention_points),
         ),
         (
+            "recommended-action reason codes",
+            tuple(item.reason_code for item in proposal.recommended_actions),
+        ),
+        (
             "negotiation strategy IDs",
             proposal.selected_negotiation_strategy_ids,
         ),
@@ -179,6 +239,16 @@ def _validate_candidate_selections(
     for label, values in collections:
         if len(set(values)) != len(values):
             raise ValueError(f"Decision proposal {label} must be unique.")
+
+    selected_reason_codes = {item.code for item in proposal.reasons}
+    action_reason_codes = {item.reason_code for item in proposal.recommended_actions}
+    if proposal.recommendation is DecisionRecommendation.NOT_EVALUABLE:
+        if proposal.recommended_actions:
+            raise ValueError("NOT_EVALUABLE cannot carry recommended actions.")
+    elif action_reason_codes != selected_reason_codes:
+        raise ValueError(
+            "Each selected Decision reason requires exactly one recommended action."
+        )
 
     known_options = {option.option_id for option in packet.banking_options}
     if not set(proposal.selected_option_ids).issubset(known_options):
@@ -293,6 +363,23 @@ def validate_decision_proposal(
         _validate_references(
             source_reference_ids=reason.source_reference_ids,
             evidence_ids=reason.evidence_ids,
+            packet=packet,
+        )
+    reasons_by_code = {item.code: item for item in proposal.reasons}
+    for action in proposal.recommended_actions:
+        reason = reasons_by_code.get(action.reason_code)
+        if reason is None:
+            raise ValueError("Decision action references an unselected reason.")
+        if (
+            action.source_reference_ids != reason.source_reference_ids
+            or action.evidence_ids != reason.evidence_ids
+        ):
+            raise ValueError(
+                "Decision action lineage must exactly match its selected reason."
+            )
+        _validate_references(
+            source_reference_ids=action.source_reference_ids,
+            evidence_ids=action.evidence_ids,
             packet=packet,
         )
     for condition in proposal.conditions:

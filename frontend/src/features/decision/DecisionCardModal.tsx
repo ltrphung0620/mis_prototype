@@ -6,7 +6,6 @@ import { translateText } from "../../shared/translate";
 import type {
   DecisionCalculation,
   DecisionCardArtifact,
-  DecisionCondition,
   DecisionMetric,
   DecisionOption,
   PendingDecisionApproval,
@@ -143,38 +142,6 @@ function Metrics({ title, metrics = [] }: { title: string; metrics?: DecisionMet
   );
 }
 
-function Target({ condition }: { condition: DecisionCondition }): ReactElement | null {
-  if (!condition.target) return null;
-  const target = condition.target;
-  const unit = target.currency ?? target.unit;
-  return (
-    <p>
-      Hiện tại: <strong>{formatNumber(target.current_value, unit)}</strong>. Mục tiêu:{" "}
-      <strong>{label(target.operator)} {formatNumber(target.target_value, unit)}</strong>.
-    </p>
-  );
-}
-
-function Conditions({ conditions = [] }: { conditions?: DecisionCondition[] }): ReactElement | null {
-  if (!conditions.length) return null;
-  return (
-    <section>
-      <h3>Điều kiện cần đáp ứng</h3>
-      <ol>
-        {conditions.map((condition, index) => (
-          <li key={condition.condition_id ?? condition.code ?? index}>
-            <strong>{translateText(condition.title)}</strong>
-            <p>{translateText(condition.description)}</p>
-            <p>Trạng thái: {label(condition.status)} · Điểm kiểm tra: {label(condition.enforcement_point)}</p>
-            <Target condition={condition} />
-            {condition.expected_risk_effect && <p>Tác dụng dự kiến: {translateText(condition.expected_risk_effect)}</p>}
-          </li>
-        ))}
-      </ol>
-    </section>
-  );
-}
-
 function Options({ options = [] }: { options?: DecisionOption[] }): ReactElement | null {
   if (!options.length) return null;
   return (
@@ -214,24 +181,20 @@ function Calculations({ calculations = [] }: { calculations?: DecisionCalculatio
   );
 }
 
-function Strategies({ strategies = [] }: { strategies?: DecisionCardArtifact["payload"]["selected_negotiation_strategies"] }): ReactElement | null {
-  if (!strategies?.length) return null;
-  return (
-    <section>
-      <h3>Phương án đáp ứng điều kiện</h3>
-      <ul>
-        {strategies.map((strategy, index) => (
-          <li key={strategy.strategy_id ?? index}>
-            <strong>{translateText(strategy.title)}</strong>
-            <p>{translateText(strategy.founder_instruction)}</p>
-            {strategy.required_adjustment_value != null && (
-              <p>Mức điều chỉnh tối thiểu: {formatNumber(strategy.required_adjustment_value, strategy.currency ?? "VND")}.</p>
-            )}
-          </li>
-        ))}
-      </ul>
-    </section>
-  );
+function founderFacingReason(
+  title: string,
+  detail: string,
+): { statement: string; supportingDetail: string | null } {
+  const translatedTitle = translateText(title);
+  const translatedDetail = translateText(detail);
+  if (/^(Cảnh báo nguồn|Source alert)\b/i.test(translatedTitle)) {
+    return { statement: translatedDetail, supportingDetail: null };
+  }
+  return {
+    statement: translatedTitle,
+    supportingDetail:
+      translatedDetail === translatedTitle ? null : translatedDetail,
+  };
 }
 
 export function DecisionCardModal({
@@ -293,7 +256,21 @@ export function DecisionCardModal({
             <ul style={{ paddingLeft: "1.2rem", marginTop: "8px" }}>
               {payload.reasons.map((reason, index) => (
                 <li key={reason.code ?? index} style={{ marginBottom: "6px" }}>
-                  <strong>{translateText(reason.title)}</strong>: {translateText(reason.detail)}
+                  {(() => {
+                    const content = founderFacingReason(reason.title, reason.detail);
+                    return (
+                      <>
+                        <strong>{content.statement}</strong>
+                        {content.supportingDetail && <>: {content.supportingDetail}</>}
+                        {reason.recommended_action && (
+                          <p>
+                            <strong>Đề xuất xử lý:</strong>{" "}
+                            {translateText(reason.recommended_action)}
+                          </p>
+                        )}
+                      </>
+                    );
+                  })()}
                 </li>
               ))}
             </ul>
@@ -328,19 +305,6 @@ export function DecisionCardModal({
           <Metrics title="Vận hành của hợp đồng" metrics={payload.operations_metrics} />
           <Calculations calculations={payload.calculations} />
           <Options options={payload.selected_options} />
-          <Conditions conditions={payload.conditions} />
-          <Strategies strategies={payload.selected_negotiation_strategies} />
-
-          {!!payload.human_attention_points?.length && (
-            <section style={{ marginTop: "12px", borderTop: "1px solid rgba(37, 99, 235, 0.1)", paddingTop: "8px" }}>
-              <h3 style={{ fontSize: "13px", color: "var(--color-blue-700)" }}>Điểm Founder cần lưu ý</h3>
-              <ul style={{ paddingLeft: "1.2rem", margin: 0 }}>
-                {payload.human_attention_points.map((item, index) => (
-                  <li key={item.code ?? index}>{translateText(item.text)}</li>
-                ))}
-              </ul>
-            </section>
-          )}
 
           {payload.document_release_package && (
             <section style={{ marginTop: "12px", borderTop: "1px solid rgba(37, 99, 235, 0.1)", paddingTop: "8px" }}>

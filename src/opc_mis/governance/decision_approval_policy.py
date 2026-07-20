@@ -19,6 +19,7 @@ from opc_mis.domain.enums import (
 )
 from opc_mis.domain.evidence import EvidenceRef
 from opc_mis.domain.lineage import deterministic_id
+from opc_mis.domain.negotiation_models import NegotiationOutcome
 
 
 class DecisionApprovalPolicyError(ValueError):
@@ -30,6 +31,149 @@ class DecisionApprovalPolicyRegistry:
 
     component_id = "GOVERNANCE_FINAL_DECISION_POLICY"
     _SOURCE_FIELD = "final_decision_confirmation_requested"
+    _NEGOTIATION_SOURCE_FIELD = "negotiation_outcome_confirmation_requested"
+
+    def create_negotiation_draft(
+        self,
+        *,
+        negotiation_outcome_artifact: ArtifactEnvelope,
+        existing_checkpoint_artifact: ArtifactEnvelope,
+        policy: DecisionGovernancePolicy,
+    ) -> ArtifactDraft:
+        """Extend the current registry with one outcome-specific Founder gate."""
+        if (
+            negotiation_outcome_artifact.artifact_type
+            is not ArtifactType.NEGOTIATION_OUTCOME
+            or negotiation_outcome_artifact.validation_status
+            not in {ValidationStatus.VALID, ValidationStatus.VALID_WITH_WARNINGS}
+        ):
+            raise DecisionApprovalPolicyError(
+                "Negotiation Governance requires a validated outcome artifact."
+            )
+        try:
+            outcome = NegotiationOutcome.model_validate(
+                negotiation_outcome_artifact.payload
+            )
+            existing = ApprovalCheckpointSet.model_validate(
+                existing_checkpoint_artifact.payload
+            )
+        except ValueError as exc:
+            raise DecisionApprovalPolicyError(
+                "Negotiation Governance inputs are invalid."
+            ) from exc
+        if (
+            existing.evaluation_case_id != outcome.evaluation_case_id
+            or existing.dataset_id != outcome.dataset_id
+        ):
+            raise DecisionApprovalPolicyError(
+                "Negotiation outcome and approval registry belong to different scopes."
+            )
+        policy_evidence = self._policy_evidence(
+            dataset_id=existing.dataset_id,
+            policy=policy,
+        )
+        source_evidence = (
+            *negotiation_outcome_artifact.evidence_refs,
+            *policy_evidence,
+        )
+        derived = EvidenceRef(
+            evidence_id=deterministic_id(
+                "EVD",
+                existing.dataset_id,
+                SourceType.DERIVED,
+                "GOVERNANCE_APPROVAL_POLICY",
+                negotiation_outcome_artifact.artifact_id,
+                ProtectedAction.CONFIRM_NEGOTIATION_OUTCOME,
+                tuple(item.evidence_id for item in source_evidence),
+            ),
+            source_type=SourceType.DERIVED,
+            sheet="GOVERNANCE_APPROVAL_POLICY",
+            row_number=0,
+            record_id=negotiation_outcome_artifact.artifact_id,
+            field="negotiation_outcome_confirmation_scope",
+            display_value={
+                "protected_action": ProtectedAction.CONFIRM_NEGOTIATION_OUTCOME.value,
+                "subject_artifact_id": negotiation_outcome_artifact.artifact_id,
+                "subject_artifact_version": negotiation_outcome_artifact.version,
+                "subject_input_hash": negotiation_outcome_artifact.input_hash,
+                "approver_role": policy.approver_role,
+            },
+            source_evidence_ids=tuple(
+                item.evidence_id for item in source_evidence
+            ),
+        )
+        condition = ApprovalCondition(
+            source_field=self._NEGOTIATION_SOURCE_FIELD,
+            operator=RuleOperator.EQUAL,
+            threshold=True,
+        )
+        checkpoint = ApprovalCheckpoint(
+            checkpoint_id=deterministic_id(
+                "ACP",
+                existing.evaluation_case_id,
+                ProtectedAction.CONFIRM_NEGOTIATION_OUTCOME,
+                negotiation_outcome_artifact.artifact_id,
+                negotiation_outcome_artifact.version,
+                negotiation_outcome_artifact.input_hash,
+                condition.model_dump(mode="json"),
+            ),
+            evaluation_case_id=existing.evaluation_case_id,
+            source_rule_id=policy.policy_id,
+            approval_type="NEGOTIATION_OUTCOME_CONFIRMATION",
+            trigger_event=(
+                ApprovalTriggerEvent.NEGOTIATION_OUTCOME_CONFIRMATION_REQUESTED
+            ),
+            protected_action=ProtectedAction.CONFIRM_NEGOTIATION_OUTCOME,
+            condition=condition,
+            evidence_ids=tuple(
+                item.evidence_id for item in (*policy_evidence, derived)
+            ),
+            approver_role=policy.approver_role,
+        )
+        checkpoint_set = ApprovalCheckpointSet(
+            evaluation_case_id=existing.evaluation_case_id,
+            dataset_id=existing.dataset_id,
+            contract_id=existing.contract_id,
+            checkpoints=(
+                *tuple(
+                    item
+                    for item in existing.checkpoints
+                    if item.protected_action
+                    is not ProtectedAction.CONFIRM_NEGOTIATION_OUTCOME
+                ),
+                checkpoint,
+            ),
+            policy_coverages=existing.policy_coverages,
+        )
+        evidence_by_id = {
+            item.evidence_id: item
+            for item in (
+                *existing_checkpoint_artifact.evidence_refs,
+                *source_evidence,
+                derived,
+            )
+        }
+        return ArtifactDraft(
+            artifact_type=ArtifactType.APPROVAL_CHECKPOINTS,
+            evaluation_case_id=existing.evaluation_case_id,
+            producer="GOVERNANCE_NEGOTIATION_POLICY",
+            payload=checkpoint_set.model_dump(mode="json"),
+            evidence_refs=tuple(evidence_by_id[key] for key in sorted(evidence_by_id)),
+            identity_inputs={
+                "source_checkpoint_artifact_id": existing_checkpoint_artifact.artifact_id,
+                "source_checkpoint_artifact_version": existing_checkpoint_artifact.version,
+                "source_checkpoint_input_hash": existing_checkpoint_artifact.input_hash,
+                "negotiation_outcome_artifact_id": negotiation_outcome_artifact.artifact_id,
+                "negotiation_outcome_artifact_version": negotiation_outcome_artifact.version,
+                "negotiation_outcome_input_hash": negotiation_outcome_artifact.input_hash,
+                "policy_id": policy.policy_id,
+                "policy_version": policy.policy_version,
+                "policy_hash": policy.policy_hash,
+                "checkpoint_ids": tuple(
+                    item.checkpoint_id for item in checkpoint_set.checkpoints
+                ),
+            },
+        )
 
     def create_draft(
         self,

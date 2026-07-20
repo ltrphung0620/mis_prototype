@@ -27,6 +27,9 @@ const WORKFLOW_LABELS: Readonly<Record<string, string>> = {
   FINAL_DECISION_APPROVAL: "Founder xem xét quyết định cuối",
   POST_DECISION_UPDATE: "Cập nhật sau quyết định",
   NEGOTIATION_IN_PROGRESS: "Đang chờ kết quả đàm phán",
+  NEGOTIATION_TERMS_SENT: "Gửi điều kiện đàm phán",
+  NEGOTIATION_OUTCOME_RECEIVED: "Ghi nhận phản hồi khách hàng",
+  NEGOTIATION_FINAL_CONFIRMATION: "Xác nhận kết quả đàm phán cuối",
   FINAL_DECISION_ACCEPTED: "Hợp đồng đã được chấp nhận",
   FINAL_DECISION_NOT_ACCEPTED: "Hợp đồng không được chấp nhận",
   EXTERNAL_DOCUMENT_SUBMISSION_PROPOSAL: "Lập đề xuất gửi hồ sơ bên ngoài",
@@ -99,6 +102,8 @@ export function isResolvedStatus(status: string): boolean {
   return [
     "COMPLETED",
     "COMPLETED_WITH_WARNINGS",
+    "APPROVED",
+    "AUTHORIZED_WITHOUT_HUMAN",
     "REJECTED",
     "EXPIRED",
     "NOT_APPLICABLE",

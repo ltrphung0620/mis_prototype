@@ -193,6 +193,9 @@ class PostDecisionUpdate(BaseModel):
     approved_negotiation_strategy_ids: tuple[StrictStr, ...] = ()
     selected_option_ids: tuple[StrictStr, ...] = ()
     document_release_package: DecisionDocumentReleaseSnapshot | None = None
+    negotiation_outcome_artifact: ExactDecisionArtifactRef | None = None
+    negotiation_outcome_id: StrictStr | None = None
+    negotiation_approval_request_id: StrictStr | None = None
     external_document_release_required: bool
     evidence_ids: tuple[StrictStr, ...] = Field(min_length=1)
     founder_decision_recorded: Literal[True] = True
@@ -212,14 +215,40 @@ class PostDecisionUpdate(BaseModel):
             or approval.subject_input_hash != self.decision_card_artifact.input_hash
         ):
             raise ValueError("Founder approval does not bind the exact Decision Card")
-        expected_outcome = post_decision_outcome(self.recommendation)
-        if self.outcome is not expected_outcome:
-            raise ValueError("Post-decision outcome contradicts the recommendation")
-        expected_execution_status = contract_execution_status(self.recommendation)
+        negotiation_resolved = self.negotiation_outcome_artifact is not None
+        resolution_fields = (
+            self.negotiation_outcome_artifact,
+            self.negotiation_outcome_id,
+            self.negotiation_approval_request_id,
+        )
+        if any(item is not None for item in resolution_fields) and not all(
+            item is not None for item in resolution_fields
+        ):
+            raise ValueError("Negotiation resolution identity must be complete")
+        if negotiation_resolved:
+            if (
+                self.recommendation
+                is not DecisionRecommendation.NEGOTIATE_CONDITIONS_TO_ACCEPT
+                or self.negotiation_outcome_artifact is None
+                or self.negotiation_outcome_artifact.artifact_type
+                is not ArtifactType.NEGOTIATION_OUTCOME
+            ):
+                raise ValueError("Negotiation resolution requires its exact outcome artifact")
+            if self.outcome is PostDecisionOutcome.FINAL_DECISION_ACCEPTED:
+                expected_execution_status = ContractExecutionStatus.SIGNED
+            elif self.outcome is PostDecisionOutcome.CASE_CLOSED_NO_EXTERNAL_ACTION:
+                expected_execution_status = ContractExecutionStatus.NOT_SIGNED
+            else:
+                raise ValueError("Resolved negotiation has an invalid final outcome")
+        else:
+            expected_outcome = post_decision_outcome(self.recommendation)
+            if self.outcome is not expected_outcome:
+                raise ValueError("Post-decision outcome contradicts the recommendation")
+            expected_execution_status = contract_execution_status(self.recommendation)
         if self.contract_execution_status is not expected_execution_status:
-            raise ValueError("Contract execution status contradicts the approved recommendation")
+            raise ValueError("Contract execution status contradicts the approved route")
         expected_release = (
-            self.recommendation is DecisionRecommendation.ACCEPT
+            self.outcome is PostDecisionOutcome.FINAL_DECISION_ACCEPTED
             and self.document_release_package is not None
         )
         if self.external_document_release_required is not expected_release:
@@ -239,18 +268,42 @@ class PostDecisionUpdate(BaseModel):
         ):
             if len(set(values)) != len(values):
                 raise ValueError(f"{label} must be unique")
-        expected_id = post_decision_update_id(
-            decision_card_artifact=self.decision_card_artifact,
-            decision_card_id=self.decision_card_id,
-            founder_approval=self.founder_approval,
-            recommendation=self.recommendation,
-            outcome=self.outcome,
-            contract_execution_status=self.contract_execution_status,
-            approved_condition_ids=self.approved_condition_ids,
-            approved_negotiation_strategy_ids=(self.approved_negotiation_strategy_ids),
-            selected_option_ids=self.selected_option_ids,
-            document_release_package=self.document_release_package,
-            evidence_ids=self.evidence_ids,
+        expected_id = (
+            deterministic_id(
+                "PDU-NEG",
+                self.decision_card_artifact.model_dump(mode="json"),
+                self.decision_card_id,
+                approval_business_identity(self.founder_approval),
+                self.recommendation,
+                self.outcome,
+                self.contract_execution_status,
+                self.approved_condition_ids,
+                self.approved_negotiation_strategy_ids,
+                self.selected_option_ids,
+                (
+                    self.document_release_package.model_dump(mode="json")
+                    if self.document_release_package is not None
+                    else None
+                ),
+                self.negotiation_outcome_artifact.model_dump(mode="json"),
+                self.negotiation_outcome_id,
+                self.negotiation_approval_request_id,
+                self.evidence_ids,
+            )
+            if negotiation_resolved and self.negotiation_outcome_artifact is not None
+            else post_decision_update_id(
+                decision_card_artifact=self.decision_card_artifact,
+                decision_card_id=self.decision_card_id,
+                founder_approval=self.founder_approval,
+                recommendation=self.recommendation,
+                outcome=self.outcome,
+                contract_execution_status=self.contract_execution_status,
+                approved_condition_ids=self.approved_condition_ids,
+                approved_negotiation_strategy_ids=(self.approved_negotiation_strategy_ids),
+                selected_option_ids=self.selected_option_ids,
+                document_release_package=self.document_release_package,
+                evidence_ids=self.evidence_ids,
+            )
         )
         if self.update_id != expected_id:
             raise ValueError("Post-decision update_id is unstable")

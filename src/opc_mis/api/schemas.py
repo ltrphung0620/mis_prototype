@@ -73,6 +73,10 @@ from opc_mis.domain.finance_models import (
     FinanceObservation,
 )
 from opc_mis.domain.missing_data import MissingDataRequest
+from opc_mis.domain.negotiation_models import (
+    NegotiationConditionOutcomeInput,
+    NegotiationOutcomeExecutionResult,
+)
 from opc_mis.domain.risk_models import (
     InitialRiskAssessment,
     RiskExecutionResult,
@@ -114,6 +118,37 @@ class PlannerEvaluationRequest(BaseModel):
         if value is None or value == [] or value == ():
             raise ValueError("evaluation_scope must contain at least one scope")
         return value
+
+
+class NegotiationTermsSentRequest(BaseModel):
+    """Typed manual confirmation; this endpoint does not send email or CRM data."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    workflow_run_id: str = Field(min_length=1)
+    decision_card_artifact_id: str = Field(min_length=1)
+
+
+class NegotiationOutcomeSubmissionRequest(BaseModel):
+    """Complete response set for every condition on the current Decision Card."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    workflow_run_id: str = Field(min_length=1)
+    decision_card_artifact_id: str = Field(min_length=1)
+    condition_outcomes: tuple[NegotiationConditionOutcomeInput, ...] = Field(
+        min_length=1
+    )
+    founder_summary: str | None = Field(default=None, min_length=1, max_length=1000)
+
+
+class NegotiationOutcomeResponse(BaseModel):
+    """Persisted response artifact plus the automatically advanced workflow."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    result: NegotiationOutcomeExecutionResult
+    workflow: WorkflowStartResult
 
 
 class AutomaticCaseWorkflowRequest(BaseModel):

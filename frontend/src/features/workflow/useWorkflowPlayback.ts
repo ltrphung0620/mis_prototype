@@ -1,13 +1,14 @@
 import { useEffect, useMemo, useState } from "react";
 
 import type { NormalizedWorkflowDashboard } from "../../api/types";
+import { isResolvedStatus } from "../../shared/workflowLabels";
 import { workflowMilestoneProgress } from "./workflowModel";
 
 export const DEFAULT_WORKFLOW_STEP_DELAY_MS = 1_000;
 
 interface PlaybackCursor {
   workflowRunId: string;
-  resolved: number;
+  revealedMilestoneIds: readonly string[];
 }
 
 export interface WorkflowPlayback {
@@ -16,6 +17,8 @@ export interface WorkflowPlayback {
   percent: number;
   isPlaying: boolean;
   canRevealDecisionCard: boolean;
+  revealedMilestoneIds: readonly string[];
+  activeMilestoneId?: string;
 }
 
 function prefersReducedMotion(): boolean {
@@ -26,18 +29,25 @@ function prefersReducedMotion(): boolean {
   );
 }
 
-export function advancePlayback(
-  current: number,
-  target: number,
-  stageBoundaries: readonly number[] = [],
-): number {
-  const normalizedCurrent = Math.max(0, current);
-  const normalizedTarget = Math.max(0, target);
-  const nextBoundary = stageBoundaries.find(
-    (boundary) =>
-      boundary > normalizedCurrent && boundary <= normalizedTarget,
-  );
-  return nextBoundary ?? Math.min(normalizedCurrent + 1, normalizedTarget);
+/** Advance one confirmed milestone at a time; stages must never create a jump. */
+export function advancePlayback(current: number, target: number): number {
+  return Math.min(Math.max(0, current) + 1, Math.max(0, target));
+}
+
+function resolvedMilestoneIds(
+  dashboard: NormalizedWorkflowDashboard | null,
+): readonly string[] {
+  if (!dashboard) return [];
+  return dashboard.stages
+    .filter((stage) => stage.applicability.toUpperCase() !== "NOT_APPLICABLE")
+    .flatMap((stage) => stage.milestones)
+    .filter(
+      (milestone) =>
+        milestone.applicability.toUpperCase() !== "NOT_APPLICABLE" &&
+        milestone.status.toUpperCase() !== "SKIPPED" &&
+        isResolvedStatus(milestone.resolutionStatus ?? milestone.status),
+    )
+    .map((milestone) => milestone.id);
 }
 
 export function useWorkflowPlayback(
@@ -49,75 +59,79 @@ export function useWorkflowPlayback(
     [dashboard],
   );
   const workflowRunId = dashboard?.workflowRunId ?? "";
-  const targetResolved = progress?.resolved ?? 0;
-  const total = progress?.total ?? 0;
-  const stageBoundaries = useMemo(() => {
-    let cumulative = 0;
-    return (dashboard?.stages ?? []).map((stage) => {
-      cumulative += Math.max(1, stage.milestones.length);
-      return cumulative;
-    });
-  }, [dashboard?.stages]);
+  const targetIds = useMemo(() => resolvedMilestoneIds(dashboard), [dashboard]);
+  const targetIdSet = useMemo(() => new Set(targetIds), [targetIds]);
   const reducedMotion = prefersReducedMotion();
   const [cursor, setCursor] = useState<PlaybackCursor>({
     workflowRunId: "",
-    resolved: 0,
+    revealedMilestoneIds: [],
   });
 
-  const resolved =
+  const revealedMilestoneIds =
     cursor.workflowRunId === workflowRunId
-      ? Math.min(cursor.resolved, targetResolved)
-      : 0;
+      ? cursor.revealedMilestoneIds.filter((id) => targetIdSet.has(id))
+      : [];
+  const revealedIdSet = useMemo(
+    () => new Set(revealedMilestoneIds),
+    [revealedMilestoneIds],
+  );
+  const activeMilestoneId = targetIds.find((id) => !revealedIdSet.has(id));
 
   useEffect(() => {
     if (!workflowRunId) {
-      setCursor({ workflowRunId: "", resolved: 0 });
+      setCursor({ workflowRunId: "", revealedMilestoneIds: [] });
       return undefined;
     }
     if (cursor.workflowRunId !== workflowRunId) {
       setCursor({
         workflowRunId,
-        resolved: reducedMotion ? targetResolved : 0,
+        revealedMilestoneIds: reducedMotion ? targetIds : [],
       });
       return undefined;
     }
-    if (reducedMotion || cursor.resolved > targetResolved) {
-      setCursor({ workflowRunId, resolved: targetResolved });
+    if (reducedMotion) {
+      if (targetIds.some((id) => !revealedIdSet.has(id))) {
+        setCursor({ workflowRunId, revealedMilestoneIds: targetIds });
+      }
       return undefined;
     }
-    if (cursor.resolved >= targetResolved) return undefined;
+    const nextId = targetIds.find((id) => !revealedIdSet.has(id));
+    if (!nextId) return undefined;
 
     const timer = window.setTimeout(() => {
       setCursor((current) =>
-        current.workflowRunId === workflowRunId
+        current.workflowRunId === workflowRunId &&
+        !current.revealedMilestoneIds.includes(nextId)
           ? {
               workflowRunId,
-              resolved: advancePlayback(
-                current.resolved,
-                targetResolved,
-                stageBoundaries,
-              ),
+              revealedMilestoneIds: [
+                ...current.revealedMilestoneIds,
+                nextId,
+              ],
             }
           : current,
       );
     }, Math.max(120, stepDelayMs));
     return () => window.clearTimeout(timer);
   }, [
-    cursor.resolved,
     cursor.workflowRunId,
     reducedMotion,
-    stageBoundaries,
+    revealedIdSet,
     stepDelayMs,
-    targetResolved,
+    targetIds,
     workflowRunId,
   ]);
 
-  const isPlaying = resolved < targetResolved;
+  const resolved = revealedMilestoneIds.length;
+  const total = progress?.total ?? 0;
+  const isPlaying = resolved < targetIds.length;
   return {
     resolved,
     total,
     percent: total > 0 ? Math.round((resolved / total) * 100) : 0,
     isPlaying,
     canRevealDecisionCard: !isPlaying,
+    revealedMilestoneIds,
+    activeMilestoneId,
   };
 }

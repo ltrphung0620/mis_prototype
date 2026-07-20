@@ -14,7 +14,7 @@ const card: DecisionCardArtifact = {
     recommendation: "NEGOTIATE_CONDITIONS_TO_ACCEPT",
     executive_summary: "Chỉ chấp nhận sau khi hoàn tất điều kiện thương mại.",
     confidence: "HIGH",
-    reasons: [{ title: "Biên lợi nhuận", detail: "Biên hiện tại chưa đạt mục tiêu." }],
+    reasons: [{ title: "Biên lợi nhuận", detail: "Biên hiện tại chưa đạt mục tiêu.", recommended_action: "Đàm phán lại giá bán hoặc giảm chi phí theo phương án đã chọn." }],
     finance_metrics: [
       { metric: "ORDER_GROSS_MARGIN", value: 0.12, unit: "RATIO", role: "CASE_FACT", contract_attributable: true },
       { metric: "PROJECTED_CLOSING_CASH", value: -500_000_000, unit: "VND", scope: "OPC_GLOBAL", contract_attributable: false },
@@ -39,9 +39,12 @@ describe("DecisionCardModal", () => {
     const aiRecommendation = screen.getByRole("group", { name: "Đề xuất từ trí tuệ nhân tạo" });
     expect(within(aiRecommendation).getByText(/ACCEPT_WITH_CONDITIONS/)).toBeInTheDocument();
     expect(within(aiRecommendation).getByText(/Biên hiện tại chưa đạt mục tiêu/)).toBeInTheDocument();
+    expect(within(aiRecommendation).getByText(/Đàm phán lại giá bán hoặc giảm chi phí/)).toBeInTheDocument();
     expect(within(aiRecommendation).queryByText(/Đạt biên mục tiêu|Điều chỉnh giá|Chỉ chấp nhận sau/)).not.toBeInTheDocument();
-    expect(screen.getByText("Đạt biên mục tiêu")).toBeInTheDocument();
-    expect(screen.getByText("Điều chỉnh giá")).toBeInTheDocument();
+    expect(screen.queryByText("Đạt biên mục tiêu")).not.toBeInTheDocument();
+    expect(screen.queryByText("Điều chỉnh giá")).not.toBeInTheDocument();
+    expect(screen.queryByText("Điều kiện cần đáp ứng")).not.toBeInTheDocument();
+    expect(screen.queryByText("Điểm Founder cần lưu ý")).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Phê duyệt" }));
     expect(approve).toHaveBeenCalledWith("APR-1");
   });
@@ -104,6 +107,36 @@ describe("DecisionCardModal", () => {
     expect(screen.queryByRole("group", { name: "Đề xuất từ trí tuệ nhân tạo" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Phê duyệt" })).not.toBeInTheDocument();
     expect(screen.getByText(/kết quả dự phòng của hệ thống/i)).toBeInTheDocument();
+  });
+
+  it("replaces a technical source-alert title with the business issue and action", () => {
+    render(
+      <DecisionCardModal
+        open
+        card={{
+          ...card,
+          payload: {
+            ...card.payload,
+            reasons: [
+              {
+                title: "Source alert AL-003: Contract execution risk",
+                detail: "20-province rollout may exceed current contractor capacity",
+                recommended_action: "Chia kế hoạch triển khai thành các giai đoạn phù hợp và bổ sung nguồn lực đủ năng lực cho từng địa bàn.",
+              },
+            ],
+          },
+        }}
+        current_decision_card_artifact_id="ART-CURRENT"
+        onClose={vi.fn()}
+        onApprove={vi.fn()}
+        onReject={vi.fn()}
+      />,
+    );
+
+    const aiRecommendation = screen.getByRole("group", { name: "Đề xuất từ trí tuệ nhân tạo" });
+    expect(within(aiRecommendation).queryByText(/AL-003|Contract execution risk/i)).not.toBeInTheDocument();
+    expect(within(aiRecommendation).getByText(/triển khai tại 20 tỉnh có thể vượt quá năng lực/i)).toBeInTheDocument();
+    expect(within(aiRecommendation).getByText(/Chia kế hoạch triển khai thành các giai đoạn phù hợp/i)).toBeInTheDocument();
   });
 
   it("does not render evidence or model provenance carried by an oversized API object", () => {

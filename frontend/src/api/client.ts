@@ -78,6 +78,17 @@ export function startCaseWorkflow(
   );
 }
 
+export function resumeCaseWorkflow(
+  workflowRunId: string,
+  signal?: AbortSignal,
+): Promise<WorkflowStartResponse> {
+  return requestJson<WorkflowStartResponse>(
+    `/api/workflows/${encodeURIComponent(workflowRunId)}/resume`,
+    { method: "POST" },
+    signal,
+  );
+}
+
 export async function getWorkflowDashboard(
   workflowRunId: string,
   signal?: AbortSignal,
@@ -167,6 +178,24 @@ export interface DocumentEvidencePayload {
   evidence_note: "REQUESTED_DOCUMENT_REFERENCE_SUPPLIED";
 }
 
+export interface NegotiationTermsSentPayload {
+  workflow_run_id: string;
+  decision_card_artifact_id: string;
+}
+
+export interface NegotiationConditionOutcomePayload {
+  condition_id: string;
+  customer_accepted: boolean;
+  founder_note?: string;
+}
+
+export interface NegotiationOutcomePayload {
+  workflow_run_id: string;
+  decision_card_artifact_id: string;
+  condition_outcomes: NegotiationConditionOutcomePayload[];
+  founder_summary?: string;
+}
+
 export function submitBankingAmountSupplement(
   evaluationCaseId: string,
   payload: BankingAmountSupplementPayload,
@@ -193,6 +222,26 @@ export function submitDocumentEvidence(
 ): Promise<JsonRecord> {
   return requestJson<JsonRecord>(
     `/api/cases/${encodeURIComponent(evaluationCaseId)}/documents/evidence-supplements`,
+    { method: "POST", body: JSON.stringify(payload) },
+  );
+}
+
+export function confirmNegotiationTermsSent(
+  evaluationCaseId: string,
+  payload: NegotiationTermsSentPayload,
+): Promise<JsonRecord> {
+  return requestJson<JsonRecord>(
+    `/api/cases/${encodeURIComponent(evaluationCaseId)}/negotiation/terms-sent`,
+    { method: "POST", body: JSON.stringify(payload) },
+  );
+}
+
+export function submitNegotiationOutcome(
+  evaluationCaseId: string,
+  payload: NegotiationOutcomePayload,
+): Promise<JsonRecord> {
+  return requestJson<JsonRecord>(
+    `/api/cases/${encodeURIComponent(evaluationCaseId)}/negotiation/outcome`,
     { method: "POST", body: JSON.stringify(payload) },
   );
 }

@@ -114,6 +114,91 @@ class DecisionApprovalPolicyOrchestrator:
         await self._artifacts.save(envelope)
         return envelope
 
+    async def register_negotiation(
+        self,
+        *,
+        negotiation_outcome_artifact: ArtifactEnvelope,
+        context: ExecutionContext,
+    ) -> ArtifactEnvelope:
+        """Persist a Founder checkpoint bound to one exact negotiation outcome."""
+        artifacts = await self._artifacts.list_by_case(
+            negotiation_outcome_artifact.evaluation_case_id
+        )
+        candidates: list[ArtifactEnvelope] = []
+        for artifact in artifacts:
+            if artifact.artifact_type is not ArtifactType.APPROVAL_CHECKPOINTS:
+                continue
+            try:
+                registry = ApprovalCheckpointSet.model_validate(artifact.payload)
+            except ValueError:
+                continue
+            if any(
+                item.protected_action
+                is ProtectedAction.CONFIRM_FINAL_CONTRACT_DECISION
+                for item in registry.checkpoints
+            ) and not any(
+                item.protected_action
+                is ProtectedAction.CONFIRM_NEGOTIATION_OUTCOME
+                for item in registry.checkpoints
+            ):
+                candidates.append(artifact)
+        if not candidates:
+            raise DecisionApprovalPolicyRegistrationError(
+                "No final Decision policy registry is available for negotiation."
+            )
+        base = max(candidates, key=lambda item: item.version)
+        try:
+            draft = self._registry.create_negotiation_draft(
+                negotiation_outcome_artifact=negotiation_outcome_artifact,
+                existing_checkpoint_artifact=base,
+                policy=self._policy,
+            )
+        except DecisionApprovalPolicyError as exc:
+            raise DecisionApprovalPolicyRegistrationError(str(exc)) from exc
+        policy_context = context.model_copy(
+            update={
+                "input_artifact_ids": (
+                    base.artifact_id,
+                    negotiation_outcome_artifact.artifact_id,
+                )
+            }
+        )
+        report = await self._validator.validate(draft)
+        if report.status is ValidationStatus.BLOCKED:
+            raise DecisionApprovalPolicyRegistrationError(
+                "; ".join(report.blocking_errors)
+                or "Negotiation approval policy failed validation."
+            )
+        expected_hash = artifact_input_hash(draft, policy_context)
+        matches = tuple(
+            item
+            for item in artifacts
+            if item.artifact_type is ArtifactType.APPROVAL_CHECKPOINTS
+            and item.input_hash == expected_hash
+        )
+        if matches:
+            if len(matches) != 1 or matches[0].payload != draft.payload:
+                raise DecisionApprovalPolicyRegistrationError(
+                    "Existing negotiation policy artifact is not safely reusable."
+                )
+            return matches[0]
+        version = 1 + max(
+            (
+                item.version
+                for item in artifacts
+                if item.artifact_type is ArtifactType.APPROVAL_CHECKPOINTS
+            ),
+            default=0,
+        )
+        envelope = self._artifact_factory.create(
+            draft=draft,
+            context=policy_context,
+            validation_report=report,
+            version=version,
+        )
+        await self._artifacts.save(envelope)
+        return envelope
+
     @staticmethod
     def _base_registry(
         artifacts: tuple[ArtifactEnvelope, ...],

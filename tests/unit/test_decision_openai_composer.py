@@ -21,6 +21,7 @@ from opc_mis.domain.decision_models import (
     AIDecisionComposition,
     AIDecisionProposalDraft,
     AIDecisionReasonDraft,
+    AIDecisionRecommendedActionDraft,
     DecisionAnalysisSource,
     DecisionCalculation,
     DecisionCalculationOperand,
@@ -57,6 +58,8 @@ from opc_mis.domain.lineage import deterministic_id
 from opc_mis.infrastructure.openai.decision_composer import (
     OpenAIDecisionAnalysisComposer,
     ResilientDecisionAnalysisComposer,
+    _DecisionActionSelection,
+    _DecisionProposalSelection,
 )
 from opc_mis.infrastructure.openai.decision_fallback import (
     DeterministicDecisionAnalysisComposer,
@@ -249,6 +252,17 @@ def valid_proposal() -> AIDecisionProposalDraft:
             "trước khi chấp nhận hợp đồng."
         ),
         reasons=(reason,),
+        recommended_actions=(
+            AIDecisionRecommendedActionDraft(
+                reason_code=reason.code,
+                action=(
+                    "Yêu cầu ngân hàng cung cấp xác nhận ràng buộc trước khi "
+                    "Founder quyết định."
+                ),
+                source_reference_ids=reason.source_reference_ids,
+                evidence_ids=reason.evidence_ids,
+            ),
+        ),
         conditions=(condition,),
         selected_option_ids=("BOPT-X",),
         confidence=DecisionConfidence.MEDIUM,
@@ -423,17 +437,27 @@ def _margin_strategy_proposal(packet: DecisionScenarioPacket) -> AIDecisionPropo
             mode="json", exclude={"candidate_id"}
         )
     )
+    reason = AIDecisionReasonDraft.model_validate(
+        packet.reason_candidates[0].model_dump(
+            mode="json", exclude={"candidate_id"}
+        )
+    )
     return AIDecisionProposalDraft(
         recommendation=DecisionRecommendation.NEGOTIATE_CONDITIONS_TO_ACCEPT,
         executive_summary=(
             "Ưu tiên phương án thương mại đã được tính trước và chạy lại Finance "
             "sau khi có bằng chứng mới."
         ),
-        reasons=(
-            AIDecisionReasonDraft.model_validate(
-                packet.reason_candidates[0].model_dump(
-                    mode="json", exclude={"candidate_id"}
-                )
+        reasons=(reason,),
+        recommended_actions=(
+            AIDecisionRecommendedActionDraft(
+                reason_code=reason.code,
+                action=(
+                    "Đàm phán lại phương án thương mại đã chọn và chạy lại "
+                    "đánh giá tài chính sau khi có bằng chứng mới."
+                ),
+                source_reference_ids=reason.source_reference_ids,
+                evidence_ids=reason.evidence_ids,
             ),
         ),
         conditions=(condition,),
@@ -541,25 +565,83 @@ def _composer(
 
 def test_openai_adapter_uses_strict_schema_and_exact_packet() -> None:
     proposal = valid_proposal()
+    selection = _DecisionProposalSelection(
+        recommendation=proposal.recommendation,
+        executive_summary=proposal.executive_summary,
+        reason_codes=tuple(item.code for item in proposal.reasons),
+        recommended_actions=tuple(
+            _DecisionActionSelection(
+                reason_code=item.reason_code,
+                action=item.action,
+            )
+            for item in proposal.recommended_actions
+        ),
+        selected_option_ids=proposal.selected_option_ids,
+        confidence=proposal.confidence,
+    )
 
     class FakeResponses:
         async def parse(self, **kwargs: object) -> object:
-            assert kwargs["text_format"] is AIDecisionProposalDraft
+            assert kwargs["text_format"] is _DecisionProposalSelection
             assert kwargs["store"] is False
             request_input = kwargs["input"]
             model_payload = json.loads(request_input[1]["content"])  # type: ignore[index]
             assert model_payload["packet_id"] == scenario_packet().packet_id
             assert model_payload["condition_candidates"][0]["target"]["target_value"] == 420_000_000
-            return SimpleNamespace(output_parsed=proposal)
+            return SimpleNamespace(output_parsed=selection)
 
     result = asyncio.run(
         _composer(SimpleNamespace(responses=FakeResponses())).compose(scenario_packet())
     )
 
     assert result.source is DecisionAnalysisSource.OPENAI
-    assert result.proposal == proposal
+    assert result.proposal.recommendation is proposal.recommendation
+    assert result.proposal.reasons == proposal.reasons
+    assert result.proposal.recommended_actions == proposal.recommended_actions
+    assert result.proposal.conditions == proposal.conditions
+    assert result.proposal.selected_option_ids == proposal.selected_option_ids
+    assert result.proposal.human_attention_points == ()
     assert result.model == "MODEL-X"
     assert result.prompt_version == "decision-analysis-v1"
+
+
+def test_openai_adapter_retries_ungrounded_numeric_free_prose() -> None:
+    proposal = valid_proposal()
+    unsafe_attention = proposal.human_attention_points[0].model_copy(
+        update={"text": "Founder cần xem xét 3 điểm kiểm soát."}
+    )
+    unsafe = proposal.model_copy(
+        update={
+            "executive_summary": "AI đề xuất tiếp tục với 2 điều kiện.",
+            "human_attention_points": (unsafe_attention,),
+        }
+    )
+
+    class FakeResponses:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        async def parse(self, **kwargs: object) -> object:
+            del kwargs
+            self.calls += 1
+            output = unsafe if self.calls == 1 else proposal
+            return SimpleNamespace(output_parsed=output)
+
+    responses = FakeResponses()
+    result = asyncio.run(
+        _composer(SimpleNamespace(responses=responses)).compose(scenario_packet())
+    )
+
+    assert responses.calls == 2
+    assert result.source is DecisionAnalysisSource.OPENAI
+    assert result.proposal.recommendation is proposal.recommendation
+    assert result.proposal.reasons == proposal.reasons
+    assert "2" not in result.proposal.executive_summary
+    assert "3" not in result.proposal.human_attention_points[0].text
+    assert (
+        result.proposal.human_attention_points[0].source_reference_ids
+        == proposal.human_attention_points[0].source_reference_ids
+    )
 
 
 def test_openai_adapter_receives_precomputed_margin_strategy_values() -> None:
@@ -995,9 +1077,22 @@ def test_canonical_margin_summary_replaces_model_wording_and_replays() -> None:
         executive_summary=analysis.executive_summary,
         reasons=tuple(
             AIDecisionReasonDraft.model_validate(
-                item.model_dump(mode="json", exclude={"reason_id"})
+                item.model_dump(
+                    mode="json",
+                    exclude={"reason_id", "recommended_action"},
+                )
             )
             for item in analysis.reasons
+        ),
+        recommended_actions=tuple(
+            AIDecisionRecommendedActionDraft(
+                reason_code=item.code,
+                action=item.recommended_action,
+                source_reference_ids=item.source_reference_ids,
+                evidence_ids=item.evidence_ids,
+            )
+            for item in analysis.reasons
+            if item.recommended_action is not None
         ),
         conditions=tuple(
             NegotiationConditionDraft.model_validate(
@@ -1093,6 +1188,88 @@ def test_guard_rejects_numeric_prose_not_supplied_by_calculator() -> None:
 
     with pytest.raises(ValueError, match="numeric prose"):
         validate_decision_proposal(proposal, scenario_packet())
+
+
+def test_guard_requires_one_action_for_each_selected_reason() -> None:
+    proposal = valid_proposal().model_copy(update={"recommended_actions": ()})
+
+    with pytest.raises(ValueError, match="exactly one recommended action"):
+        validate_decision_proposal(proposal, scenario_packet())
+
+
+def test_guard_rejects_ungrounded_numbers_in_a_recommended_action() -> None:
+    proposal = valid_proposal()
+    unsafe_action = proposal.recommended_actions[0].model_copy(
+        update={"action": "Chia việc triển khai thành 4 giai đoạn."}
+    )
+
+    with pytest.raises(ValueError, match="numeric prose"):
+        validate_decision_proposal(
+            proposal.model_copy(update={"recommended_actions": (unsafe_action,)}),
+            scenario_packet(),
+        )
+
+
+def test_guard_allows_number_copied_from_exact_selected_reason() -> None:
+    values = {
+        "code": "ROLLOUT_CAPACITY_RISK",
+        "title": "Delivery capacity needs mitigation",
+        "detail": (
+            "Delivery across 20 provinces may exceed current contractor capacity."
+        ),
+        "source_reference_ids": ("BANK-REF",),
+        "evidence_ids": ("EVD-BANK",),
+    }
+    reason_candidate = DecisionReasonCandidate(
+        candidate_id=deterministic_id(
+            "DRC",
+            values["code"],
+            values["title"],
+            values["detail"],
+            values["source_reference_ids"],
+            values["evidence_ids"],
+        ),
+        **values,
+    )
+    packet = scenario_packet()
+    packet = DecisionScenarioPacket.model_validate(
+        _rehashed_packet_values(
+            packet,
+            reason_candidates=(reason_candidate,),
+        )
+    )
+    reason = AIDecisionReasonDraft.model_validate(
+        reason_candidate.model_dump(mode="json", exclude={"candidate_id"})
+    )
+    proposal = valid_proposal().model_copy(
+        update={
+            "reasons": (reason,),
+            "recommended_actions": (
+                AIDecisionRecommendedActionDraft(
+                    reason_code=reason.code,
+                    action=(
+                        "Chia việc triển khai tại 20 tỉnh thành các giai đoạn phù hợp "
+                        "với năng lực đã xác minh."
+                    ),
+                    source_reference_ids=reason.source_reference_ids,
+                    evidence_ids=reason.evidence_ids,
+                ),
+            ),
+        }
+    )
+
+    validate_decision_proposal(proposal, packet)
+
+    wrong_unit_action = proposal.recommended_actions[0].model_copy(
+        update={"action": "Bổ sung 20 nhân sự trước khi triển khai."}
+    )
+    with pytest.raises(ValueError, match="numeric prose"):
+        validate_decision_proposal(
+            proposal.model_copy(
+                update={"recommended_actions": (wrong_unit_action,)}
+            ),
+            packet,
+        )
 
 
 def test_guard_rejects_accept_while_mandatory_condition_is_open() -> None:

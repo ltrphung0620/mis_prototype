@@ -95,6 +95,16 @@ class DecisionAnalysisBoundaryError(ValueError):
 
 
 _NUMERIC_TOKEN = re.compile(r"(?<![\w])[-+]?\d+(?:[.,]\d+)*(?:\s*%)?")
+_GROUNDED_NUMBER_WITH_LABEL = re.compile(
+    r"(?<![\w])(?P<number>[-+]?\d+(?:[.,]\d+)*)(?:\s+|[-/]\s*)"
+    r"(?P<label>[^\W\d_]+)",
+    re.UNICODE,
+)
+_GROUNDED_NUMERIC_LABEL_ALIASES = {
+    "province": ("province", "provinces", "tỉnh"),
+    "provinces": ("province", "provinces", "tỉnh"),
+    "tỉnh": ("province", "provinces", "tỉnh"),
+}
 _UNMASKED_NUMERIC_UNIT = re.compile(
     r"(?<!\w)(?:vnd|triệu|tỷ|million|billion|percent|percentage|"
     r"phần\s+trăm|%)(?!\w)",
@@ -1629,6 +1639,7 @@ def _model_authored_text(
     )
     return (
         *summary,
+        *(item.action for item in proposal.recommended_actions),
         *(point.text for point in proposal.human_attention_points),
     )
 
@@ -1661,6 +1672,7 @@ def _selected_numeric_displays(
     """Limit numeric prose to evidence selected by this exact proposal."""
 
     displays: list[str] = []
+    grounded_reason_displays: list[str] = []
 
     def add(value: int | float | None, unit: str) -> None:
         if value is not None:
@@ -1670,11 +1682,28 @@ def _selected_numeric_displays(
         reference_id
         for item in (
             *proposal.reasons,
+            *proposal.recommended_actions,
             *proposal.conditions,
             *proposal.human_attention_points,
         )
         for reference_id in item.source_reference_ids
     }
+    selected_reason_codes = {item.code for item in proposal.reasons}
+    for candidate in packet.reason_candidates:
+        if candidate.code not in selected_reason_codes:
+            continue
+        for grounded_text in (candidate.title, candidate.detail):
+            for match in _GROUNDED_NUMBER_WITH_LABEL.finditer(grounded_text):
+                number = match.group("number")
+                source_label = match.group("label").casefold()
+                labels = _GROUNDED_NUMERIC_LABEL_ALIASES.get(
+                    source_label,
+                    (source_label,),
+                )
+                for label in labels:
+                    grounded_reason_displays.extend(
+                        (f"{number} {label}", f"{number}-{label}")
+                    )
     for metric in (*packet.finance_metrics, *packet.operations_metrics):
         if metric.fact_id in selected_reference_ids and isinstance(
             metric.value, (int, float)
@@ -1695,8 +1724,9 @@ def _selected_numeric_displays(
     )
     if selected_strategies:
         # The Founder-facing margin instruction is rendered canonically after the
-        # selection. No model-authored amount or status sentence is persisted.
-        return ()
+        # selection. Only numeric tokens copied from an exact selected reason may
+        # remain in model-authored actions.
+        return tuple(dict.fromkeys(grounded_reason_displays))
     selected_calculation_ids = {
         item.calculation_id for item in selected_strategies
     }
@@ -1734,10 +1764,11 @@ def _selected_numeric_displays(
             add(calculation.result_value, calculation.result_unit)
 
     packet_allowlist = set(packet.allowed_numeric_display_values)
+    grounded_reason_allowlist = set(grounded_reason_displays)
     return tuple(
         value
-        for value in dict.fromkeys(displays)
-        if value in packet_allowlist
+        for value in dict.fromkeys((*displays, *grounded_reason_displays))
+        if value in packet_allowlist or value in grounded_reason_allowlist
     )
 
 
@@ -1911,6 +1942,23 @@ def guard_ai_decision_composition(
         selected_reason_candidates
     ):
         raise DecisionAnalysisBoundaryError("AI Decision selected a duplicate reason.")
+    actions_by_reason_code = {
+        item.reason_code: item for item in proposal.recommended_actions
+    }
+    selected_reason_codes = {item.code for item in proposal.reasons}
+    if len(actions_by_reason_code) != len(proposal.recommended_actions):
+        raise DecisionAnalysisBoundaryError(
+            "AI Decision supplied duplicate actions for a selected reason."
+        )
+    if proposal.recommendation is DecisionRecommendation.NOT_EVALUABLE:
+        if actions_by_reason_code:
+            raise DecisionAnalysisBoundaryError(
+                "NOT_EVALUABLE cannot carry recommended actions."
+            )
+    elif set(actions_by_reason_code) != selected_reason_codes:
+        raise DecisionAnalysisBoundaryError(
+            "Each selected AI Decision reason requires exactly one action."
+        )
 
     selected_condition_candidates: list[DecisionConditionCandidate] = []
     for draft in proposal.conditions:
@@ -1940,7 +1988,11 @@ def guard_ai_decision_composition(
             raise DecisionAnalysisBoundaryError(
                 "AI Decision attention points must reference supplied required controls."
             )
-    for item in (*proposal.reasons, *proposal.human_attention_points):
+    for item in (
+        *proposal.reasons,
+        *proposal.recommended_actions,
+        *proposal.human_attention_points,
+    ):
         _validate_reference_lineage(
             source_reference_ids=item.source_reference_ids,
             evidence_ids=item.evidence_ids,
@@ -2083,6 +2135,11 @@ def guard_ai_decision_composition(
         DecisionReason(
             reason_id=deterministic_id(
                 "DREASON", packet.packet_id, candidate.candidate_id
+            ),
+            recommended_action=(
+                actions_by_reason_code[draft.code].action
+                if draft.code in actions_by_reason_code
+                else None
             ),
             **draft.model_dump(),
         )

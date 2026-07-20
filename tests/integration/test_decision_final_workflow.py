@@ -14,6 +14,7 @@ from opc_mis.domain.decision_models import (
     AIDecisionComposition,
     AIDecisionProposalDraft,
     AIDecisionReasonDraft,
+    AIDecisionRecommendedActionDraft,
     DecisionAnalysisSource,
     DecisionConfidence,
     DecisionRecommendation,
@@ -45,17 +46,30 @@ async def _exact_negotiation(
         strategy_by_condition.setdefault(
             strategy.condition_code, strategy.strategy_id
         )
+    reasons = tuple(
+        AIDecisionReasonDraft.model_validate(
+            item.model_dump(mode="json", exclude={"candidate_id"})
+        )
+        for item in payload.reason_candidates
+    )
     proposal = AIDecisionProposalDraft(
         recommendation=DecisionRecommendation.NEGOTIATE_CONDITIONS_TO_ACCEPT,
         executive_summary=(
             "Founder should negotiate every unresolved evidence-backed condition "
             "before accepting the opportunity."
         ),
-        reasons=tuple(
-            AIDecisionReasonDraft.model_validate(
-                item.model_dump(mode="json", exclude={"candidate_id"})
+        reasons=reasons,
+        recommended_actions=tuple(
+            AIDecisionRecommendedActionDraft(
+                reason_code=item.code,
+                action=(
+                    "Founder should address this evidence-backed reason before "
+                    "deciding."
+                ),
+                source_reference_ids=item.source_reference_ids,
+                evidence_ids=item.evidence_ids,
             )
-            for item in payload.reason_candidates
+            for item in reasons
         ),
         conditions=tuple(
             NegotiationConditionDraft.model_validate(
@@ -84,16 +98,27 @@ async def _exact_negotiation(
 def decision_client(monkeypatch: pytest.MonkeyPatch) -> Iterator[TestClient]:
     monkeypatch.setenv("OPENAI_ENABLED", "false")
     monkeypatch.setenv("OPC_MIS_MASKING_HMAC_KEY_BASE64", TEST_HMAC_KEY)
+    compose_calls: list[str] = []
+
+    async def counting_compose(
+        composer: DeterministicDecisionAnalysisComposer,
+        payload: DecisionScenarioPacket,
+        **kwargs: object,
+    ) -> AIDecisionComposition:
+        compose_calls.append(payload.packet_id)
+        return await _exact_negotiation(composer, payload, **kwargs)
+
     monkeypatch.setattr(
         DeterministicDecisionAnalysisComposer,
         "compose",
-        _exact_negotiation,
+        counting_compose,
     )
     app = create_app(
         workbook_path=TEAM_PACK,
         dataset_id="FINAL_DECISION_WORKFLOW_TEST",
         database_path=":memory:",
     )
+    app.state.decision_compose_calls = compose_calls
     with TestClient(app) as client:
         yield client
 
@@ -178,6 +203,7 @@ def test_exact_decision_card_requires_founder_then_routes_to_negotiation(
     )
     assert final_checkpoints[0]["approver_role"] == "FOUNDER"
 
+    compose_call_count = len(decision_client.app.state.decision_compose_calls)
     approved = decision_client.post(
         f"/api/approval-requests/{request['request_id']}/decision",
         json={
@@ -190,6 +216,7 @@ def test_exact_decision_card_requires_founder_then_routes_to_negotiation(
     assert approved.json()["action_authorized"] is True
 
     completed = _wait_for_pause_or_completion(decision_client, workflow_run_id)
+    assert len(decision_client.app.state.decision_compose_calls) == compose_call_count
     assert completed["status"] == "COMPLETED"
     assert completed["current_stage"] == "NEGOTIATION_IN_PROGRESS"
     assert completed["post_decision_outcome"] == "NEGOTIATION_AUTHORIZED"
@@ -399,3 +426,31 @@ def test_con004_card_carries_one_precomputed_margin_negotiation_strategy(
     assert update["payload"]["approved_negotiation_strategy_ids"] == (
         decision_wait["decision_selected_negotiation_strategy_ids"]
     )
+
+    second_created = decision_client.post(
+        "/api/cases/run",
+        json={
+            "contract_id": "CON-004",
+            "evaluation_scope": ["FINANCE", "OPERATIONS", "RISK"],
+            "as_of_date": "2026-07-20",
+        },
+    )
+    assert second_created.status_code == 202
+    second_run_id = second_created.json()["workflow_run_id"]
+    second_precheck_wait = _wait_for_pause_or_completion(
+        decision_client, second_run_id
+    )
+    assert second_precheck_wait["blocked_action"] == "SUBMIT_BANKING_PRECHECK"
+
+    second_approval = decision_client.post(
+        "/api/approval-requests/"
+        f"{second_precheck_wait['pending_approval_ids'][0]}/decision",
+        json={
+            "decision": "APPROVE",
+            "decided_by": "FOUNDER",
+            "reason": "HUMAN_REVIEW_COMPLETED",
+        },
+    )
+    assert second_approval.status_code == 200
+    assert second_approval.json()["action_authorized"] is True
+    assert second_approval.json()["approval_request"]["status"] == "APPROVED"

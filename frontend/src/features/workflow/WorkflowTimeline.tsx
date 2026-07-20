@@ -113,39 +113,17 @@ export function WorkflowTimeline({
           ) : null}
 
           <div className="stage-list">
-            {(() => {
-              let milestoneOffset = 0;
-              return dashboard.stages.map((stage, index) => {
-                const stageStart = milestoneOffset;
-                const stageSize = Math.max(1, stage.milestones.length);
-                const stageEnd = stageStart + stageSize;
-                milestoneOffset = stageEnd;
-                const revealedMilestoneCount = playback
-                  ? Math.max(
-                      0,
-                      Math.min(stageSize, playback.resolved - stageStart),
-                    )
-                  : undefined;
-                const playbackState = !playback
-                  ? undefined
-                  : playback.resolved >= stageEnd
-                    ? "REVEALED"
-                    : playback.isPlaying && playback.resolved >= stageStart
-                      ? "ACTIVE"
-                      : "QUEUED";
-                return (
-                  <StageAccordion
-                    stage={stage}
-                    index={index}
-                    playbackState={playbackState}
-                    revealedMilestoneCount={revealedMilestoneCount}
-                    onOpenAssessment={onOpenAssessment}
-                    canOpenAssessment={canOpenAssessment}
-                    key={stage.id}
-                  />
-                );
-              });
-            })()}
+            {dashboard.stages.map((stage, index) => (
+              <StageAccordion
+                stage={stage}
+                index={index}
+                revealedMilestoneIds={playback?.revealedMilestoneIds}
+                activeMilestoneId={playback?.activeMilestoneId}
+                onOpenAssessment={onOpenAssessment}
+                canOpenAssessment={canOpenAssessment}
+                key={stage.id}
+              />
+            ))}
           </div>
 
           <footer className="workflow-footer">

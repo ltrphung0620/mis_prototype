@@ -2,7 +2,11 @@
 
 from datetime import datetime
 
-from opc_mis.domain.approvals import ApprovalCheckpointSet, ApprovalRequest
+from opc_mis.domain.approvals import (
+    ApprovalCheckpointSet,
+    ApprovalRequest,
+    approval_policy_scope_is_preserved,
+)
 from opc_mis.domain.artifacts import ArtifactEnvelope
 from opc_mis.domain.banking_precheck_execution_models import AuthorizedActionPermit
 from opc_mis.domain.banking_precheck_submission_models import (
@@ -300,24 +304,49 @@ class AuthorizedActionPermitIssuer:
         case_artifacts = await self._artifacts.list_by_case(
             request.evaluation_case_id
         )
-        latest_version = max(
-            (
-                item.version
-                for item in case_artifacts
-                if item.artifact_type is ArtifactType.APPROVAL_CHECKPOINTS
-            ),
-            default=None,
-        )
-        if require_current_policy and latest_version != policy_artifact.version:
-            raise AuthorizationPermitError(
-                "Authorization policy artifact is no longer current."
-            )
         try:
             checkpoint_set = ApprovalCheckpointSet.model_validate(policy_artifact.payload)
         except ValueError as exc:
             raise AuthorizationPermitError(
                 "Authorization policy artifact payload is invalid."
             ) from exc
+        latest_policy = max(
+            (
+                item
+                for item in case_artifacts
+                if item.artifact_type is ArtifactType.APPROVAL_CHECKPOINTS
+            ),
+            key=lambda item: item.version,
+            default=None,
+        )
+        if require_current_policy and (
+            latest_policy is None
+            or latest_policy.validation_status not in _VALID_ARTIFACT_STATUSES
+        ):
+            raise AuthorizationPermitError(
+                "Authorization policy artifact is no longer current."
+            )
+        if (
+            require_current_policy
+            and latest_policy is not None
+            and latest_policy.artifact_id != policy_artifact.artifact_id
+        ):
+            try:
+                current_checkpoint_set = ApprovalCheckpointSet.model_validate(
+                    latest_policy.payload
+                )
+            except ValueError as exc:
+                raise AuthorizationPermitError(
+                    "Authorization policy artifact is no longer current."
+                ) from exc
+            if not approval_policy_scope_is_preserved(
+                request=request,
+                bound_registry=checkpoint_set,
+                current_registry=current_checkpoint_set,
+            ):
+                raise AuthorizationPermitError(
+                    "Authorization policy artifact is no longer current."
+                )
         selected_coverages = tuple(
             coverage
             for coverage in checkpoint_set.policy_coverages

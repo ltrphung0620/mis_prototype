@@ -311,6 +311,30 @@ _STAGES = (
         ),
     ),
     _StageDefinition(
+        "CONDITIONAL_NEGOTIATION",
+        "Đàm phán điều kiện với khách hàng",
+        (
+            _TaskDefinition(
+                "NEGOTIATION_TERMS_SENT",
+                "FOUNDER",
+                "Xác nhận đã gửi điều kiện đàm phán cho khách hàng",
+                WorkflowNode.NEGOTIATION_TERMS_SENT,
+            ),
+            _TaskDefinition(
+                "NEGOTIATION_OUTCOME_RECEIVED",
+                "FOUNDER",
+                "Ghi nhận phản hồi của khách hàng cho từng điều kiện",
+                WorkflowNode.NEGOTIATION_OUTCOME_RECEIVED,
+            ),
+            _TaskDefinition(
+                "NEGOTIATION_FINAL_CONFIRMATION",
+                "GOVERNANCE",
+                "Founder xác nhận kết quả đàm phán cuối",
+                protected_action=ProtectedAction.CONFIRM_NEGOTIATION_OUTCOME,
+            ),
+        ),
+    ),
+    _StageDefinition(
         "EXTERNAL_DOCUMENT_SUBMISSION_PROPOSAL",
         "Lập đề xuất gửi hồ sơ ra bên ngoài",
         (
@@ -390,6 +414,11 @@ _BUSINESS_LABELS = {
     ),
     DashboardBusinessStatus.NOT_EVALUABLE: "Chưa đủ cơ sở để đưa ra đề xuất",
     DashboardBusinessStatus.NEGOTIATION_IN_PROGRESS: "Đang thực hiện đàm phán",
+    DashboardBusinessStatus.NEGOTIATION_TERMS_SENT: "Đã gửi điều kiện, chờ phản hồi khách hàng",
+    DashboardBusinessStatus.NEGOTIATION_OUTCOME_RECEIVED: "Đang ghi nhận kết quả đàm phán",
+    DashboardBusinessStatus.NEGOTIATION_AWAITING_FINAL_CONFIRMATION: (
+        "Chờ Founder xác nhận kết quả đàm phán"
+    ),
     DashboardBusinessStatus.ACCEPTED: "Hợp đồng đã được chấp nhận",
     DashboardBusinessStatus.NOT_ACCEPTED: "Hợp đồng không được chấp nhận",
     DashboardBusinessStatus.READY_FOR_EXTERNAL_SUBMISSION: (
@@ -452,6 +481,9 @@ _CURRENT_STAGE_LABELS = {
     WorkflowNode.FINAL_RISK_READY.value: "Kết quả kiểm tra rủi ro cuối đã sẵn sàng",
     WorkflowNode.DECISION_CARD_READY.value: "Phiếu quyết định đã sẵn sàng",
     WorkflowNode.NEGOTIATION_IN_PROGRESS.value: "Đang thực hiện đàm phán",
+    WorkflowNode.NEGOTIATION_TERMS_SENT.value: "Gửi điều kiện đàm phán",
+    WorkflowNode.NEGOTIATION_OUTCOME_RECEIVED.value: "Ghi nhận phản hồi khách hàng",
+    WorkflowNode.NEGOTIATION_FINAL_CONFIRMATION.value: "Xác nhận kết quả đàm phán cuối",
     WorkflowNode.FINAL_DECISION_ACCEPTED.value: "Hợp đồng đã được chấp nhận",
     WorkflowNode.FINAL_DECISION_NOT_ACCEPTED.value: "Hợp đồng không được chấp nhận",
     WorkflowNode.READY_FOR_EXTERNAL_SUBMISSION.value: (
@@ -511,6 +543,11 @@ def build_dashboard_projection(
         for index, definition in enumerate(_STAGES, start=1)
     )
     tasks = tuple(task for stage in stages for task in stage.tasks)
+    applicable_tasks = tuple(
+        task
+        for task in tasks
+        if task.applicability is not DashboardApplicability.NOT_APPLICABLE
+    )
     resolved = sum(
         task.status
         in {
@@ -518,9 +555,8 @@ def build_dashboard_projection(
             DashboardTaskStatus.COMPLETED_WITH_WARNINGS,
             DashboardTaskStatus.REJECTED,
             DashboardTaskStatus.EXPIRED,
-            DashboardTaskStatus.NOT_APPLICABLE,
         }
-        for task in tasks
+        for task in applicable_tasks
     )
     business_status = _business_status(summary)
     decision_card = _decision_card_summary(
@@ -548,8 +584,12 @@ def build_dashboard_projection(
         ),
         progress=DashboardProgress(
             resolved_task_count=resolved,
-            total_task_count=len(tasks),
-            percent=round(resolved / len(tasks) * 100),
+            total_task_count=len(applicable_tasks),
+            percent=(
+                round(resolved / len(applicable_tasks) * 100)
+                if applicable_tasks
+                else 0
+            ),
         ),
         stages=stages,
         run_artifacts=tuple(
@@ -810,6 +850,27 @@ def _task_applicability(
         return DashboardApplicability.APPLICABLE, "Phiếu quyết định có thể được xem xét."
 
     if task_id in {
+        "NEGOTIATION_TERMS_SENT",
+        "NEGOTIATION_OUTCOME_RECEIVED",
+        "NEGOTIATION_FINAL_CONFIRMATION",
+    }:
+        recommendation = context.summary.decision_recommendation
+        if recommendation is DecisionRecommendation.NEGOTIATE_CONDITIONS_TO_ACCEPT:
+            return (
+                DashboardApplicability.APPLICABLE,
+                "Decision Card được Founder chấp thuận theo tuyến đàm phán có điều kiện.",
+            )
+        if recommendation is None:
+            return (
+                DashboardApplicability.UNDETERMINED,
+                "Chưa có Decision Card để xác định nhu cầu đàm phán.",
+            )
+        return (
+            DashboardApplicability.NOT_APPLICABLE,
+            "Decision Card không chọn phương án chấp nhận có điều kiện.",
+        )
+
+    if task_id in {
         "EXTERNAL_DOCUMENT_SUBMISSION_PROPOSAL",
         "EXTERNAL_RELEASE_APPROVAL",
         "READY_FOR_EXTERNAL_SUBMISSION",
@@ -959,15 +1020,27 @@ def _business_status(summary: WorkflowRunSummary) -> DashboardBusinessStatus:
     if summary.status is WorkflowStatus.FAILED_SAFE:
         return DashboardBusinessStatus.FAILED_SAFE
     if summary.status is WorkflowStatus.WAITING_FOR_INPUT:
+        if summary.current_stage == WorkflowNode.NEGOTIATION_TERMS_SENT.value:
+            return DashboardBusinessStatus.NEGOTIATION_TERMS_SENT
+        if summary.current_stage == WorkflowNode.NEGOTIATION_OUTCOME_RECEIVED.value:
+            return DashboardBusinessStatus.NEGOTIATION_OUTCOME_RECEIVED
         return DashboardBusinessStatus.WAITING_FOR_INPUT
     if summary.status is WorkflowStatus.WAITING_FOR_APPROVAL:
         if summary.blocked_action is ProtectedAction.SUBMIT_BANKING_PRECHECK:
             return DashboardBusinessStatus.WAITING_FOR_BANKING_APPROVAL
         if summary.blocked_action is ProtectedAction.SEND_DOCUMENT_TO_EXTERNAL_PARTNER:
             return DashboardBusinessStatus.WAITING_FOR_EXTERNAL_RELEASE_APPROVAL
+        if summary.blocked_action is ProtectedAction.CONFIRM_NEGOTIATION_OUTCOME:
+            return DashboardBusinessStatus.NEGOTIATION_AWAITING_FINAL_CONFIRMATION
         return DashboardBusinessStatus.WAITING_FOR_FINAL_DECISION
     if summary.current_stage == WorkflowNode.NEGOTIATION_IN_PROGRESS.value:
         return DashboardBusinessStatus.NEGOTIATION_IN_PROGRESS
+    if summary.current_stage == WorkflowNode.NEGOTIATION_TERMS_SENT.value:
+        return DashboardBusinessStatus.NEGOTIATION_TERMS_SENT
+    if summary.current_stage == WorkflowNode.NEGOTIATION_OUTCOME_RECEIVED.value:
+        return DashboardBusinessStatus.NEGOTIATION_OUTCOME_RECEIVED
+    if summary.current_stage == WorkflowNode.NEGOTIATION_FINAL_CONFIRMATION.value:
+        return DashboardBusinessStatus.NEGOTIATION_AWAITING_FINAL_CONFIRMATION
     if summary.current_stage == WorkflowNode.FINAL_DECISION_ACCEPTED.value:
         return DashboardBusinessStatus.ACCEPTED
     if summary.current_stage == WorkflowNode.FINAL_DECISION_NOT_ACCEPTED.value:
@@ -1037,7 +1110,37 @@ def _pending_interactions(
     if summary.status is not WorkflowStatus.WAITING_FOR_INPUT:
         return tuple(interactions)
     request_ids = summary.pending_missing_data_ids
-    if summary.current_stage == WorkflowNode.DECISION_POST_BANKING_REVIEW.value:
+    if summary.current_stage == WorkflowNode.NEGOTIATION_TERMS_SENT.value:
+        interaction_type = DashboardInteractionType.NEGOTIATION_TERMS_SENT_CONFIRMATION
+        title = "Xác nhận đã gửi điều kiện đàm phán"
+        instruction = (
+            "Xem lại các điều kiện trên Decision Card rồi xác nhận đã gửi cho khách hàng. "
+            "Hệ thống không tự gửi email hoặc cập nhật CRM."
+        )
+        endpoint = (
+            f"/api/cases/{summary.evaluation_case_id}/negotiation/terms-sent"
+            if summary.evaluation_case_id is not None
+            else None
+        )
+        fields = ("workflow_run_id", "decision_card_artifact_id")
+    elif summary.current_stage == WorkflowNode.NEGOTIATION_OUTCOME_RECEIVED.value:
+        interaction_type = DashboardInteractionType.NEGOTIATION_OUTCOME_INPUT
+        title = "Nhập phản hồi đàm phán của khách hàng"
+        instruction = (
+            "Ghi nhận khách hàng đồng ý hoặc từ chối cho từng điều kiện trên Decision Card."
+        )
+        endpoint = (
+            f"/api/cases/{summary.evaluation_case_id}/negotiation/outcome"
+            if summary.evaluation_case_id is not None
+            else None
+        )
+        fields = (
+            "workflow_run_id",
+            "decision_card_artifact_id",
+            "condition_outcomes",
+            "founder_summary",
+        )
+    elif summary.current_stage == WorkflowNode.DECISION_POST_BANKING_REVIEW.value:
         interaction_type = DashboardInteractionType.BANKING_AMOUNT_INPUT
         title = "Bổ sung số tiền yêu cầu cho phương án ngân hàng"
         instruction = "Nhập số tiền VND và ghi chú nghiệp vụ cho yêu cầu đang chờ."
@@ -1118,6 +1221,9 @@ def _approval_title(action: ProtectedAction) -> str:
         ),
         ProtectedAction.CONFIRM_FINAL_CONTRACT_DECISION: (
             "Xác nhận quyết định cuối đối với hợp đồng"
+        ),
+        ProtectedAction.CONFIRM_NEGOTIATION_OUTCOME: (
+            "Xác nhận kết quả đàm phán điều kiện"
         ),
         ProtectedAction.SEND_DOCUMENT_TO_EXTERNAL_PARTNER: (
             "Cho phép phát hành hồ sơ cho đối tác bên ngoài"

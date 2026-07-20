@@ -8,6 +8,7 @@ const api = vi.hoisted(() => ({
   getContractCatalog: vi.fn(),
   getSystemCapabilities: vi.fn(),
   getWorkflowDashboard: vi.fn(),
+  resumeCaseWorkflow: vi.fn(),
   startCaseWorkflow: vi.fn(),
   submitBankingAmountSupplement: vi.fn(),
   submitBankingPrecheckEvidence: vi.fn(),

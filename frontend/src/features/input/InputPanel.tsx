@@ -99,6 +99,8 @@ export function InputPanel({
             <span aria-hidden="true">{starting ? "…" : "→"}</span>
             {starting
               ? "Đang khởi tạo lượt đánh giá"
+              : dashboard?.status.toUpperCase() === "FAILED_SAFE"
+                ? "Tiếp tục quy trình đã dừng an toàn"
               : dashboard
                 ? "Bắt đầu lượt đánh giá mới"
                 : "Bắt đầu đánh giá"}

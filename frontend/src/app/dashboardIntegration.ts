@@ -331,6 +331,8 @@ export function approvalSubjectSummary(
       typeof payload.executive_summary === "string"
         ? payload.executive_summary
         : "Xác nhận quyết định cuối cùng trên đúng Decision Card hiện hành.",
+    CONFIRM_NEGOTIATION_OUTCOME:
+      "Xác nhận bản tổng hợp phản hồi của khách hàng cho toàn bộ điều kiện đàm phán.",
     SEND_DOCUMENT_TO_EXTERNAL_PARTNER:
       "Cho phép phát hành đúng gói hồ sơ đã chuẩn bị tới đối tác bên ngoài. Trước phê duyệt, hồ sơ chưa được gửi.",
     COMMIT_LARGE_FINANCIAL_DECISION:
@@ -402,6 +404,19 @@ export function pendingMissingInteraction(
     request_ids: [...interaction.request_ids],
     required_fields: [...interaction.required_fields],
   } as MissingDataInteraction;
+}
+
+export function pendingNegotiationInteraction(
+  dashboard: NormalizedWorkflowDashboard,
+): DashboardPendingInteractionDto | null {
+  return (
+    dashboard.pendingInteractions.find((item) =>
+      [
+        "NEGOTIATION_TERMS_SENT_CONFIRMATION",
+        "NEGOTIATION_OUTCOME_INPUT",
+      ].includes(item.interaction_type),
+    ) ?? null
+  );
 }
 
 export function pendingNotEvaluableReview(

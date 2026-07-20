@@ -30,6 +30,7 @@ export interface DecisionReason {
   code?: string;
   title: string;
   detail: string;
+  recommended_action?: string | null;
 }
 
 export interface DecisionCondition {

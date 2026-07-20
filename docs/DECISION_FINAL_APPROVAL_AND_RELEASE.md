@@ -110,6 +110,17 @@ Only an `OPENAI` composition may produce the three approvable business recommend
 deterministic fallback returns only `NOT_EVALUABLE` with a stable, non-sensitive diagnostic code.
 It cannot impersonate an AI recommendation.
 
+If the model selects a valid recommendation and exact candidates but adds an ungrounded number only
+in free prose, the adapter replaces that prose with a non-numeric canonical sentence and validates
+the complete proposal again. Recommendation, reason/condition selections, confidence, option and
+strategy IDs, control references, and evidence lineage are never changed by this repair.
+
+For every reason selected by an evaluable OpenAI proposal, the structured output also carries one
+recommended action bound to that reason's exact source references and evidence IDs. The guarded
+analysis merges the action into the canonical reason snapshot. Conditions and strategy candidates
+remain authoritative governance data even when the Founder UI presents their practical effect next
+to the corresponding AI-selected reason.
+
 ### Gross-margin negotiation strategies
 
 When the validated Finance chain contains explicit linked-order revenue, explicit linked-order

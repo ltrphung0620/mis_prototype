@@ -19,6 +19,7 @@ from opc_mis.domain.decision_models import (
     AIDecisionComposition,
     AIDecisionProposalDraft,
     AIDecisionReasonDraft,
+    AIDecisionRecommendedActionDraft,
     DecisionScenarioPacket,
     NegotiationConditionDraft,
 )
@@ -112,9 +113,21 @@ class DecisionCardContextLoader:
                         executive_summary=analysis.executive_summary,
                         reasons=tuple(
                             AIDecisionReasonDraft.model_validate(
-                                item.model_dump(exclude={"reason_id"})
+                                item.model_dump(
+                                    exclude={"reason_id", "recommended_action"}
+                                )
                             )
                             for item in analysis.reasons
+                        ),
+                        recommended_actions=tuple(
+                            AIDecisionRecommendedActionDraft(
+                                reason_code=item.code,
+                                action=item.recommended_action,
+                                source_reference_ids=item.source_reference_ids,
+                                evidence_ids=item.evidence_ids,
+                            )
+                            for item in analysis.reasons
+                            if item.recommended_action is not None
                         ),
                         conditions=tuple(
                             NegotiationConditionDraft.model_validate(

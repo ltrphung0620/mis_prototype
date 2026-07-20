@@ -261,9 +261,9 @@ describe("workflow timeline model", () => {
       totalMilestoneCount: 19,
     };
     expect(workflowMilestoneProgress(value)).toEqual({
-      resolved: 7,
-      total: 19,
-      pending: 12,
+      resolved: 0,
+      total: 0,
+      pending: 0,
     });
   });
 

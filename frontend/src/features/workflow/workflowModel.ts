@@ -27,22 +27,6 @@ function applicableMilestones(
 export function workflowMilestoneProgress(
   dashboard: NormalizedWorkflowDashboard,
 ): MilestoneProgress {
-  const backendTotal = dashboard.totalMilestoneCount;
-  const backendResolved = dashboard.resolvedMilestoneCount;
-  if (
-    backendTotal !== undefined &&
-    backendResolved !== undefined &&
-    backendTotal >= 0 &&
-    backendResolved >= 0 &&
-    backendResolved <= backendTotal
-  ) {
-    return {
-      resolved: backendResolved,
-      total: backendTotal,
-      pending: backendTotal - backendResolved,
-    };
-  }
-
   const milestones = applicableMilestones(dashboard.stages);
   const resolved = milestones.filter((milestone) =>
     isResolvedStatus(milestone.resolutionStatus ?? milestone.status),

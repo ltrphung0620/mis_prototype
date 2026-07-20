@@ -1384,6 +1384,17 @@ class AIDecisionReasonDraft(BaseModel):
     evidence_ids: tuple[StrictStr, ...] = Field(min_length=1)
 
 
+class AIDecisionRecommendedActionDraft(BaseModel):
+    """Model-authored action attached to one exact selected reason."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    reason_code: StrictStr = Field(min_length=1)
+    action: StrictStr = Field(min_length=1)
+    source_reference_ids: tuple[StrictStr, ...] = Field(min_length=1)
+    evidence_ids: tuple[StrictStr, ...] = Field(min_length=1)
+
+
 class NegotiationConditionDraft(BaseModel):
     """Untrusted proposed condition limited to packet references and targets."""
 
@@ -1421,6 +1432,7 @@ class AIDecisionProposalDraft(BaseModel):
     recommendation: DecisionRecommendation
     executive_summary: StrictStr = Field(min_length=1)
     reasons: tuple[AIDecisionReasonDraft, ...] = Field(min_length=1)
+    recommended_actions: tuple[AIDecisionRecommendedActionDraft, ...] = ()
     conditions: tuple[NegotiationConditionDraft, ...] = ()
     selected_negotiation_strategy_ids: tuple[StrictStr, ...] = ()
     selected_option_ids: tuple[StrictStr, ...] = ()
@@ -1461,6 +1473,7 @@ class DecisionReason(AIDecisionReasonDraft):
     """Guarded reason with stable identity."""
 
     reason_id: StrictStr = Field(min_length=1)
+    recommended_action: StrictStr | None = None
 
 
 class NegotiationCondition(NegotiationConditionDraft):
@@ -1706,7 +1719,17 @@ def ai_decision_analysis_id(
         packet_id,
         recommendation,
         executive_summary,
-        tuple(item.model_dump(mode="json") for item in reasons),
+        tuple(
+            item.model_dump(
+                mode="json",
+                exclude=(
+                    {"recommended_action"}
+                    if item.recommended_action is None
+                    else set()
+                ),
+            )
+            for item in reasons
+        ),
         tuple(item.model_dump(mode="json") for item in conditions),
         selected_negotiation_strategy_ids,
         selected_option_ids,
@@ -1726,4 +1749,12 @@ def decision_card_id(card: DecisionCard) -> str:
         mode="json",
         exclude={"decision_card_id"},
     )
+    raw_reasons = payload.get("reasons")
+    if isinstance(raw_reasons, list):
+        for reason in raw_reasons:
+            if (
+                isinstance(reason, dict)
+                and reason.get("recommended_action") is None
+            ):
+                reason.pop("recommended_action", None)
     return deterministic_id("DCARD", payload)

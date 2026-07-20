@@ -9,6 +9,16 @@ import {
 } from "./useWorkflowPlayback";
 
 function dashboard(resolved: number, total = 4): NormalizedWorkflowDashboard {
+  const milestones = Array.from({ length: total }, (_, index) => ({
+    id: `STEP-${index + 1}`,
+    code: `STEP-${index + 1}`,
+    label: `BÆ°á»›c ${index + 1}`,
+    status: index < resolved ? "COMPLETED" : "PENDING",
+    resolutionStatus: index < resolved ? "COMPLETED" : undefined,
+    waitingFor: [],
+    applicability: "APPLICABLE",
+    artifactIds: [],
+  }));
   return {
     datasetId: "DATASET",
     snapshotHash: "HASH",
@@ -36,7 +46,18 @@ function dashboard(resolved: number, total = 4): NormalizedWorkflowDashboard {
       warnings: [],
       contractRequirements: [],
     },
-    stages: [],
+    stages: [
+      {
+        id: "STAGE-1",
+        code: "STAGE-1",
+        label: "Giai Ä‘oáº¡n 1",
+        status: resolved === total ? "COMPLETED" : "RUNNING",
+        order: 1,
+        parallel: false,
+        applicability: "APPLICABLE",
+        milestones,
+      },
+    ],
     runArtifacts: [],
     approvalRequestIds: [],
     pendingInteractions: [],
@@ -61,7 +82,7 @@ describe("workflow playback", () => {
     expect(advancePlayback(0, 3)).toBe(1);
     expect(advancePlayback(2, 3)).toBe(3);
     expect(advancePlayback(3, 3)).toBe(3);
-    expect(advancePlayback(1, 4, [1, 3, 4])).toBe(3);
+    expect(advancePlayback(1, 4)).toBe(2);
   });
 
   it("paces visual progress and reveals Decision Card only after catching up", () => {

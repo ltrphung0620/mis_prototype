@@ -2,10 +2,15 @@
 
 import asyncio
 from collections.abc import Callable
+from dataclasses import dataclass
 from datetime import UTC, date, datetime
 from typing import Protocol
 
-from opc_mis.domain.approvals import ApprovalCheckpointSet, ApprovalExecutionResult
+from opc_mis.domain.approvals import (
+    ApprovalCheckpointSet,
+    ApprovalExecutionResult,
+    ApprovalRequest,
+)
 from opc_mis.domain.artifacts import ArtifactEnvelope
 from opc_mis.domain.banking_input_models import (
     BankingAmountInputSubmission,
@@ -50,6 +55,7 @@ from opc_mis.domain.decision_models import (
     DecisionCard,
     DecisionCardExecutionResult,
     DecisionRecommendation,
+    ExactDecisionArtifactRef,
 )
 from opc_mis.domain.decision_post_banking_models import (
     DecisionPostBankingExecutionResult,
@@ -102,6 +108,14 @@ from opc_mis.domain.internal_decision_package_models import (
     InternalDecisionPackageExecutionResult,
 )
 from opc_mis.domain.lineage import deterministic_id
+from opc_mis.domain.negotiation_models import (
+    NegotiationOutcome,
+    NegotiationOutcomeExecutionResult,
+    NegotiationOutcomeInput,
+    NegotiationOutcomeStatus,
+    NegotiationTermsSentInput,
+    negotiation_outcome_action_payload,
+)
 from opc_mis.domain.operations_models import OperationsExecutionResult
 from opc_mis.domain.planner_models import PlannerExecutionResult
 from opc_mis.domain.post_decision_models import (
@@ -125,6 +139,20 @@ _BANKING_PRECHECK_EXECUTION_FAILURE = (
     "Banking precheck execution failed safely; internal provider and "
     "infrastructure details were withheld."
 )
+_RECOVERABLE_DECISION_REPLAY_FAILURES = (
+    "Existing AI_DECISION_ANALYSIS artifact is not reusable.",
+    "Existing DECISION_CARD artifact is not reusable.",
+)
+
+
+@dataclass(frozen=True)
+class _PersistedDecisionBundle:
+    """Exact validated Decision outputs reused during workflow replay."""
+
+    analysis_artifact: ArtifactEnvelope
+    analysis: AIDecisionAnalysis
+    card_artifact: ArtifactEnvelope
+    card: DecisionCard
 
 
 class AutomaticWorkflowServices(Protocol):
@@ -281,6 +309,23 @@ class AutomaticWorkflowServices(Protocol):
         approval_request_id: str,
     ) -> PostDecisionUpdateExecutionResult: ...
 
+    async def negotiation_outcome(
+        self,
+        *,
+        evaluation_case_id: str,
+        submission: NegotiationOutcomeInput,
+    ) -> NegotiationOutcomeExecutionResult: ...
+
+    async def finalize_negotiation(
+        self,
+        *,
+        evaluation_case_id: str,
+        workflow_run_id: str,
+        original_update_artifact: ArtifactEnvelope,
+        outcome_artifact: ArtifactEnvelope,
+        approval_request: "ApprovalRequest",
+    ) -> ArtifactEnvelope: ...
+
     async def external_document_submission_proposal(
         self,
         *,
@@ -384,6 +429,8 @@ class CaseWorkflowOrchestrator:
             failure_reason=None,
         )
         await self._event(run, "WORKFLOW_STARTED", None)
+        if await self._resume_final_decision_path(run):
+            return
         active_node = WorkflowNode.PLANNER_INTAKE
         try:
             run = await self._planner(run)
@@ -1358,40 +1405,80 @@ class CaseWorkflowOrchestrator:
             run.workflow_run_id,
             WorkflowNode.DECISION_CARD_COMPOSITION.value,
         )
-        should_finish_node = not (
-            self._node_completed(existing)
-            and existing is not None
+        same_completed_input = (
+            existing is not None
             and existing.input_hash == expected_hash
+            and self._node_completed(existing)
         )
-        node = (
-            await self._start_node(
+        bundle = await self._load_reusable_decision_bundle(
+            run=run,
+            node=existing,
+            expected_hash=expected_hash,
+            final_risk_artifact=final_risk_artifact,
+        )
+        if bundle is not None:
+            analysis_artifact = bundle.analysis_artifact
+            analysis = bundle.analysis
+            card_artifact = bundle.card_artifact
+            card = bundle.card
+            if (
+                existing is not None
+                and existing.status is WorkflowNodeStatus.FAILED_SAFE
+            ):
+                recovered_status = (
+                    WorkflowNodeStatus.COMPLETED_WITH_WARNINGS
+                    if ValidationStatus.VALID_WITH_WARNINGS
+                    in {
+                        analysis_artifact.validation_status,
+                        card_artifact.validation_status,
+                    }
+                    else WorkflowNodeStatus.COMPLETED
+                )
+                await self._finish_node(
+                    existing,
+                    recovered_status,
+                    (analysis_artifact, card_artifact),
+                )
+                await self._event(
+                    run,
+                    "DECISION_CARD_REPLAY_RECOVERED",
+                    WorkflowNode.DECISION_CARD_COMPOSITION,
+                    {
+                        "analysis_artifact_id": analysis_artifact.artifact_id,
+                        "decision_card_artifact_id": card_artifact.artifact_id,
+                    },
+                )
+        else:
+            if same_completed_input:
+                await self._fail(
+                    run,
+                    WorkflowNode.DECISION_CARD_COMPOSITION,
+                    "Completed Decision Card outputs cannot be reconciled with their "
+                    "persisted node state.",
+                )
+                return
+            node = await self._start_node(
                 run,
                 WorkflowNode.DECISION_CARD_COMPOSITION,
                 identity_inputs=identity_inputs,
             )
-            if should_finish_node
-            else existing
-        )
-        if node is None:  # pragma: no cover
-            raise RuntimeError("Decision Card node was not initialized.")
-        analysis_result = await self._services.decision_analysis(
-            evaluation_case_id=run.evaluation_case_id,
-            workflow_run_id=run.workflow_run_id,
-            final_risk_artifact_id=final_risk_artifact.artifact_id,
-        )
-        analysis_artifacts = tuple(
-            item
-            for item in analysis_result.generated_artifacts
-            if item.artifact_type is ArtifactType.AI_DECISION_ANALYSIS
-            and item.validation_status
-            in {ValidationStatus.VALID, ValidationStatus.VALID_WITH_WARNINGS}
-        )
-        if (
-            analysis_result.status is not WorkflowStatus.COMPLETED
-            or analysis_result.analysis is None
-            or len(analysis_artifacts) != 1
-        ):
-            if should_finish_node:
+            analysis_result = await self._services.decision_analysis(
+                evaluation_case_id=run.evaluation_case_id,
+                workflow_run_id=run.workflow_run_id,
+                final_risk_artifact_id=final_risk_artifact.artifact_id,
+            )
+            analysis_artifacts = tuple(
+                item
+                for item in analysis_result.generated_artifacts
+                if item.artifact_type is ArtifactType.AI_DECISION_ANALYSIS
+                and item.validation_status
+                in {ValidationStatus.VALID, ValidationStatus.VALID_WITH_WARNINGS}
+            )
+            if (
+                analysis_result.status is not WorkflowStatus.COMPLETED
+                or analysis_result.analysis is None
+                or len(analysis_artifacts) != 1
+            ):
                 await self._finish_node(
                     node,
                     WorkflowNodeStatus.FAILED_SAFE,
@@ -1399,72 +1486,66 @@ class CaseWorkflowOrchestrator:
                     failure_reason="; ".join(analysis_result.validation_errors)
                     or "Decision analysis did not return one exact artifact.",
                 )
-            await self._fail(
-                run,
-                WorkflowNode.DECISION_CARD_COMPOSITION,
-                "Decision analysis failed safely: "
-                + "; ".join(analysis_result.validation_errors),
+                await self._fail(
+                    run,
+                    WorkflowNode.DECISION_CARD_COMPOSITION,
+                    "Decision analysis failed safely: "
+                    + "; ".join(analysis_result.validation_errors),
+                )
+                return
+            analysis_artifact = analysis_artifacts[0]
+            card_result = await self._services.decision_card(
+                evaluation_case_id=run.evaluation_case_id,
+                workflow_run_id=run.workflow_run_id,
+                analysis_artifact_id=analysis_artifact.artifact_id,
             )
-            return
-        analysis_artifact = analysis_artifacts[0]
-        card_result = await self._services.decision_card(
-            evaluation_case_id=run.evaluation_case_id,
-            workflow_run_id=run.workflow_run_id,
-            analysis_artifact_id=analysis_artifact.artifact_id,
-        )
-        card_artifacts = tuple(
-            item
-            for item in card_result.generated_artifacts
-            if item.artifact_type is ArtifactType.DECISION_CARD
-            and item.validation_status
-            in {ValidationStatus.VALID, ValidationStatus.VALID_WITH_WARNINGS}
-        )
-        if (
-            card_result.status is not WorkflowStatus.COMPLETED
-            or card_result.decision_card is None
-            or len(card_artifacts) != 1
-        ):
-            if should_finish_node:
+            card_artifacts = tuple(
+                item
+                for item in card_result.generated_artifacts
+                if item.artifact_type is ArtifactType.DECISION_CARD
+                and item.validation_status
+                in {ValidationStatus.VALID, ValidationStatus.VALID_WITH_WARNINGS}
+            )
+            if (
+                card_result.status is not WorkflowStatus.COMPLETED
+                or card_result.decision_card is None
+                or len(card_artifacts) != 1
+            ):
                 await self._finish_node(
                     node,
                     WorkflowNodeStatus.FAILED_SAFE,
-                    (*analysis_result.generated_artifacts, *card_result.generated_artifacts),
+                    (
+                        *analysis_result.generated_artifacts,
+                        *card_result.generated_artifacts,
+                    ),
                     failure_reason="; ".join(card_result.validation_errors)
                     or "Decision Card did not return one exact artifact.",
                 )
-            await self._fail(
-                run,
-                WorkflowNode.DECISION_CARD_COMPOSITION,
-                "Decision Card failed safely: "
-                + "; ".join(card_result.validation_errors),
-            )
-            return
-        card_artifact = card_artifacts[0]
-        card = DecisionCard.model_validate(card_artifact.payload)
-        analysis = analysis_result.analysis
-        if (
-            card != card_result.decision_card
-            or card_artifact.input_artifact_ids != (analysis_artifact.artifact_id,)
-            or card.ai_analysis_artifact.artifact_id != analysis_artifact.artifact_id
-            or card.final_risk_artifact.artifact_id != final_risk_artifact.artifact_id
-        ):
-            await self._fail(
-                run,
-                WorkflowNode.DECISION_CARD_COMPOSITION,
-                "Decision Card differs from its exact analysis and Final Risk inputs.",
-            )
-            return
-        if (
-            analysis.source is not DecisionAnalysisSource.OPENAI
-            and card.recommendation is not DecisionRecommendation.NOT_EVALUABLE
-        ):
-            await self._fail(
-                run,
-                WorkflowNode.DECISION_CARD_COMPOSITION,
-                "Only an OpenAI analysis may produce an approvable Decision Card.",
-            )
-            return
-        if should_finish_node:
+                await self._fail(
+                    run,
+                    WorkflowNode.DECISION_CARD_COMPOSITION,
+                    "Decision Card failed safely: "
+                    + "; ".join(card_result.validation_errors),
+                )
+                return
+            card_artifact = card_artifacts[0]
+            card = DecisionCard.model_validate(card_artifact.payload)
+            analysis = analysis_result.analysis
+            if (
+                card != card_result.decision_card
+                or card_artifact.input_artifact_ids
+                != (analysis_artifact.artifact_id,)
+                or card.ai_analysis_artifact.artifact_id
+                != analysis_artifact.artifact_id
+                or card.final_risk_artifact.artifact_id
+                != final_risk_artifact.artifact_id
+            ):
+                await self._fail(
+                    run,
+                    WorkflowNode.DECISION_CARD_COMPOSITION,
+                    "Decision Card differs from its exact analysis and Final Risk inputs.",
+                )
+                return
             component_status = (
                 ComponentStatus.COMPLETED_WITH_WARNINGS
                 if ComponentStatus.COMPLETED_WITH_WARNINGS
@@ -1476,6 +1557,16 @@ class CaseWorkflowOrchestrator:
                 self._component_node_status(component_status),
                 (*analysis_result.generated_artifacts, *card_result.generated_artifacts),
             )
+        if (
+            analysis.source is not DecisionAnalysisSource.OPENAI
+            and card.recommendation is not DecisionRecommendation.NOT_EVALUABLE
+        ):
+            await self._fail(
+                run,
+                WorkflowNode.DECISION_CARD_COMPOSITION,
+                "Only an OpenAI analysis may produce an approvable Decision Card.",
+            )
+            return
         prior_events = await self._events.list_after(run.workflow_run_id, 0)
         if not any(
             item.event_type == "DECISION_CARD_READY"
@@ -1509,6 +1600,34 @@ class CaseWorkflowOrchestrator:
             )
             await self._complete(run, WorkflowNode.DECISION_CARD_READY)
             return
+        await self._request_final_decision_approval(
+            run=run,
+            card_artifact=card_artifact,
+            card=card,
+        )
+
+    async def _request_final_decision_approval(
+        self,
+        *,
+        run: CaseWorkflowRun,
+        card_artifact: ArtifactEnvelope,
+        card: DecisionCard,
+    ) -> None:
+        """Open the final Founder gate once, then continue from its exact approval."""
+        approved = await self._approved_request_for_subject(
+            run=run,
+            action=ProtectedAction.CONFIRM_FINAL_CONTRACT_DECISION,
+            subject_artifact_id=card_artifact.artifact_id,
+        )
+        if approved is not None:
+            await self._continue_authorized_final_decision(
+                run=run,
+                card_artifact=card_artifact,
+                card=card,
+                approval=approved,
+            )
+            return
+
         run = await self._save_run(
             run,
             status=WorkflowStatus.RUNNING,
@@ -1519,7 +1638,7 @@ class CaseWorkflowOrchestrator:
         approval_result = await self._services.request_workflow_protected_action(
             command=ActionCommand(
                 action_type=ProtectedAction.CONFIRM_FINAL_CONTRACT_DECISION,
-                evaluation_case_id=run.evaluation_case_id,
+                evaluation_case_id=run.evaluation_case_id or "",
                 payload_artifact_id=card_artifact.artifact_id,
                 requested_by="CASE_WORKFLOW_ORCHESTRATOR",
                 payload=final_decision_action_payload(card),
@@ -1528,38 +1647,18 @@ class CaseWorkflowOrchestrator:
         )
         if approval_result.action_authorized:
             approval = approval_result.approval_request
-            if (
-                approval is None
-                or approval.status is not ApprovalRequestStatus.APPROVED
-            ):
+            if approval is None or approval.status is not ApprovalRequestStatus.APPROVED:
                 await self._fail(
                     run,
                     WorkflowNode.FINAL_DECISION_APPROVAL,
                     "Final Decision requires an exact affirmative Founder approval.",
                 )
                 return
-            refreshed = await self._require_run(run.workflow_run_id)
-            refreshed = await self._save_run(
-                refreshed,
-                status=WorkflowStatus.RUNNING,
-                current_stage=WorkflowNode.POST_DECISION_UPDATE.value,
-                pending_request_ids=(),
-                failure_reason=None,
-            )
-            await self._event(
-                refreshed,
-                "FINAL_DECISION_AUTHORIZED",
-                WorkflowNode.FINAL_DECISION_APPROVAL,
-                {
-                    "approval_request_id": approval.request_id,
-                    "decision_card_artifact_id": card_artifact.artifact_id,
-                    "recommendation": card.recommendation.value,
-                },
-            )
-            await self._run_post_decision_update(
-                run=refreshed,
+            await self._continue_authorized_final_decision(
+                run=run,
                 card_artifact=card_artifact,
-                approval_request_id=approval.request_id,
+                card=card,
+                approval=approval,
             )
             return
         refreshed = await self._require_run(run.workflow_run_id)
@@ -1576,6 +1675,41 @@ class CaseWorkflowOrchestrator:
             "Final Decision was neither authorized nor paused by Governance.",
         )
 
+    async def _continue_authorized_final_decision(
+        self,
+        *,
+        run: CaseWorkflowRun,
+        card_artifact: ArtifactEnvelope,
+        card: DecisionCard,
+        approval: ApprovalRequest,
+    ) -> None:
+        """Record the final approval once and enter the deterministic post-update."""
+        refreshed = await self._require_run(run.workflow_run_id)
+        refreshed = await self._save_run(
+            refreshed,
+            status=WorkflowStatus.RUNNING,
+            current_stage=WorkflowNode.POST_DECISION_UPDATE.value,
+            pending_request_ids=(),
+            failure_reason=None,
+        )
+        await self._event_once(
+            refreshed,
+            "FINAL_DECISION_AUTHORIZED",
+            WorkflowNode.FINAL_DECISION_APPROVAL,
+            "approval_request_id",
+            approval.request_id,
+            {
+                "approval_request_id": approval.request_id,
+                "decision_card_artifact_id": card_artifact.artifact_id,
+                "recommendation": card.recommendation.value,
+            },
+        )
+        await self._run_post_decision_update(
+            run=refreshed,
+            card_artifact=card_artifact,
+            approval_request_id=approval.request_id,
+        )
+
     async def _run_post_decision_update(
         self,
         *,
@@ -1586,10 +1720,59 @@ class CaseWorkflowOrchestrator:
         """Persist the approved outcome and route its exact deterministic branch."""
         if run.evaluation_case_id is None:  # pragma: no cover
             raise RuntimeError("Post-decision update requires an evaluation case.")
+        identity_inputs = (card_artifact.artifact_id, approval_request_id)
+        expected_hash = self._node_input_hash(
+            run,
+            WorkflowNode.POST_DECISION_UPDATE,
+            identity_inputs,
+        )
+        existing = await self._workflows.get_node(
+            run.workflow_run_id,
+            WorkflowNode.POST_DECISION_UPDATE.value,
+        )
+        reusable = await self._initial_post_decision_update(
+            run=run,
+            card_artifact=card_artifact,
+            approval_request_id=approval_request_id,
+        )
+        if reusable is not None:
+            update_artifact, update = reusable
+            if (
+                existing is not None
+                and existing.input_hash == expected_hash
+                and existing.status is WorkflowNodeStatus.FAILED_SAFE
+            ):
+                await self._finish_node(
+                    existing,
+                    WorkflowNodeStatus.COMPLETED,
+                    (update_artifact,),
+                )
+            await self._event_once(
+                run,
+                "POST_DECISION_UPDATE_COMPLETED",
+                WorkflowNode.POST_DECISION_UPDATE,
+                "update_artifact_id",
+                update_artifact.artifact_id,
+                {
+                    "update_id": update.update_id,
+                    "update_artifact_id": update_artifact.artifact_id,
+                    "outcome": update.outcome.value,
+                    "external_document_release_required": (
+                        update.external_document_release_required
+                    ),
+                },
+            )
+            await self._route_post_decision_update(
+                run=run,
+                card_artifact=card_artifact,
+                update_artifact=update_artifact,
+                update=update,
+            )
+            return
         node = await self._start_node(
             run,
             WorkflowNode.POST_DECISION_UPDATE,
-            identity_inputs=(card_artifact.artifact_id, approval_request_id),
+            identity_inputs=identity_inputs,
         )
         result = await self._services.post_decision_update(
             evaluation_case_id=run.evaluation_case_id,
@@ -1636,10 +1819,12 @@ class CaseWorkflowOrchestrator:
                 "Post-decision update differs from its exact approved Card.",
             )
             return
-        await self._event(
+        await self._event_once(
             run,
             "POST_DECISION_UPDATE_COMPLETED",
             WorkflowNode.POST_DECISION_UPDATE,
+            "update_artifact_id",
+            update_artifact.artifact_id,
             {
                 "update_id": update.update_id,
                 "update_artifact_id": update_artifact.artifact_id,
@@ -1649,8 +1834,28 @@ class CaseWorkflowOrchestrator:
                 ),
             },
         )
+        await self._route_post_decision_update(
+            run=run,
+            card_artifact=card_artifact,
+            update_artifact=update_artifact,
+            update=update,
+        )
+
+    async def _route_post_decision_update(
+        self,
+        *,
+        run: CaseWorkflowRun,
+        card_artifact: ArtifactEnvelope,
+        update_artifact: ArtifactEnvelope,
+        update: PostDecisionUpdate,
+    ) -> None:
+        """Route an already-validated post-decision update without recreating it."""
         if update.outcome is PostDecisionOutcome.NEGOTIATION_AUTHORIZED:
-            await self._complete(run, WorkflowNode.NEGOTIATION_IN_PROGRESS)
+            await self._run_negotiation_flow(
+                run=run,
+                card_artifact=card_artifact,
+                update_artifact=update_artifact,
+            )
             return
         if update.outcome is PostDecisionOutcome.CASE_CLOSED_NO_EXTERNAL_ACTION:
             await self._complete(run, WorkflowNode.FINAL_DECISION_NOT_ACCEPTED)
@@ -1661,6 +1866,189 @@ class CaseWorkflowOrchestrator:
         await self._run_external_submission_proposal(
             run=run,
             update_artifact=update_artifact,
+        )
+
+    async def _run_negotiation_flow(
+        self,
+        *,
+        run: CaseWorkflowRun,
+        card_artifact: ArtifactEnvelope,
+        update_artifact: ArtifactEnvelope,
+    ) -> None:
+        """Recover or advance the single conditional-negotiation round."""
+        terms_node = await self._workflows.get_node(
+            run.workflow_run_id, WorkflowNode.NEGOTIATION_TERMS_SENT.value
+        )
+        if not self._node_completed(terms_node):
+            request_id = deterministic_id(
+                "NTS", run.workflow_run_id, card_artifact.artifact_id
+            )
+            if terms_node is None or terms_node.status is not WorkflowNodeStatus.WAITING_FOR_INPUT:
+                terms_node = await self._start_node(
+                    run,
+                    WorkflowNode.NEGOTIATION_TERMS_SENT,
+                    identity_inputs=(card_artifact.artifact_id, card_artifact.input_hash),
+                )
+                await self._finish_node(
+                    terms_node,
+                    WorkflowNodeStatus.WAITING_FOR_INPUT,
+                    (),
+                    waiting_for=(request_id,),
+                )
+            await self._save_run(
+                run,
+                status=WorkflowStatus.WAITING_FOR_INPUT,
+                current_stage=WorkflowNode.NEGOTIATION_TERMS_SENT.value,
+                pending_request_ids=(request_id,),
+                resume_stage=WorkflowNode.NEGOTIATION_TERMS_SENT.value,
+                failure_reason=None,
+            )
+            return
+
+        artifacts = await self._artifacts.list_by_case(run.evaluation_case_id or "")
+        outcome_artifact: ArtifactEnvelope | None = None
+        outcome: NegotiationOutcome | None = None
+        candidates = sorted(
+            (
+                item
+                for item in artifacts
+                if item.artifact_type is ArtifactType.NEGOTIATION_OUTCOME
+                and item.validation_status
+                in {ValidationStatus.VALID, ValidationStatus.VALID_WITH_WARNINGS}
+            ),
+            key=lambda item: item.version,
+            reverse=True,
+        )
+        for candidate in candidates:
+            candidate_outcome = NegotiationOutcome.model_validate(candidate.payload)
+            if (
+                candidate_outcome.decision_card_artifact.artifact_id
+                == card_artifact.artifact_id
+                and candidate_outcome.decision_card_artifact.version
+                == card_artifact.version
+                and candidate_outcome.decision_card_artifact.input_hash
+                == card_artifact.input_hash
+            ):
+                outcome_artifact = candidate
+                outcome = candidate_outcome
+                break
+        if outcome_artifact is None:
+            request_id = deterministic_id(
+                "NIN", run.workflow_run_id, card_artifact.artifact_id
+            )
+            outcome_node = await self._workflows.get_node(
+                run.workflow_run_id, WorkflowNode.NEGOTIATION_OUTCOME_RECEIVED.value
+            )
+            if (
+                outcome_node is None
+                or outcome_node.status is not WorkflowNodeStatus.WAITING_FOR_INPUT
+            ):
+                outcome_node = await self._start_node(
+                    run,
+                    WorkflowNode.NEGOTIATION_OUTCOME_RECEIVED,
+                    identity_inputs=(card_artifact.artifact_id, card_artifact.input_hash),
+                )
+                await self._finish_node(
+                    outcome_node,
+                    WorkflowNodeStatus.WAITING_FOR_INPUT,
+                    (),
+                    waiting_for=(request_id,),
+                )
+            await self._save_run(
+                run,
+                status=WorkflowStatus.WAITING_FOR_INPUT,
+                current_stage=WorkflowNode.NEGOTIATION_OUTCOME_RECEIVED.value,
+                pending_request_ids=(request_id,),
+                resume_stage=WorkflowNode.NEGOTIATION_OUTCOME_RECEIVED.value,
+                failure_reason=None,
+            )
+            return
+        if outcome is None:  # pragma: no cover - narrowed with outcome_artifact
+            raise RuntimeError("Negotiation outcome selection is inconsistent.")
+        run = await self._save_run(
+            run,
+            status=WorkflowStatus.RUNNING,
+            current_stage=WorkflowNode.NEGOTIATION_FINAL_CONFIRMATION.value,
+            pending_request_ids=(),
+            resume_stage=None,
+            failure_reason=None,
+        )
+        approval = await self._approved_request_for_subject(
+            run=run,
+            action=ProtectedAction.CONFIRM_NEGOTIATION_OUTCOME,
+            subject_artifact_id=outcome_artifact.artifact_id,
+        )
+        if approval is None:
+            approval_result = await self._services.request_workflow_protected_action(
+                command=ActionCommand(
+                    action_type=ProtectedAction.CONFIRM_NEGOTIATION_OUTCOME,
+                    evaluation_case_id=run.evaluation_case_id or "",
+                    payload_artifact_id=outcome_artifact.artifact_id,
+                    requested_by="CASE_WORKFLOW_ORCHESTRATOR",
+                    payload=negotiation_outcome_action_payload(outcome),
+                ),
+                workflow_run_id=run.workflow_run_id,
+            )
+            if not approval_result.action_authorized:
+                return
+            approval = approval_result.approval_request
+            if approval is None or approval.status is not ApprovalRequestStatus.APPROVED:
+                await self._fail(
+                    run,
+                    WorkflowNode.NEGOTIATION_FINAL_CONFIRMATION,
+                    "Negotiation outcome requires an exact affirmative Founder approval.",
+                )
+                return
+        confirmation_node = await self._workflows.get_node(
+            run.workflow_run_id, WorkflowNode.NEGOTIATION_FINAL_CONFIRMATION.value
+        )
+        if confirmation_node is None:
+            confirmation_node = await self._start_node(
+                run,
+                WorkflowNode.NEGOTIATION_FINAL_CONFIRMATION,
+                identity_inputs=(outcome_artifact.artifact_id, approval.request_id),
+            )
+        if not self._node_completed(confirmation_node):
+            await self._finish_node(
+                confirmation_node,
+                WorkflowNodeStatus.COMPLETED,
+                (outcome_artifact,),
+            )
+        resolved = await self._resolved_negotiation_update(
+            run=run,
+            original_update_artifact=update_artifact,
+            outcome_artifact=outcome_artifact,
+            approval_request_id=approval.request_id,
+        )
+        if resolved is None:
+            resolved_update_artifact = await self._services.finalize_negotiation(
+                evaluation_case_id=run.evaluation_case_id or "",
+                workflow_run_id=run.workflow_run_id,
+                original_update_artifact=update_artifact,
+                outcome_artifact=outcome_artifact,
+                approval_request=approval,
+            )
+            resolved_update = PostDecisionUpdate.model_validate(
+                resolved_update_artifact.payload
+            )
+        else:
+            resolved_update_artifact, resolved_update = resolved
+        if not outcome.all_conditions_accepted:
+            if resolved_update.outcome is not PostDecisionOutcome.CASE_CLOSED_NO_EXTERNAL_ACTION:
+                await self._fail(
+                    run,
+                    WorkflowNode.NEGOTIATION_FINAL_CONFIRMATION,
+                    "Rejected negotiation conditions produced an invalid final route.",
+                )
+                return
+            await self._complete(run, WorkflowNode.FINAL_DECISION_NOT_ACCEPTED)
+            return
+        if not resolved_update.external_document_release_required:
+            await self._complete(run, WorkflowNode.FINAL_DECISION_ACCEPTED)
+            return
+        await self._run_external_submission_proposal(
+            run=run,
+            update_artifact=resolved_update_artifact,
         )
 
     async def _run_external_submission_proposal(
@@ -1681,6 +2069,18 @@ class CaseWorkflowOrchestrator:
             pending_request_ids=(),
             failure_reason=None,
         )
+        reusable = await self._external_submission_proposal_for_update(
+            run=run,
+            update_artifact=update_artifact,
+        )
+        if reusable is not None:
+            proposal_artifact, proposal = reusable
+            await self._continue_external_submission_proposal(
+                run=run,
+                proposal_artifact=proposal_artifact,
+                proposal=proposal,
+            )
+            return
         node = await self._start_node(
             run,
             WorkflowNode.EXTERNAL_DOCUMENT_SUBMISSION_PROPOSAL,
@@ -1739,99 +2139,134 @@ class CaseWorkflowOrchestrator:
                 "External submission proposal differs from its exact approved update.",
             )
             return
-        approval_result = await self._services.request_workflow_protected_action(
-            command=ActionCommand(
-                action_type=ProtectedAction.SEND_DOCUMENT_TO_EXTERNAL_PARTNER,
-                evaluation_case_id=run.evaluation_case_id,
-                payload_artifact_id=proposal_artifact.artifact_id,
-                requested_by="CASE_WORKFLOW_ORCHESTRATOR",
-                payload=external_document_release_action_payload(proposal),
-            ),
-            workflow_run_id=run.workflow_run_id,
+        await self._continue_external_submission_proposal(
+            run=run,
+            proposal_artifact=proposal_artifact,
+            proposal=proposal,
         )
-        if approval_result.action_authorized:
+
+    async def _continue_external_submission_proposal(
+        self,
+        *,
+        run: CaseWorkflowRun,
+        proposal_artifact: ArtifactEnvelope,
+        proposal: ExternalDocumentSubmissionProposal,
+    ) -> None:
+        """Reuse one external proposal and wait for, or consume, its exact approval."""
+        approval = await self._approved_request_for_subject(
+            run=run,
+            action=ProtectedAction.SEND_DOCUMENT_TO_EXTERNAL_PARTNER,
+            subject_artifact_id=proposal_artifact.artifact_id,
+        )
+        if approval is None:
+            approval_result = await self._services.request_workflow_protected_action(
+                command=ActionCommand(
+                    action_type=ProtectedAction.SEND_DOCUMENT_TO_EXTERNAL_PARTNER,
+                    evaluation_case_id=run.evaluation_case_id or "",
+                    payload_artifact_id=proposal_artifact.artifact_id,
+                    requested_by="CASE_WORKFLOW_ORCHESTRATOR",
+                    payload=external_document_release_action_payload(proposal),
+                ),
+                workflow_run_id=run.workflow_run_id,
+            )
+            if not approval_result.action_authorized:
+                refreshed = await self._require_run(run.workflow_run_id)
+                if refreshed.status in {
+                    WorkflowStatus.WAITING_FOR_APPROVAL,
+                    WorkflowStatus.WAITING_FOR_INPUT,
+                    WorkflowStatus.COMPLETED,
+                    WorkflowStatus.BLOCKED,
+                }:
+                    return
+                await self._fail(
+                    refreshed,
+                    WorkflowNode.EXTERNAL_DOCUMENT_SUBMISSION_PROPOSAL,
+                    "External submission was neither authorized nor paused by Governance.",
+                )
+                return
             approval = approval_result.approval_request
-            if (
-                approval is None
-                or approval.status is not ApprovalRequestStatus.APPROVED
-            ):
+            if approval is None or approval.status is not ApprovalRequestStatus.APPROVED:
                 await self._fail(
                     run,
                     WorkflowNode.EXTERNAL_DOCUMENT_SUBMISSION_PROPOSAL,
                     "External submission requires exact affirmative authorization.",
                 )
                 return
-            refreshed = await self._require_run(run.workflow_run_id)
-            readiness_node = await self._start_node(
-                refreshed,
-                WorkflowNode.READY_FOR_EXTERNAL_SUBMISSION,
-                identity_inputs=(
-                    proposal_artifact.artifact_id,
-                    approval.request_id,
-                ),
-            )
-            readiness_result = await self._services.external_submission_readiness(
-                evaluation_case_id=run.evaluation_case_id,
-                workflow_run_id=run.workflow_run_id,
-                proposal_artifact_id=proposal_artifact.artifact_id,
-                approval_request_id=approval.request_id,
-            )
-            await self._finish_node(
-                readiness_node,
-                self._result_node_status(
-                    readiness_result.status,
-                    readiness_result.component_status,
-                ),
-                readiness_result.generated_artifacts,
-                failure_reason="; ".join(readiness_result.validation_errors)
-                or None,
-            )
-            readiness = readiness_result.readiness
-            if (
-                readiness_result.status is not WorkflowStatus.COMPLETED
-                or readiness is None
-                or readiness_result.generated_artifacts
-                or readiness.adapter_invoked
-                or readiness.submission_receipt_created
-                or readiness.external_submission_performed
-            ):
-                await self._fail(
-                    refreshed,
-                    WorkflowNode.READY_FOR_EXTERNAL_SUBMISSION,
-                    "External readiness failed or claimed an unsupported connector action.",
-                )
-                return
-            await self._event(
-                refreshed,
-                "READY_FOR_EXTERNAL_SUBMISSION",
-                WorkflowNode.READY_FOR_EXTERNAL_SUBMISSION,
-                {
-                    "readiness_id": readiness.readiness_id,
-                    "proposal_artifact_id": proposal_artifact.artifact_id,
-                    "approval_request_id": approval.request_id,
-                    "recipient": proposal.recipient,
-                    "external_submission_performed": False,
-                    "submission_receipt_created": False,
-                },
-            )
-            await self._complete(
-                refreshed,
-                WorkflowNode.READY_FOR_EXTERNAL_SUBMISSION,
-            )
-            return
-        refreshed = await self._require_run(run.workflow_run_id)
-        if refreshed.status in {
-            WorkflowStatus.WAITING_FOR_APPROVAL,
-            WorkflowStatus.WAITING_FOR_INPUT,
-            WorkflowStatus.COMPLETED,
-            WorkflowStatus.BLOCKED,
-        }:
-            return
-        await self._fail(
-            refreshed,
-            WorkflowNode.EXTERNAL_DOCUMENT_SUBMISSION_PROPOSAL,
-            "External submission was neither authorized nor paused by Governance.",
+        await self._complete_external_submission_readiness(
+            run=run,
+            proposal_artifact=proposal_artifact,
+            proposal=proposal,
+            approval=approval,
         )
+
+    async def _complete_external_submission_readiness(
+        self,
+        *,
+        run: CaseWorkflowRun,
+        proposal_artifact: ArtifactEnvelope,
+        proposal: ExternalDocumentSubmissionProposal,
+        approval: ApprovalRequest,
+    ) -> None:
+        """Create connector-safe readiness exactly once after external approval."""
+        refreshed = await self._require_run(run.workflow_run_id)
+        readiness_node = await self._workflows.get_node(
+            refreshed.workflow_run_id,
+            WorkflowNode.READY_FOR_EXTERNAL_SUBMISSION.value,
+        )
+        if self._node_completed(readiness_node):
+            await self._complete(refreshed, WorkflowNode.READY_FOR_EXTERNAL_SUBMISSION)
+            return
+        readiness_node = await self._start_node(
+            refreshed,
+            WorkflowNode.READY_FOR_EXTERNAL_SUBMISSION,
+            identity_inputs=(proposal_artifact.artifact_id, approval.request_id),
+        )
+        readiness_result = await self._services.external_submission_readiness(
+            evaluation_case_id=run.evaluation_case_id or "",
+            workflow_run_id=run.workflow_run_id,
+            proposal_artifact_id=proposal_artifact.artifact_id,
+            approval_request_id=approval.request_id,
+        )
+        await self._finish_node(
+            readiness_node,
+            self._result_node_status(
+                readiness_result.status,
+                readiness_result.component_status,
+            ),
+            readiness_result.generated_artifacts,
+            failure_reason="; ".join(readiness_result.validation_errors) or None,
+        )
+        readiness = readiness_result.readiness
+        if (
+            readiness_result.status is not WorkflowStatus.COMPLETED
+            or readiness is None
+            or readiness_result.generated_artifacts
+            or readiness.adapter_invoked
+            or readiness.submission_receipt_created
+            or readiness.external_submission_performed
+        ):
+            await self._fail(
+                refreshed,
+                WorkflowNode.READY_FOR_EXTERNAL_SUBMISSION,
+                "External readiness failed or claimed an unsupported connector action.",
+            )
+            return
+        await self._event_once(
+            refreshed,
+            "READY_FOR_EXTERNAL_SUBMISSION",
+            WorkflowNode.READY_FOR_EXTERNAL_SUBMISSION,
+            "proposal_artifact_id",
+            proposal_artifact.artifact_id,
+            {
+                "readiness_id": readiness.readiness_id,
+                "proposal_artifact_id": proposal_artifact.artifact_id,
+                "approval_request_id": approval.request_id,
+                "recipient": proposal.recipient,
+                "external_submission_performed": False,
+                "submission_receipt_created": False,
+            },
+        )
+        await self._complete(refreshed, WorkflowNode.READY_FOR_EXTERNAL_SUBMISSION)
 
     async def _internal_decision_source_artifacts(
         self,
@@ -2046,6 +2481,8 @@ class CaseWorkflowOrchestrator:
         decision_selected_option_ids: tuple[str, ...] = ()
         post_decision_update_id: str | None = None
         post_decision_outcome: PostDecisionOutcome | None = None
+        negotiation_outcome_id: str | None = None
+        negotiation_outcome_status: NegotiationOutcomeStatus | None = None
         external_document_submission_proposal_id: str | None = None
         external_submission_authorized = False
         pending_approvals: tuple[str, ...] = ()
@@ -2374,14 +2811,44 @@ class CaseWorkflowOrchestrator:
                     post_update_artifact.payload
                 )
                 if (
-                    post_update_artifact.input_artifact_ids
-                    == (decision_card_artifact.artifact_id,)
-                    and candidate_update.decision_card_artifact.artifact_id
+                    candidate_update.decision_card_artifact.artifact_id
                     == decision_card_artifact.artifact_id
+                    and (
+                        post_update_artifact.input_artifact_ids
+                        == (decision_card_artifact.artifact_id,)
+                        or (
+                            candidate_update.negotiation_outcome_artifact is not None
+                            and len(post_update_artifact.input_artifact_ids) == 2
+                            and post_update_artifact.input_artifact_ids[1]
+                            == candidate_update.negotiation_outcome_artifact.artifact_id
+                        )
+                    )
                 ):
                     post_update = candidate_update
                     post_decision_update_id = post_update.update_id
                     post_decision_outcome = post_update.outcome
+            negotiation_artifact = self._latest_validated(
+                artifacts, ArtifactType.NEGOTIATION_OUTCOME
+            )
+            if negotiation_artifact is not None:
+                candidate_negotiation_outcome = NegotiationOutcome.model_validate(
+                    negotiation_artifact.payload
+                )
+                if (
+                    decision_card_artifact is not None
+                    and candidate_negotiation_outcome.decision_card_artifact.artifact_id
+                    == decision_card_artifact.artifact_id
+                    and candidate_negotiation_outcome.decision_card_artifact.version
+                    == decision_card_artifact.version
+                    and candidate_negotiation_outcome.decision_card_artifact.input_hash
+                    == decision_card_artifact.input_hash
+                ):
+                    negotiation_outcome_id = (
+                        candidate_negotiation_outcome.negotiation_outcome_id
+                    )
+                    negotiation_outcome_status = (
+                        candidate_negotiation_outcome.outcome_status
+                    )
             external_proposal_artifact = self._latest_validated(
                 artifacts,
                 ArtifactType.EXTERNAL_DOCUMENT_SUBMISSION_PROPOSAL,
@@ -2589,6 +3056,8 @@ class CaseWorkflowOrchestrator:
             decision_selected_option_ids=decision_selected_option_ids,
             post_decision_update_id=post_decision_update_id,
             post_decision_outcome=post_decision_outcome,
+            negotiation_outcome_id=negotiation_outcome_id,
+            negotiation_outcome_status=negotiation_outcome_status,
             external_document_submission_proposal_id=(
                 external_document_submission_proposal_id
             ),
@@ -2606,6 +3075,120 @@ class CaseWorkflowOrchestrator:
             blocked_action=run.blocked_action,
             failure_reason=run.failure_reason,
         )
+
+    async def confirm_negotiation_terms_sent(
+        self,
+        *,
+        evaluation_case_id: str,
+        confirmation: NegotiationTermsSentInput,
+    ) -> CaseWorkflowRun:
+        """Record only that Founder sent the terms through an external channel."""
+        run = await self._require_run(confirmation.workflow_run_id)
+        if run.evaluation_case_id != evaluation_case_id:
+            raise CaseWorkflowConflictError("Workflow and evaluation case do not match.")
+        expected_request = deterministic_id(
+            "NTS", run.workflow_run_id, confirmation.decision_card_artifact_id
+        )
+        if (
+            run.status is not WorkflowStatus.WAITING_FOR_INPUT
+            or run.current_stage != WorkflowNode.NEGOTIATION_TERMS_SENT.value
+            or expected_request not in run.pending_request_ids
+        ):
+            raise CaseWorkflowConflictError(
+                "Terms confirmation is accepted only at the active negotiation step."
+            )
+        artifact = await self._artifacts.get(confirmation.decision_card_artifact_id)
+        if (
+            artifact is None
+            or artifact.evaluation_case_id != evaluation_case_id
+            or artifact.artifact_type is not ArtifactType.DECISION_CARD
+        ):
+            raise CaseWorkflowConflictError("Decision Card is not the active case Card.")
+        card = DecisionCard.model_validate(artifact.payload)
+        if card.recommendation is not DecisionRecommendation.NEGOTIATE_CONDITIONS_TO_ACCEPT:
+            raise CaseWorkflowConflictError("Decision Card does not require negotiation.")
+        node = await self._workflows.get_node(
+            run.workflow_run_id, WorkflowNode.NEGOTIATION_TERMS_SENT.value
+        )
+        if node is None:
+            raise CaseWorkflowConflictError("Negotiation terms node does not exist.")
+        await self._finish_node(node, WorkflowNodeStatus.COMPLETED, ())
+        updated = await self._save_run(
+            run,
+            status=WorkflowStatus.PENDING,
+            current_stage=WorkflowNode.NEGOTIATION_OUTCOME_RECEIVED.value,
+            pending_request_ids=(),
+            resume_stage=None,
+            failure_reason=None,
+        )
+        await self._event(
+            updated,
+            "NEGOTIATION_TERMS_SENT_CONFIRMED",
+            WorkflowNode.NEGOTIATION_TERMS_SENT,
+            {"decision_card_artifact_id": artifact.artifact_id},
+        )
+        return updated
+
+    async def submit_negotiation_outcome(
+        self,
+        *,
+        evaluation_case_id: str,
+        submission: NegotiationOutcomeInput,
+    ) -> tuple[NegotiationOutcomeExecutionResult, CaseWorkflowRun]:
+        """Persist all condition responses and schedule final Founder confirmation."""
+        run = await self._require_run(submission.workflow_run_id)
+        if run.evaluation_case_id != evaluation_case_id:
+            raise CaseWorkflowConflictError("Workflow and evaluation case do not match.")
+        expected_request = deterministic_id(
+            "NIN", run.workflow_run_id, submission.decision_card_artifact_id
+        )
+        if (
+            run.status is not WorkflowStatus.WAITING_FOR_INPUT
+            or run.current_stage != WorkflowNode.NEGOTIATION_OUTCOME_RECEIVED.value
+            or expected_request not in run.pending_request_ids
+        ):
+            raise CaseWorkflowConflictError(
+                "Negotiation responses are accepted only while this step is active."
+            )
+        result = await self._services.negotiation_outcome(
+            evaluation_case_id=evaluation_case_id,
+            submission=submission,
+        )
+        node = await self._workflows.get_node(
+            run.workflow_run_id, WorkflowNode.NEGOTIATION_OUTCOME_RECEIVED.value
+        )
+        if node is None:
+            raise CaseWorkflowConflictError("Negotiation outcome node does not exist.")
+        await self._finish_node(
+            node,
+            self._result_node_status(result.status, result.component_status),
+            result.generated_artifacts,
+            failure_reason="; ".join(result.validation_errors) or None,
+        )
+        if result.status is not WorkflowStatus.COMPLETED:
+            return result, run
+        updated = await self._save_run(
+            run,
+            status=WorkflowStatus.PENDING,
+            current_stage=WorkflowNode.NEGOTIATION_FINAL_CONFIRMATION.value,
+            pending_request_ids=(),
+            resume_stage=None,
+            failure_reason=None,
+        )
+        await self._event(
+            updated,
+            "NEGOTIATION_OUTCOME_RECORDED",
+            WorkflowNode.NEGOTIATION_OUTCOME_RECEIVED,
+            {
+                "negotiation_outcome_id": (
+                    result.outcome.negotiation_outcome_id if result.outcome else None
+                ),
+                "all_conditions_accepted": (
+                    result.outcome.all_conditions_accepted if result.outcome else False
+                ),
+            },
+        )
+        return result, updated
 
     async def submit_banking_input(
         self,
@@ -3315,9 +3898,296 @@ class CaseWorkflowOrchestrator:
             created_at=self._clock(),
         )
 
+    async def _resume_final_decision_path(self, run: CaseWorkflowRun) -> bool:
+        """Resume only the persisted decision tail instead of replaying steps 1-18."""
+        late_stages = {
+            WorkflowNode.FINAL_DECISION_APPROVAL.value,
+            WorkflowNode.POST_DECISION_UPDATE.value,
+            WorkflowNode.NEGOTIATION_TERMS_SENT.value,
+            WorkflowNode.NEGOTIATION_OUTCOME_RECEIVED.value,
+            WorkflowNode.NEGOTIATION_FINAL_CONFIRMATION.value,
+            WorkflowNode.EXTERNAL_DOCUMENT_SUBMISSION_PROPOSAL.value,
+        }
+        if run.current_stage not in late_stages:
+            return False
+        if run.evaluation_case_id is None:
+            await self._fail(
+                run,
+                WorkflowNode.DECISION_CARD_COMPOSITION,
+                "Decision-tail recovery requires an evaluation case.",
+            )
+            return True
+        artifacts = await self._artifacts.list_by_case(run.evaluation_case_id)
+        card_artifact = self._latest_validated(artifacts, ArtifactType.DECISION_CARD)
+        if card_artifact is None:
+            await self._fail(
+                run,
+                WorkflowNode.DECISION_CARD_COMPOSITION,
+                "Decision-tail recovery cannot find a validated Decision Card.",
+            )
+            return True
+        try:
+            card = DecisionCard.model_validate(card_artifact.payload)
+        except ValueError:
+            await self._fail(
+                run,
+                WorkflowNode.DECISION_CARD_COMPOSITION,
+                "Decision-tail recovery found an invalid Decision Card.",
+            )
+            return True
+
+        if run.current_stage == WorkflowNode.FINAL_DECISION_APPROVAL.value:
+            await self._request_final_decision_approval(
+                run=run,
+                card_artifact=card_artifact,
+                card=card,
+            )
+            return True
+
+        final_approval = await self._approved_request_for_subject(
+            run=run,
+            action=ProtectedAction.CONFIRM_FINAL_CONTRACT_DECISION,
+            subject_artifact_id=card_artifact.artifact_id,
+        )
+        if final_approval is None:
+            await self._fail(
+                run,
+                WorkflowNode.FINAL_DECISION_APPROVAL,
+                "Decision-tail recovery requires the exact approved Founder decision.",
+            )
+            return True
+        initial_update = await self._initial_post_decision_update(
+            run=run,
+            card_artifact=card_artifact,
+            approval_request_id=final_approval.request_id,
+        )
+        if initial_update is None:
+            await self._run_post_decision_update(
+                run=run,
+                card_artifact=card_artifact,
+                approval_request_id=final_approval.request_id,
+            )
+            return True
+        update_artifact, update = initial_update
+
+        if run.current_stage == WorkflowNode.POST_DECISION_UPDATE.value:
+            await self._route_post_decision_update(
+                run=run,
+                card_artifact=card_artifact,
+                update_artifact=update_artifact,
+                update=update,
+            )
+            return True
+        if run.current_stage in {
+            WorkflowNode.NEGOTIATION_TERMS_SENT.value,
+            WorkflowNode.NEGOTIATION_OUTCOME_RECEIVED.value,
+            WorkflowNode.NEGOTIATION_FINAL_CONFIRMATION.value,
+        }:
+            await self._run_negotiation_flow(
+                run=run,
+                card_artifact=card_artifact,
+                update_artifact=update_artifact,
+            )
+            return True
+
+        resolved_update = await self._latest_post_decision_update_for_card(
+            run=run,
+            card_artifact=card_artifact,
+            external_release_required=True,
+        )
+        if resolved_update is None:
+            await self._fail(
+                run,
+                WorkflowNode.EXTERNAL_DOCUMENT_SUBMISSION_PROPOSAL,
+                "External-release recovery cannot find its validated post-decision route.",
+            )
+            return True
+        resolved_update_artifact, _ = resolved_update
+        await self._run_external_submission_proposal(
+            run=run,
+            update_artifact=resolved_update_artifact,
+        )
+        return True
+
+    async def _approved_request_for_subject(
+        self,
+        *,
+        run: CaseWorkflowRun,
+        action: ProtectedAction,
+        subject_artifact_id: str,
+    ) -> ApprovalRequest | None:
+        """Return the one approved request for this run/action/artifact scope."""
+        if run.evaluation_case_id is None:
+            return None
+        matches = tuple(
+            item
+            for item in await self._approvals.list_by_case(run.evaluation_case_id)
+            if item.workflow_run_id == run.workflow_run_id
+            and item.command.action_type is action
+            and item.subject_artifact_id == subject_artifact_id
+            and item.status is ApprovalRequestStatus.APPROVED
+        )
+        return max(matches, key=lambda item: (item.created_at, item.request_id), default=None)
+
+    async def _initial_post_decision_update(
+        self,
+        *,
+        run: CaseWorkflowRun,
+        card_artifact: ArtifactEnvelope,
+        approval_request_id: str,
+    ) -> tuple[ArtifactEnvelope, PostDecisionUpdate] | None:
+        """Find the immutable update produced by the initial Founder decision."""
+        if run.evaluation_case_id is None:
+            return None
+        artifacts = await self._artifacts.list_by_case(run.evaluation_case_id)
+        for artifact in sorted(
+            (
+                item
+                for item in artifacts
+                if item.artifact_type is ArtifactType.POST_DECISION_UPDATE
+                and item.validation_status
+                in {ValidationStatus.VALID, ValidationStatus.VALID_WITH_WARNINGS}
+            ),
+            key=lambda item: (item.version, item.artifact_id),
+            reverse=True,
+        ):
+            try:
+                update = PostDecisionUpdate.model_validate(artifact.payload)
+            except ValueError:
+                continue
+            if (
+                artifact.input_artifact_ids == (card_artifact.artifact_id,)
+                and update.decision_card_artifact.artifact_id
+                == card_artifact.artifact_id
+                and update.decision_card_artifact.version == card_artifact.version
+                and update.decision_card_artifact.input_hash == card_artifact.input_hash
+                and update.founder_approval.approval_request_id == approval_request_id
+                and update.negotiation_outcome_artifact is None
+            ):
+                return artifact, update
+        return None
+
+    async def _resolved_negotiation_update(
+        self,
+        *,
+        run: CaseWorkflowRun,
+        original_update_artifact: ArtifactEnvelope,
+        outcome_artifact: ArtifactEnvelope,
+        approval_request_id: str,
+    ) -> tuple[ArtifactEnvelope, PostDecisionUpdate] | None:
+        """Reuse the finalized single negotiation round by its exact source artifacts."""
+        if run.evaluation_case_id is None:
+            return None
+        artifacts = await self._artifacts.list_by_case(run.evaluation_case_id)
+        for artifact in sorted(
+            (
+                item
+                for item in artifacts
+                if item.artifact_type is ArtifactType.POST_DECISION_UPDATE
+                and item.validation_status
+                in {ValidationStatus.VALID, ValidationStatus.VALID_WITH_WARNINGS}
+            ),
+            key=lambda item: (item.version, item.artifact_id),
+            reverse=True,
+        ):
+            try:
+                update = PostDecisionUpdate.model_validate(artifact.payload)
+            except ValueError:
+                continue
+            if (
+                artifact.input_artifact_ids
+                == (original_update_artifact.artifact_id, outcome_artifact.artifact_id)
+                and update.negotiation_outcome_artifact is not None
+                and update.negotiation_outcome_artifact.artifact_id
+                == outcome_artifact.artifact_id
+                and update.negotiation_approval_request_id == approval_request_id
+            ):
+                return artifact, update
+        return None
+
+    async def _latest_post_decision_update_for_card(
+        self,
+        *,
+        run: CaseWorkflowRun,
+        card_artifact: ArtifactEnvelope,
+        external_release_required: bool | None = None,
+    ) -> tuple[ArtifactEnvelope, PostDecisionUpdate] | None:
+        """Select the latest validated route bound to this exact Decision Card."""
+        if run.evaluation_case_id is None:
+            return None
+        artifacts = await self._artifacts.list_by_case(run.evaluation_case_id)
+        for artifact in sorted(
+            (
+                item
+                for item in artifacts
+                if item.artifact_type is ArtifactType.POST_DECISION_UPDATE
+                and item.validation_status
+                in {ValidationStatus.VALID, ValidationStatus.VALID_WITH_WARNINGS}
+            ),
+            key=lambda item: (item.version, item.artifact_id),
+            reverse=True,
+        ):
+            try:
+                update = PostDecisionUpdate.model_validate(artifact.payload)
+            except ValueError:
+                continue
+            if (
+                update.decision_card_artifact.artifact_id == card_artifact.artifact_id
+                and update.decision_card_artifact.version == card_artifact.version
+                and update.decision_card_artifact.input_hash == card_artifact.input_hash
+                and (
+                    external_release_required is None
+                    or update.external_document_release_required
+                    is external_release_required
+                )
+            ):
+                return artifact, update
+        return None
+
+    async def _external_submission_proposal_for_update(
+        self,
+        *,
+        run: CaseWorkflowRun,
+        update_artifact: ArtifactEnvelope,
+    ) -> tuple[ArtifactEnvelope, ExternalDocumentSubmissionProposal] | None:
+        """Reuse only a proposal that binds the exact post-decision update."""
+        if run.evaluation_case_id is None:
+            return None
+        artifacts = await self._artifacts.list_by_case(run.evaluation_case_id)
+        for artifact in sorted(
+            (
+                item
+                for item in artifacts
+                if item.artifact_type
+                is ArtifactType.EXTERNAL_DOCUMENT_SUBMISSION_PROPOSAL
+                and item.validation_status
+                in {ValidationStatus.VALID, ValidationStatus.VALID_WITH_WARNINGS}
+            ),
+            key=lambda item: (item.version, item.artifact_id),
+            reverse=True,
+        ):
+            try:
+                proposal = ExternalDocumentSubmissionProposal.model_validate(artifact.payload)
+            except ValueError:
+                continue
+            if (
+                artifact.input_artifact_ids == proposal.source_artifact_ids
+                and proposal.source_artifact_ids[0] == update_artifact.artifact_id
+                and proposal.post_decision_update_artifact.artifact_id
+                == update_artifact.artifact_id
+                and proposal.post_decision_update_artifact.version
+                == update_artifact.version
+                and proposal.post_decision_update_artifact.input_hash
+                == update_artifact.input_hash
+            ):
+                return artifact, proposal
+        return None
+
     async def _complete(
         self, run: CaseWorkflowRun, current_stage: WorkflowNode
     ) -> None:
+        if run.status is WorkflowStatus.COMPLETED:
+            return
         completed = await self._save_run(
             run,
             status=WorkflowStatus.COMPLETED,
@@ -3325,7 +4195,9 @@ class CaseWorkflowOrchestrator:
             pending_request_ids=(),
             failure_reason=None,
         )
-        await self._event(completed, "WORKFLOW_COMPLETED", None)
+        events = await self._events.list_after(completed.workflow_run_id, 0)
+        if not any(item.event_type == "WORKFLOW_COMPLETED" for item in events):
+            await self._event(completed, "WORKFLOW_COMPLETED", None)
 
     async def _decision_banking_handoff(
         self, run: CaseWorkflowRun
@@ -4164,11 +5036,124 @@ class CaseWorkflowOrchestrator:
         )
         await self._event(updated, event_type, WorkflowNode.INITIAL_ASSESSMENT)
 
+    async def _load_reusable_decision_bundle(
+        self,
+        *,
+        run: CaseWorkflowRun,
+        node: WorkflowNodeState | None,
+        expected_hash: str,
+        final_risk_artifact: ArtifactEnvelope,
+    ) -> _PersistedDecisionBundle | None:
+        """Load immutable Decision outputs instead of invoking OpenAI during replay."""
+
+        if node is None or node.input_hash != expected_hash:
+            return None
+        recoverable_failed_replay = (
+            node.status is WorkflowNodeStatus.FAILED_SAFE
+            and any(
+                fragment in (node.failure_reason or "")
+                for fragment in _RECOVERABLE_DECISION_REPLAY_FAILURES
+            )
+        )
+        if not self._node_completed(node) and not recoverable_failed_replay:
+            return None
+        if run.evaluation_case_id is None:  # pragma: no cover - caller guard
+            return None
+
+        artifacts = await self._artifacts.list_by_case(run.evaluation_case_id)
+        artifacts_by_id = {item.artifact_id: item for item in artifacts}
+        latest_card_artifact = self._latest_validated(
+            artifacts, ArtifactType.DECISION_CARD
+        )
+        if (
+            latest_card_artifact is None
+            or latest_card_artifact.artifact_id not in node.output_artifact_ids
+            or latest_card_artifact.evaluation_case_id != run.evaluation_case_id
+        ):
+            return None
+        try:
+            card = DecisionCard.model_validate(latest_card_artifact.payload)
+        except ValueError:
+            return None
+
+        analysis_artifact = artifacts_by_id.get(card.ai_analysis_artifact.artifact_id)
+        latest_analysis_artifact = self._latest_validated(
+            artifacts, ArtifactType.AI_DECISION_ANALYSIS
+        )
+        if (
+            analysis_artifact is None
+            or latest_analysis_artifact is None
+            or analysis_artifact.artifact_id != latest_analysis_artifact.artifact_id
+            or analysis_artifact.artifact_id not in node.output_artifact_ids
+            or analysis_artifact.artifact_type
+            is not ArtifactType.AI_DECISION_ANALYSIS
+            or analysis_artifact.validation_status
+            not in {ValidationStatus.VALID, ValidationStatus.VALID_WITH_WARNINGS}
+            or analysis_artifact.evaluation_case_id != run.evaluation_case_id
+        ):
+            return None
+        try:
+            analysis = AIDecisionAnalysis.model_validate(analysis_artifact.payload)
+        except ValueError:
+            return None
+
+        if (
+            analysis_artifact.input_artifact_ids
+            != (final_risk_artifact.artifact_id,)
+            or latest_card_artifact.input_artifact_ids
+            != (analysis_artifact.artifact_id,)
+            or not self._artifact_ref_matches(
+                analysis.final_risk_artifact,
+                final_risk_artifact,
+            )
+            or not self._artifact_ref_matches(
+                card.final_risk_artifact,
+                final_risk_artifact,
+            )
+            or not self._artifact_ref_matches(
+                card.ai_analysis_artifact,
+                analysis_artifact,
+            )
+            or card.ai_analysis_id != analysis.analysis_id
+            or card.internal_decision_package_artifact
+            != analysis.internal_decision_package_artifact
+            or card.recommendation is not analysis.recommendation
+            or card.executive_summary != analysis.executive_summary
+            or card.reasons != analysis.reasons
+            or card.conditions != analysis.conditions
+            or card.selected_negotiation_strategy_ids
+            != analysis.selected_negotiation_strategy_ids
+            or card.selected_negotiation_strategies
+            != analysis.selected_negotiation_strategies
+            or card.selected_option_ids != analysis.selected_option_ids
+            or card.confidence is not analysis.confidence
+            or card.human_attention_points != analysis.human_attention_points
+        ):
+            return None
+        return _PersistedDecisionBundle(
+            analysis_artifact=analysis_artifact,
+            analysis=analysis,
+            card_artifact=latest_card_artifact,
+            card=card,
+        )
+
+    @staticmethod
+    def _artifact_ref_matches(
+        reference: ExactDecisionArtifactRef,
+        artifact: ArtifactEnvelope,
+    ) -> bool:
+        return (
+            reference.artifact_id == artifact.artifact_id
+            and reference.artifact_type is artifact.artifact_type
+            and reference.version == artifact.version
+            and reference.input_hash == artifact.input_hash
+        )
+
     async def _fail(
         self, run: CaseWorkflowRun, node: WorkflowNode, reason: str
     ) -> None:
         existing = await self._workflows.get_node(run.workflow_run_id, node.value)
-        if existing is not None:
+        if existing is not None and not self._node_completed(existing):
             await self._finish_node(
                 existing,
                 WorkflowNodeStatus.FAILED_SAFE,
@@ -4331,6 +5316,26 @@ class CaseWorkflowOrchestrator:
             metadata=dict(metadata or {}),
             created_at=self._clock(),
         )
+
+    async def _event_once(
+        self,
+        run: CaseWorkflowRun,
+        event_type: str,
+        node: WorkflowNode | None,
+        identity_key: str,
+        identity_value: str,
+        metadata: dict[str, object],
+    ) -> None:
+        """Append a business event once for its durable artifact or approval identity."""
+        events = await self._events.list_after(run.workflow_run_id, 0)
+        if any(
+            item.event_type == event_type
+            and item.node is node
+            and item.metadata.get(identity_key) == identity_value
+            for item in events
+        ):
+            return
+        await self._event(run, event_type, node, metadata)
 
     async def _require_run(self, workflow_run_id: str) -> CaseWorkflowRun:
         run = await self._workflows.get_run(workflow_run_id)
