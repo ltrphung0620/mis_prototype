@@ -108,11 +108,14 @@ Document Skill chuẩn bị một outbound banking dossier **trong nội bộ OP
 quyết định nội bộ và chưa phải dữ liệu đã gửi ra ngoài. Với scenario hiện tại:
 
 - structured company profile có thể dùng sau data minimization/masking;
-- performance-bond request form chỉ ở trạng thái `DRAFTED` và `DRAFT_NOT_SIGNED`;
+- performance-bond request form là input do Founder bổ sung bằng opaque reference và content digest;
 - cashflow evidence chỉ có scope `OPC_GLOBAL`, phải giữ limitation và không được quy cho contract;
-- TeamPack không có signed-contract document reference, nên `SIGNED_CONTRACT` là blocking gap.
+- TeamPack không có signed-contract document reference. Document tạo masked contract snapshot với
+  `SIGNED_CONTRACT_PENDING_FOUNDER_ACCEPTANCE`; đây không còn là blocking gap trước Decision.
+- `PERFORMANCE_BOND_REQUEST_FORM` là blocking gap cho tới khi Founder cung cấp exact opaque
+  reference và content digest.
 
-Khi thiếu signed contract, Document tạo `MissingDataRequest`, package draft có
+Khi thiếu `PERFORMANCE_BOND_REQUEST_FORM`, Document tạo `MissingDataRequest`, package draft có
 `WAITING_FOR_INPUT`, và Workflow pause tại `DOCUMENT_PREPARATION`. Authorized staff chỉ nộp metadata
 tham chiếu bất biến gồm opaque `document_reference_id`, `content_sha256`, exact request/type và note;
 API không nhận raw bytes, filesystem path hoặc URL. Sau khi exact request được resolve, Workflow

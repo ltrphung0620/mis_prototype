@@ -90,7 +90,7 @@ def test_dashboard_bundle_does_not_render_lineage_or_model_metadata(
 
     assert "JSON.stringify(artifact" not in script
     assert "verification_evidence_types" not in script
-    assert "narrative_source" not in script
+    assert "Nội dung do OpenAI tạo" in script
     assert "composer_model" not in script
     assert "source_evidence" not in script
 

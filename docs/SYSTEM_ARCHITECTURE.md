@@ -787,7 +787,7 @@ REGISTER_APPROVAL_REQUIREMENTS
                       → DECISION_POST_PRECHECK_REVIEW
                           ├── conditional full coverage → DECISION_DOCUMENT_HANDOFF
                           │     → exactly one request → DOCUMENT_PREPARATION
-                          │     → missing signed contract → WAITING_FOR_INPUT
+                          │     → missing performance-bond request form → WAITING_FOR_INPUT
                           │     → DOCUMENT_EVIDENCE_SUPPLEMENT → rebuild package
                           │     → DOCUMENT_RELEASE_PACKAGE_READY
                           │     → INTERNAL_DECISION_PACKAGE_ASSEMBLY
@@ -1181,7 +1181,7 @@ Dataset Ingestion
               → conditional full coverage: DECISION_DOCUMENT_HANDOFF
                   → exactly one DOCUMENT_PREPARATION_REQUEST
                   → DOCUMENT_CHECKLIST + DOCUMENT_PACKAGE_DRAFT
-                  → thiếu SIGNED_CONTRACT: WAITING_FOR_INPUT
+                  → thiếu PERFORMANCE_BOND_REQUEST_FORM: WAITING_FOR_INPUT
                   → DOCUMENT_EVIDENCE_SUPPLEMENT: auto-resume
                   → DOCUMENT_RELEASE_PACKAGE_READY
                   → INTERNAL_DECISION_PACKAGE_ASSEMBLY

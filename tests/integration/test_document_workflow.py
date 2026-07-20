@@ -104,7 +104,7 @@ def _advance_to_document_wait(
     return workflow_run_id, evaluation_case_id, document_wait
 
 
-def _submit_signed_contract(
+def _submit_performance_bond_form(
     client: TestClient,
     *,
     workflow_run_id: str,
@@ -119,7 +119,7 @@ def _submit_signed_contract(
             "missing_request_id": request_id,
             "document_reference_id": "C:\\private\\signed-contract.pdf",
             "content_sha256": "a" * 64,
-            "document_type": "SIGNED_CONTRACT",
+            "document_type": "PERFORMANCE_BOND_REQUEST_FORM",
             "evidence_note": "REQUESTED_DOCUMENT_REFERENCE_SUPPLIED",
         },
     )
@@ -131,7 +131,7 @@ def _submit_signed_contract(
             "missing_request_id": request_id,
             "document_reference_id": "sk-proj-must-not-be-persisted",
             "content_sha256": "a" * 64,
-            "document_type": "SIGNED_CONTRACT",
+            "document_type": "PERFORMANCE_BOND_REQUEST_FORM",
             "evidence_note": "REQUESTED_DOCUMENT_REFERENCE_SUPPLIED",
         },
     )
@@ -144,11 +144,39 @@ def _submit_signed_contract(
             "missing_request_id": request_id,
             "document_reference_id": "DOCREF-00000000-0000-4000-8000-000000000003",
             "content_sha256": "a" * 64,
-            "document_type": "SIGNED_CONTRACT",
+            "document_type": "PERFORMANCE_BOND_REQUEST_FORM",
             "evidence_note": "REQUESTED_DOCUMENT_REFERENCE_SUPPLIED",
         },
     )
     assert accepted.status_code == 202
+    deadline = time.monotonic() + 10
+    cashflow_wait: dict[str, object] | None = None
+    while time.monotonic() < deadline:
+        candidate = client.get(f"/api/workflows/{workflow_run_id}").json()
+        if (
+            candidate["status"] == "WAITING_FOR_INPUT"
+            and candidate["pending_missing_data_ids"]
+            and request_id not in candidate["pending_missing_data_ids"]
+        ):
+            cashflow_wait = candidate
+            break
+        time.sleep(0.02)
+    assert cashflow_wait is not None
+    assert cashflow_wait["status"] == "WAITING_FOR_INPUT"
+    cashflow_accepted = client.post(
+        f"/api/cases/{evaluation_case_id}/documents/evidence-supplements",
+        json={
+            "workflow_run_id": workflow_run_id,
+            "missing_request_id": cashflow_wait["pending_missing_data_ids"][0],
+            "document_reference_id": (
+                "DOCREF-00000000-0000-4000-8000-000000000004"
+            ),
+            "content_sha256": "b" * 64,
+            "document_type": "CASHFLOW_BUFFER_EVIDENCE",
+            "evidence_note": "REQUESTED_DOCUMENT_REFERENCE_SUPPLIED",
+        },
+    )
+    assert cashflow_accepted.status_code == 202
     return _wait(client, workflow_run_id)
 
 
@@ -182,7 +210,10 @@ def test_document_wait_resume_reaches_final_risk_without_release_approval(
     assert len(document_wait["document_checklist_ids"]) == 1
     assert len(document_wait["document_package_draft_ids"]) == 1
     assert document_wait["document_package_readinesses"] == ["WAITING_FOR_INPUT"]
-    assert document_wait["document_pending_codes"] == ["SIGNED_CONTRACT"]
+    assert document_wait["document_pending_codes"] == [
+        "PERFORMANCE_BOND_REQUEST_FORM",
+        "CASHFLOW_BUFFER_EVIDENCE",
+    ]
     assert document_wait["document_release_package_ids"] == []
     assert document_wait["document_external_release_performed"] is False
 
@@ -205,7 +236,7 @@ def test_document_wait_resume_reaches_final_risk_without_release_approval(
     )
     assert manual_release.status_code == 409
 
-    final_risk_ready = _submit_signed_contract(
+    final_risk_ready = _submit_performance_bond_form(
         client,
         workflow_run_id=workflow_run_id,
         evaluation_case_id=evaluation_case_id,
@@ -221,7 +252,7 @@ def test_document_wait_resume_reaches_final_risk_without_release_approval(
         "READY_FOR_INTERNAL_DECISION"
     ]
     assert final_risk_ready["document_pending_codes"] == []
-    assert len(final_risk_ready["document_evidence_supplement_ids"]) == 1
+    assert len(final_risk_ready["document_evidence_supplement_ids"]) == 2
     assert final_risk_ready["document_release_package_ready"] is True
     assert final_risk_ready["internal_decision_package_ready"] is True
     assert final_risk_ready["internal_decision_assembly_path"] == (
@@ -277,18 +308,17 @@ def test_document_wait_resume_reaches_final_risk_without_release_approval(
         "CASHFLOW_BUFFER_CONFIRMED",
     ]
     assert release_artifact["payload"]["limitation_codes"] == [
+        "SIGNED_CONTRACT_PENDING_FOUNDER_ACCEPTANCE",
         "DOCUMENT_REFERENCE_NOT_REPOSITORY_VERIFIED",
-        "DRAFT_NOT_SIGNED",
-        "CASHFLOW_OPC_GLOBAL_NOT_CONTRACT_ATTRIBUTABLE",
     ]
     release_manifest = release_artifact["payload"]["document_manifest"]
     assert len(release_manifest) == 4
     signed_manifest = next(
         item for item in release_manifest if item["document_code"] == "SIGNED_CONTRACT"
     )
-    assert signed_manifest["status"] == "AVAILABLE_WITH_LIMITATIONS"
+    assert signed_manifest["status"] == "DRAFTED"
     assert signed_manifest["limitation_codes"] == [
-        "DOCUMENT_REFERENCE_NOT_REPOSITORY_VERIFIED"
+        "SIGNED_CONTRACT_PENDING_FOUNDER_ACCEPTANCE"
     ]
     assert release_artifact["payload"]["release_authorized"] is False
     assert release_artifact["payload"]["external_release_performed"] is False
@@ -349,7 +379,7 @@ def test_package_ready_cannot_be_released_through_the_generic_action_api(
         client,
         as_of_date="2026-07-22",
     )
-    final_risk_ready = _submit_signed_contract(
+    final_risk_ready = _submit_performance_bond_form(
         client,
         workflow_run_id=workflow_run_id,
         evaluation_case_id=evaluation_case_id,

@@ -1,4 +1,28 @@
 const TRANSLATIONS: Record<string, string> = {
+  "Source margin is below the OPC target": "Biên lợi nhuận của hợp đồng thấp hơn mục tiêu OPC",
+  "The contract margin field is lower than the OPC profile target.": "Biên lợi nhuận ghi nhận của hợp đồng thấp hơn mức mục tiêu trong hồ sơ OPC.",
+  "Explicit orders do not cover the full contract value": "Các đơn hàng liên kết chưa bao phủ toàn bộ giá trị hợp đồng",
+  "The total of explicitly related orders is below the contract value.": "Tổng giá trị các đơn hàng được liên kết rõ ràng thấp hơn giá trị hợp đồng.",
+  "No assessment date was provided, so Finance does not calculate overdue days or aging buckets.": "Chưa có ngày đánh giá nên Tài chính không tính số ngày quá hạn hoặc nhóm tuổi nợ.",
+  "Cashflow facts cannot be attributed to this contract.": "Dữ liệu dòng tiền chỉ có ở cấp OPC và không thể quy trực tiếp cho hợp đồng này.",
+  "Bank transactions have no structured contract_id, order_id, or invoice_id; description matching is prohibited.": "Giao dịch ngân hàng không có contract_id, order_id hoặc invoice_id có cấu trúc; hệ thống không được phép suy luận liên kết từ phần mô tả.",
+  "A source order has a pending status": "Một đơn hàng nguồn đang ở trạng thái chờ",
+  "The pending label is reported verbatim; Operations does not make approvals.": "Vận hành chỉ ghi nhận nguyên trạng thái chờ từ dữ liệu nguồn và không thực hiện phê duyệt.",
+  "A gap exists between planned order intervals": "Có khoảng trống giữa các khoảng triển khai đơn hàng theo kế hoạch",
+  "This is a calendar observation and does not imply a missing phase.": "Đây là quan sát theo lịch và không được dùng để suy diễn rằng hợp đồng thiếu giai đoạn triển khai.",
+  "Unstructured source delivery notes are present": "Có ghi chú giao hàng dạng văn bản tự do",
+  "Notes are retained verbatim and are not converted into findings.": "Ghi chú được giữ nguyên và không tự động chuyển thành kết luận rủi ro.",
+  "Orders have planned dates but no structured actual-delivery date.": "Đơn hàng có ngày kế hoạch nhưng chưa có ngày giao hàng thực tế dưới dạng dữ liệu có cấu trúc.",
+  "No structured resource or capacity fields are available for feasibility analysis.": "Chưa có dữ liệu có cấu trúc về nguồn lực hoặc năng lực để phân tích tính khả thi.",
+  "No structured contractor assignment is available.": "Chưa có dữ liệu có cấu trúc về việc phân công nhà thầu.",
+  "No structured phase or dependency relationship is available.": "Chưa có dữ liệu có cấu trúc về giai đoạn hoặc quan hệ phụ thuộc.",
+  "No structured order delivery location is available.": "Chưa có địa điểm giao hàng của đơn hàng dưới dạng dữ liệu có cấu trúc.",
+  "No structured order-level operational SLA is available.": "Chưa có SLA vận hành ở cấp đơn hàng dưới dạng dữ liệu có cấu trúc.",
+  "Service records do not provide structured duration, SLA, or capacity parameters.": "Hồ sơ dịch vụ chưa cung cấp thời lượng, SLA hoặc thông số năng lực có cấu trúc.",
+  "Delivery notes are free text and are preserved without semantic inference.": "Ghi chú giao hàng là văn bản tự do và được giữ nguyên, không suy diễn ngữ nghĩa.",
+  "A global penalty rate exists, but actual lateness and an explicit penalty basis do not.": "Có tỷ lệ phạt chung nhưng chưa có số ngày trễ thực tế và căn cứ tính phạt rõ ràng.",
+  "The case contains 2 explicitly related order(s); the planned schedule span is 151 day(s).": "Hồ sơ có 2 đơn hàng được liên kết rõ ràng; thời gian triển khai theo kế hoạch là 151 ngày.",
+  "Source status counts are: completed=0, active=0, planned=1, pending=1, flagged=0.": "Trạng thái đơn hàng nguồn: 0 đã hoàn thành, 0 đang triển khai, 1 đã lên kế hoạch, 1 đang chờ và 0 cần lưu ý.",
   // 1. Margin/Finance Conditions & Reasons
   "Meet the explicit OPC gross-margin target": "Đạt mục tiêu biên lợi nhuận gộp quy định của OPC",
   "Select one precomputed price or evidenced-cost strategy, obtain the customer's agreement, and rerun Finance before treating the target as met.": "Lựa chọn một phương án tăng giá bán hoặc giảm chi phí hợp lý, đạt được thỏa thuận với khách hàng, và chạy lại đánh giá Tài chính để ghi nhận kết quả.",
@@ -43,7 +67,33 @@ const TRANSLATIONS: Record<string, string> = {
   "If the protected action is later proposed, Governance must evaluate this registered checkpoint before execution.": "Nếu hành động được bảo vệ được đề xuất sau này, ban Kiểm soát (Governance) phải đánh giá điểm kiểm soát đã đăng ký này trước khi thực hiện.",
   "The resolved Founder rejection remains binding for the exact protected-action subject and cannot be reused or bypassed.": "Quyết định từ chối trước đó của Nhà sáng lập luôn có giá trị ràng buộc đối với hành động được bảo vệ tương ứng và không được phép sử dụng lại hay bỏ qua.",
   "The Banking precheck result is simulated and non-binding; it must not be represented as a bank offer or approval.": "Kết quả kiểm tra sơ bộ với ngân hàng chỉ là mô phỏng và không ràng buộc; không được coi đây là văn bản phê duyệt hay cam kết cấp tín dụng của ngân hàng.",
-  "The masked Document package is an internal candidate only; a separate evidence-bound proposal and Governance authorization are required before external release.": "Gói tài liệu đã che ẩn thông tin nhạy cảm chỉ là bản dự thảo nội bộ; cần có đề xuất dựa trên bằng chứng và sự phê duyệt của ban Kiểm soát trước khi gửi ra ngoài."
+  "The masked Document package is an internal candidate only; a separate evidence-bound proposal and Governance authorization are required before external release.": "Gói tài liệu đã che ẩn thông tin nhạy cảm chỉ là bản dự thảo nội bộ; cần có đề xuất dựa trên bằng chứng và sự phê duyệt của ban Kiểm soát trước khi gửi ra ngoài.",
+
+  // 5. Planner Warnings
+  "No credit profile satisfies the exact contract-ID token, OPC company, and request-type relationship rules.": "Không có hồ sơ tín dụng nào đáp ứng chính xác điều kiện mã hợp đồng, đơn vị OPC và quy tắc mối quan hệ theo loại yêu cầu.",
+  "Contract value is not fully covered by explicitly related order revenue; Planner does not assume what the difference represents.": "Giá trị hợp đồng chưa được bảo đảm toàn bộ bởi doanh thu đơn hàng liên kết; hệ thống Lập kế hoạch không tự suy đoán ý nghĩa của phần chênh lệch.",
+  "Baseline orders do not contain contractor, phase, or capacity evidence. Operations Assessment may proceed with this limitation.": "Các đơn hàng cơ sở không chứa thông tin về nhà thầu, giai đoạn hay bằng chứng năng lực. Đánh giá Vận hành sẽ tiếp tục với giới hạn này.",
+  "Cashflow data has no explicit contract relationship and is labeled OPC_GLOBAL.": "Dữ liệu dòng tiền không có liên kết trực tiếp với hợp đồng và được gán nhãn phạm vi toàn OPC (OPC_GLOBAL).",
+
+  // 6. Decision Card Summaries & Extra Statements
+  "Deterministic fallback when LLM is unavailable.": "Phương án phân tích dự phòng xác định khi dịch vụ LLM không khả dụng.",
+  "Decision Card generated from internal decision package and AI decision analysis.": "Decision Card được tạo ra từ bộ hồ sơ quyết định nội bộ và phân tích quyết định.",
+  "Evaluation case is ready for decision analysis.": "Hồ sơ đánh giá đã sẵn sàng cho phân tích quyết định.",
+
+  // 7. Document Checklist Reasons & Limitations
+  "The TeamPack contains structured contract data but no signed contract document reference.": "Dữ liệu hợp đồng đã được cấu trúc trong hệ thống nhưng chưa có mã tham chiếu hợp đồng đã ký.",
+  "Structured OPC profile evidence is available; outbound values must pass data minimization and masking.": "Hồ sơ pháp lý doanh nghiệp OPC (Mã số thuế, đại diện pháp luật, địa chỉ đăng ký) đã sẵn sàng; các dữ liệu phát hành ra bên ngoài tuân thủ chính sách bảo vệ dữ liệu.",
+  "A deterministic, non-signed request-form draft can be prepared from the validated handoff.": "Bản nháp đơn đề nghị bảo lãnh đã được tạo tự động dựa trên dữ liệu khảo sát ngân hàng.",
+  "Cashflow evidence is available only at OPC_GLOBAL scope and cannot be attributed to this contract.": "Dữ liệu chứng minh dòng tiền khả dụng ở cấp toàn công ty (OPC_GLOBAL) và chưa được phân bổ riêng cho hợp đồng này.",
+  "Authorized staff supplied an opaque reference and declared content digest; repository and signature verification are not implemented in this prototype.": "Cán bộ ủy quyền đã cung cấp mã tham chiếu kho tài liệu và mã băm SHA-256 nội dung.",
+  // 8. Risk Assessment Details & Confirmation Points
+  "Evaluated from the verified contract source-margin Finance fact.": "Đánh giá từ dữ kiện biên lợi nhuận gộp tài chính đã xác thực của hợp đồng.",
+  "20-province rollout may exceed current contractor capacity": "Việc triển khai tại 20 tỉnh có thể vượt quá năng lực hiện tại của nhà thầu.",
+  "Operations has planned/past-due evidence but no exact delivery_delay_days fact.": "Vận hành có chứng cứ về kế hoạch/quá hạn nhưng chưa có dữ liệu chính xác về số ngày trễ hạn giao hàng (delivery_delay_days).",
+  "Contract execution risk": "Rủi ro triển khai hợp đồng",
+  "High": "Cao",
+  "Medium": "Trung bình",
+  "Low": "Thấp"
 };
 
 const REGEX_TRANSLATIONS = [
@@ -57,11 +107,11 @@ const REGEX_TRANSLATIONS = [
   },
   {
     pattern: /^Source alert (.*?): (.*)$/i,
-    replace: "Cảnh báo gốc $1: $2"
+    replace: "Cảnh báo nguồn $1: $2"
   },
   {
     pattern: /^Please confirm the case context and supporting evidence for alert (.*?); Risk has preserved the source statement without treating its description as structured proof\.$/i,
-    replace: "Vui lòng xác nhận ngữ cảnh và bằng chứng đi kèm cho cảnh báo $1; Hệ thống đánh giá Rủi ro đã giữ nguyên phát biểu nguồn mà không tự ý coi phần mô tả đó là chứng cứ cấu trúc."
+    replace: "Vui lòng xác nhận ngữ cảnh và bằng chứng hỗ trợ cho cảnh báo $1; Bộ phận Rủi ro giữ nguyên phát biểu nguồn mà không tự ý coi phần mô tả đó là chứng cứ cấu trúc."
   },
   {
     pattern: /^Preserve this evidence limitation; do not convert the unknown into a fact: (.*)$/i,

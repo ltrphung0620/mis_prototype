@@ -197,7 +197,7 @@ def test_proposal_pauses_for_human_then_persists_non_binding_results(
     assert document_wait["status"] == "WAITING_FOR_INPUT"
     assert document_wait["current_stage"] == "DOCUMENT_PREPARATION"
     assert document_wait["pending_approval_ids"] == []
-    assert len(document_wait["pending_missing_data_ids"]) == 1
+    assert len(document_wait["pending_missing_data_ids"]) == 2
     assert document_wait["banking_precheck_result_set_id"]
     assert document_wait["banking_precheck_normalized_result_ids"]
     assert document_wait["banking_precheck_outcomes"] == [
@@ -246,7 +246,10 @@ def test_proposal_pauses_for_human_then_persists_non_binding_results(
     assert document_wait["document_package_readinesses"] == [
         "WAITING_FOR_INPUT"
     ]
-    assert document_wait["document_pending_codes"] == ["SIGNED_CONTRACT"]
+    assert document_wait["document_pending_codes"] == [
+        "PERFORMANCE_BOND_REQUEST_FORM",
+        "CASHFLOW_BUFFER_EVIDENCE",
+    ]
     assert document_wait["document_release_package_ids"] == []
     proposal_node = next(
         item

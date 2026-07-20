@@ -1,8 +1,12 @@
 import type { ReactElement } from "react";
 
 import { businessValueLabel } from "../../shared/businessLabels";
+import { translateText } from "../../shared/translate";
 
 import type {
+  ApprovalCheckpointPayload,
+  ArtifactEnvelope,
+  BankingOption,
   BankingDiscoveryPayload,
   BankingAdvicePayload,
   BankingReadinessPayload,
@@ -47,6 +51,12 @@ const LABELS: Record<string, string> = {
   LOW: "Thấp",
   CRITICAL: "Nghiêm trọng",
   NO_CASE_SIGNAL: "Chưa ghi nhận tín hiệu riêng của hợp đồng",
+  FINANCE: "Đánh giá tài chính",
+  OPERATIONS: "Đánh giá vận hành",
+  RISK: "Quét rủi ro ban đầu",
+  SEND_DOCUMENT_TO_EXTERNAL_PARTNER: "gửi hồ sơ ra bên ngoài",
+  COMMIT_LARGE_FINANCIAL_DECISION: "cam kết quyết định tài chính lớn",
+  SUBMIT_BANKING_PRECHECK: "chạy precheck với ngân hàng",
 };
 
 function label(value?: string | null): string {
@@ -70,7 +80,16 @@ function EntityList({ title, values = [] }: { title: string; values?: string[] }
 
 function Warnings({ warnings = [] }: { warnings?: PlannerWarningPayload[] }): ReactElement | null {
   if (!warnings.length) return null;
-  return <section><h4>Cảnh báo không chặn</h4><ul>{warnings.map((warning, index) => <li key={`${warning.warning_code ?? "warning"}-${index}`}>{warning.reason}</li>)}</ul></section>;
+  return (
+    <section>
+      <h4>Cảnh báo</h4>
+      <ul>
+        {warnings.map((warning, index) => (
+          <li key={`${warning.warning_code ?? "warning"}-${index}`}>{translateText(warning.reason)}</li>
+        ))}
+      </ul>
+    </section>
+  );
 }
 
 function EvaluationCaseSummary({ payload }: { payload: EvaluationCasePayload }): ReactElement {
@@ -89,13 +108,18 @@ function EvaluationCaseSummary({ payload }: { payload: EvaluationCasePayload }):
           {requirement.requested_amount != null && <> · {money(requirement.requested_amount, requirement.requested_amount_currency)}</>}
         </li>
       ))}</ul></section>}
-      <Warnings warnings={payload.warnings} />
     </section>
   );
 }
 
 export function EvaluationCaseView({ payload }: { payload: EvaluationCasePayload }): ReactElement {
-  return <article className="assessment-view"><header><h3>Hồ sơ đánh giá do bộ phận Lập kế hoạch chuẩn hóa</h3></header><EvaluationCaseSummary payload={payload} /></article>;
+  return (
+    <article className="assessment-view">
+      <header><h3>Hồ sơ đánh giá do bộ phận Lập kế hoạch chuẩn hóa</h3></header>
+      <EvaluationCaseSummary payload={payload} />
+      <Warnings warnings={payload.warnings} />
+    </article>
+  );
 }
 
 export function PlannerAssessmentView({ payload }: { payload: PlannerResultPayload }): ReactElement {
@@ -110,31 +134,74 @@ export function PlannerAssessmentView({ payload }: { payload: PlannerResultPaylo
   );
 }
 
-export function RiskPreScanView({ payload }: { payload: RiskPreScanPayload }): ReactElement {
+export function RiskPreScanView({
+  payload,
+  runArtifacts = [],
+}: {
+  payload: RiskPreScanPayload;
+  runArtifacts?: readonly ArtifactEnvelope[];
+}): ReactElement {
   const alerts = payload.case_alerts ?? [];
+  const checkpointArtifact = runArtifacts.find(
+    (item) => item.artifact_type === "APPROVAL_CHECKPOINTS" && item.version === 1,
+  ) ?? runArtifacts.find((item) => item.artifact_type === "APPROVAL_CHECKPOINTS");
+  const checkpoints = (
+    checkpointArtifact?.payload as ApprovalCheckpointPayload | undefined
+  )?.checkpoints ?? [];
   return (
     <article className="assessment-view" aria-label="Quét rủi ro ban đầu">
       <header><h3>Quét tín hiệu rủi ro liên quan trực tiếp đến hợp đồng</h3></header>
       {alerts.length ? <ul>{alerts.map((alert, index) => (
         <li key={`${alert.alert_type ?? "alert"}-${index}`}>
           <strong>{label(alert.alert_type)} · {label(alert.severity)}</strong>
-          <p>{alert.description}</p>
-          {alert.recommended_action && <p>Hướng xử lý được ghi nhận: {alert.recommended_action}</p>}
+          <p>{translateText(alert.description)}</p>
+          {alert.recommended_action && <p>Hướng xử lý được ghi nhận: {translateText(alert.recommended_action)}</p>}
         </li>
       ))}</ul> : <p>Không có cảnh báo được liên kết rõ ràng với hợp đồng ở bước quét ban đầu.</p>}
-      <p>Kết quả này là tín hiệu đầu vào; mức rủi ro chỉ được xác định sau khi có kết quả Tài chính và Vận hành.</p>
+      <section>
+        <h4>Các điểm phê duyệt được đăng ký</h4>
+        {checkpoints.length ? (
+          <ul>{checkpoints.map((checkpoint, index) => (
+            <li key={`${checkpoint.source_rule_id ?? "approval"}-${index}`}>
+              <strong>{checkpoint.source_rule_id ?? "Quy tắc kiểm soát"}</strong>: Founder cần phê duyệt trước khi {label(checkpoint.protected_action).toLocaleLowerCase("vi-VN")}.
+            </li>
+          ))}</ul>
+        ) : <p>Không có điểm phê duyệt nào được đăng ký ở bước quét này.</p>}
+      </section>
+      <p>Kết quả này mới là tín hiệu đầu vào; mức rủi ro được kết luận sau khi có kết quả Tài chính và Vận hành.</p>
     </article>
   );
 }
 
-export function BankingDiscoveryView({ payload }: { payload: BankingDiscoveryPayload }): ReactElement {
+export function BankingDiscoveryView({
+  payload,
+  runArtifacts = [],
+}: {
+  payload: BankingDiscoveryPayload;
+  runArtifacts?: readonly ArtifactEnvelope[];
+}): ReactElement {
   const needs = payload.need_types ?? payload.requested_need_types ?? [];
+  let displayCandidates = payload.candidates ?? [];
+  if (!displayCandidates.length && payload.candidate_option_ids?.length && runArtifacts.length) {
+    const matrixArtifact = runArtifacts.find(
+      (art) => art.artifact_type === "BANKING_OPTION_MATRIX"
+    );
+    if (matrixArtifact?.payload) {
+      const matrixPayload = matrixArtifact.payload as { candidates?: BankingOption[] };
+      if (matrixPayload.candidates) {
+        displayCandidates = matrixPayload.candidates.filter(
+          (cand) => cand.option_id && payload.candidate_option_ids?.includes(cand.option_id)
+        );
+      }
+    }
+  }
+
   return (
     <article className="assessment-view" aria-label="Khảo sát phương án ngân hàng">
       <header><h3>Khảo sát phương án ngân hàng</h3><strong>{label(payload.discovery_status ?? payload.status)}</strong></header>
       {!!needs.length && <p><strong>Nhu cầu:</strong> {needs.map(label).join(", ")}</p>}
       {payload.requested_amount != null && <p><strong>Giá trị yêu cầu:</strong> {money(payload.requested_amount, payload.requested_amount_currency)}</p>}
-      {!!payload.candidates?.length && <section><h4>Phương án tìm thấy</h4><ul>{payload.candidates.map((candidate, index) => <li key={`${candidate.product_name ?? "candidate"}-${index}`}>
+      {!!displayCandidates.length && <section><h4>Phương án tìm thấy</h4><ul>{displayCandidates.map((candidate, index) => <li key={`${candidate.product_name ?? "candidate"}-${index}`}>
         <strong>{candidate.product_name ?? "Sản phẩm ngân hàng"}</strong> — {candidate.provider ?? "Chưa xác định ngân hàng"}
         {candidate.description && <p>{candidate.description}</p>}
         {candidate.annual_rate_or_fee != null && <p>Phí/lãi suất tham khảo: {ratio(candidate.annual_rate_or_fee)}.</p>}
@@ -142,7 +209,7 @@ export function BankingDiscoveryView({ payload }: { payload: BankingDiscoveryPay
         {candidate.collateral_ratio != null && <p>Tỷ lệ tài sản bảo đảm tham khảo: {ratio(candidate.collateral_ratio)}.</p>}
         {candidate.minimum_amount != null && <p>Giá trị tối thiểu: {money(candidate.minimum_amount, candidate.minimum_amount_currency)}.</p>}
       </li>)}</ul></section>}
-      {!payload.candidates?.length && (payload.candidate_option_ids?.length ?? 0) > 0 && <p>Đã tìm thấy {payload.candidate_option_ids?.length} phương án; chi tiết nằm trong ma trận phương án ngân hàng.</p>}
+      {!displayCandidates.length && (payload.candidate_option_ids?.length ?? 0) > 0 && <p>Đã tìm thấy {payload.candidate_option_ids?.length} phương án; chi tiết nằm trong ma trận phương án ngân hàng.</p>}
       {!!payload.data_gaps?.length && <section><h4>Dữ liệu cần có trước khi kiểm tra sơ bộ với ngân hàng</h4><ul>{payload.data_gaps.map((gap, index) => <li key={`${gap.code ?? "gap"}-${index}`}>{gap.detail}</li>)}</ul></section>}
     </article>
   );
@@ -159,20 +226,57 @@ export function BankingAdviceView({ payload }: { payload: BankingAdvicePayload }
   );
 }
 
-export function BankingReadinessView({ payload }: { payload: BankingReadinessPayload }): ReactElement {
+export function BankingReadinessView({
+  payload,
+  runArtifacts = [],
+}: {
+  payload: BankingReadinessPayload;
+  runArtifacts?: readonly ArtifactEnvelope[];
+}): ReactElement {
+  const matrixArtifact = runArtifacts.find(
+    (art) => art.artifact_type === "BANKING_OPTION_MATRIX"
+  );
+  const matrixCandidates = (matrixArtifact?.payload as { candidates?: BankingOption[] } | undefined)?.candidates ?? [];
+
   return (
     <article className="assessment-view" aria-label="Mức sẵn sàng kiểm tra sơ bộ với ngân hàng">
       <header><h3>Mức sẵn sàng kiểm tra sơ bộ với ngân hàng</h3><strong>{label(payload.status)}</strong></header>
-      <ul>{(payload.option_readiness ?? []).map((option, index) => <li key={index}><strong>Phương án {index + 1}: {label(option.status)}</strong>{!!option.missing_fields?.length && <p>Còn thiếu: {option.missing_fields.map(label).join(", ")}.</p>}{!!option.unmapped_fields?.length && <p>Chưa có ánh xạ dữ liệu: {option.unmapped_fields.map(label).join(", ")}.</p>}</li>)}</ul>
+      <ul>{(payload.option_readiness ?? []).map((option, index) => {
+        const candidate = matrixCandidates.find((cand) => cand.option_id === option.option_id);
+        const name = candidate
+          ? `Phương án: ${candidate.product_name ?? "Sản phẩm"} — ${candidate.provider ?? "Ngân hàng"}`
+          : `Phương án ${index + 1}`;
+
+        return (
+          <li key={index}>
+            <strong>{name}: {label(option.status)}</strong>
+            {!!option.missing_fields?.length && <p>Còn thiếu: {option.missing_fields.map(label).join(", ")}.</p>}
+            {!!option.unmapped_fields?.length && <p>Chưa có ánh xạ dữ liệu: {option.unmapped_fields.map(label).join(", ")}.</p>}
+          </li>
+        );
+      })}</ul>
     </article>
   );
 }
 
 export function DocumentChecklistView({ payload }: { payload: DocumentChecklistPayload }): ReactElement {
+  const guidance: Record<string, string> = {
+    SIGNED_CONTRACT: "Hệ thống tạo bản nháp từ dữ liệu TeamPack và chỉ hoàn tất sau khi Founder chấp nhận hợp đồng.",
+    COMPANY_PROFILE: "Hệ thống lấy từ hồ sơ OPC trong TeamPack và áp dụng masking trước khi phát hành.",
+    PERFORMANCE_BOND_REQUEST_FORM: "Founder cần tải lên tệp PDF hoặc DOCX của đơn đề nghị bảo lãnh thực hiện.",
+    CASHFLOW_BUFFER_EVIDENCE: "Founder cần tải lên tệp PDF hoặc DOCX chứng minh nguồn bù dòng tiền.",
+  };
   return (
     <article className="assessment-view" aria-label="Danh mục hồ sơ">
       <header><h3>Danh mục hồ sơ cần chuẩn bị</h3></header>
-      <ul>{(payload.items ?? []).map((item) => <li key={item.document_code}><strong>{label(item.document_code)}: {label(item.status)}</strong><p>{item.reason}</p></li>)}</ul>
+      <ul>{(payload.items ?? []).map((item) => {
+        return (
+          <li key={item.document_code}>
+            <strong>{label(item.document_code)}: {label(item.status)}</strong>
+            <p>{guidance[item.document_code] ?? "Hồ sơ được xử lý theo yêu cầu đã kiểm định."}</p>
+          </li>
+        );
+      })}</ul>
       {!!payload.missing_document_codes?.length && <p role="status">Quy trình đang chờ bổ sung: {payload.missing_document_codes.map(label).join(", ")}.</p>}
     </article>
   );

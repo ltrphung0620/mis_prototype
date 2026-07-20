@@ -1,31 +1,52 @@
 :root {
   color-scheme: light;
-  --color-ink-950: #13211c;
-  --color-ink-800: #283a33;
-  --color-ink-600: #52635c;
-  --color-ink-450: #718078;
-  --color-canvas: #f4f5f0;
-  --color-surface: #fffefa;
-  --color-line: #dfe4dc;
-  --color-line-strong: #cbd4cb;
-  --color-forest-900: #15382c;
-  --color-forest-700: #245a46;
-  --color-forest-500: #3f8065;
-  --color-forest-100: #e3eee8;
-  --color-violet-700: #62498d;
-  --color-violet-100: #eee9f6;
-  --color-sky-700: #32647b;
-  --color-sky-100: #e4f0f4;
-  --color-amber-700: #8b601d;
-  --color-amber-100: #f7edda;
-  --color-red-700: #9a403a;
-  --color-red-100: #f8e6e2;
+  --color-ink-950: #0f1a16;
+  --color-ink-800: #1e2e28;
+  --color-ink-600: #475851;
+  --color-ink-450: #6c7d75;
+  --color-canvas: #f2f5f3;
+  --color-surface: #ffffff;
+  --color-surface-glass: rgba(255, 255, 255, 0.78);
+  --color-line: #e2e7e3;
+  --color-line-strong: #c8d3cc;
+  
+  /* Modern OPC Emerald & Forest Palette */
+  --color-emerald-600: #059669;
+  --color-emerald-500: #10b981;
+  --color-emerald-100: #d1fae5;
+  --color-forest-900: #0b251d;
+  --color-forest-700: #194a3a;
+  --color-forest-500: #2d735b;
+  --color-forest-100: #e6f2ec;
+  
+  /* Accent States */
+  --color-violet-700: #5b3e85;
+  --color-violet-100: #f0ebf8;
+  --color-sky-700: #2b596e;
+  --color-sky-100: #e2f1f7;
+  --color-amber-700: #92580c;
+  --color-amber-100: #fef3c7;
+  --color-red-700: #b91c1c;
+  --color-red-100: #fee2e2;
   --color-white: #ffffff;
-  --shadow-soft: 0 12px 40px rgb(35 53 44 / 7%);
-  --shadow-focus: 0 0 0 4px rgb(63 128 101 / 16%);
+
+  /* Gradients */
+  --gradient-brand: linear-gradient(135deg, #0b251d 0%, #194a3a 50%, #059669 100%);
+  --gradient-emerald: linear-gradient(135deg, #059669 0%, #10b981 100%);
+  --gradient-glass: linear-gradient(135deg, rgba(255, 255, 255, 0.9) 0%, rgba(255, 255, 255, 0.65) 100%);
+  --gradient-amber: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+
+  /* Shadows & Glass Elevation */
+  --shadow-soft: 0 10px 30px -5px rgba(11, 37, 29, 0.06), 0 4px 12px -2px rgba(11, 37, 29, 0.03);
+  --shadow-elevated: 0 20px 40px -12px rgba(11, 37, 29, 0.12), 0 8px 16px -4px rgba(11, 37, 29, 0.05);
+  --shadow-glow-emerald: 0 0 20px rgba(16, 185, 129, 0.25);
+  --shadow-focus: 0 0 0 4px rgba(16, 185, 129, 0.2);
+
+  /* Radius & Spacing */
   --radius-sm: 8px;
   --radius-md: 14px;
   --radius-lg: 20px;
+  --radius-full: 9999px;
   --space-1: 4px;
   --space-2: 8px;
   --space-3: 12px;
@@ -34,6 +55,8 @@
   --space-6: 24px;
   --space-8: 32px;
   --space-10: 40px;
-  --font-sans: "Be Vietnam Pro", "Inter", "Segoe UI", Arial, sans-serif;
-  --font-mono: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+
+  /* Typography */
+  --font-sans: "Plus Jakarta Sans", "Be Vietnam Pro", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --font-mono: "JetBrains Mono", "Fira Code", "SFMono-Regular", Consolas, monospace;
 }

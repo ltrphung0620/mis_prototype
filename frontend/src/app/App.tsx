@@ -31,9 +31,11 @@ import {
 
 function AssessmentDialog({
   artifact,
+  runArtifacts = [],
   onClose,
 }: {
   artifact: ArtifactEnvelope | null;
+  runArtifacts?: readonly ArtifactEnvelope[];
   onClose: () => void;
 }) {
   if (!artifact) return null;
@@ -55,7 +57,7 @@ function AssessmentDialog({
           </button>
         </header>
         <div className="modal-card__body">
-          <ArtifactAssessmentView artifact={artifact} />
+          <ArtifactAssessmentView artifact={artifact} runArtifacts={runArtifacts} />
         </div>
       </article>
     </div>
@@ -81,7 +83,6 @@ export function App() {
   const [approvalOpen, setApprovalOpen] = useState(false);
   const [missingDataOpen, setMissingDataOpen] = useState(false);
   const [lastAutoApprovalId, setLastAutoApprovalId] = useState<string | null>(null);
-  const [lastAutoMissingId, setLastAutoMissingId] = useState<string | null>(null);
   const [lastAutoReviewKey, setLastAutoReviewKey] = useState<string | null>(null);
 
   const dashboard = state.dashboard;
@@ -114,9 +115,10 @@ export function App() {
     () => (dashboard ? pendingNotEvaluableReview(dashboard) : null),
     [dashboard],
   );
+  const currentMissingRequestId = missingInteraction?.request_ids[0] ?? null;
   const documentTypes = useMemo(
-    () => allowedDocumentTypes(runArtifacts),
-    [runArtifacts],
+    () => allowedDocumentTypes(runArtifacts, currentMissingRequestId),
+    [currentMissingRequestId, runArtifacts],
   );
   const decisionDashboard = useMemo(() => {
     if (!dashboard) return null;
@@ -194,7 +196,6 @@ export function App() {
     setApprovalOpen(false);
     setMissingDataOpen(false);
     setLastAutoApprovalId(null);
-    setLastAutoMissingId(null);
     setLastAutoReviewKey(null);
   }, [state.workflowRunId]);
 
@@ -205,7 +206,10 @@ export function App() {
       if (isFinalDecisionApproval) {
         setDecisionCardOpen(true);
         setApprovalOpen(false);
+        setMissingDataOpen(false);
       } else {
+        setDecisionCardOpen(false);
+        setMissingDataOpen(false);
         setApprovalOpen(true);
       }
       setLastAutoApprovalId(requestId);
@@ -216,14 +220,6 @@ export function App() {
     isFinalDecisionApproval,
     lastAutoApprovalId,
   ]);
-
-  useEffect(() => {
-    const requestId = missingInteraction?.request_ids[0] ?? null;
-    if (requestId && requestId !== lastAutoMissingId) {
-      setMissingDataOpen(true);
-      setLastAutoMissingId(requestId);
-    }
-  }, [lastAutoMissingId, missingInteraction]);
 
   useEffect(() => {
     if (!dashboard || !notEvaluableReview || !isExactNotEvaluableReview) return;
@@ -485,7 +481,7 @@ export function App() {
         <span>Dữ liệu TeamPack được cấu hình tại máy chủ</span>
       </footer>
 
-      <AssessmentDialog artifact={assessment} onClose={() => setAssessment(null)} />
+      <AssessmentDialog artifact={assessment} runArtifacts={runArtifacts} onClose={() => setAssessment(null)} />
       <DecisionCardModal
         open={decisionCardOpen}
         card={modalCard}

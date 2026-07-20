@@ -23,5 +23,98 @@ describe("workflow artifact presenters", () => {
     expect(screen.getByText(/mô phỏng, không ràng buộc/i)).toBeInTheDocument();
     expect(screen.queryByText(/SECRET-SOURCE/)).not.toBeInTheDocument();
   });
+
+  it("resolves and renders candidate details from the BANKING_OPTION_MATRIX when candidates is empty", () => {
+    const runArtifacts = [
+      {
+        artifact_id: "ART-MATRIX",
+        artifact_type: "BANKING_OPTION_MATRIX",
+        version: 1,
+        validation_status: "VALID",
+        payload: {
+          candidates: [
+            {
+              option_id: "OPT-001",
+              product_name: "Gói hỗ trợ trọn gói",
+              provider: "VietinBank",
+              description: "Mô tả chi tiết gói thứ nhất",
+              annual_rate_or_fee: 0.08,
+            },
+            {
+              option_id: "OPT-002",
+              product_name: "Gói hỗ trợ nhanh",
+              provider: "Techcombank",
+              description: "Mô tả chi tiết gói thứ hai",
+              annual_rate_or_fee: 0.1,
+            }
+          ]
+        }
+      }
+    ];
+
+    render(
+      <ArtifactAssessmentView
+        artifact={{
+          artifact_id: "ART-DISCOVERY",
+          artifact_type: "BANKING_DISCOVERY_RESULT",
+          version: 1,
+          validation_status: "VALID",
+          payload: {
+            discovery_status: "READY",
+            candidate_option_ids: ["OPT-001"],
+          },
+        }}
+        runArtifacts={runArtifacts}
+      />
+    );
+
+    expect(screen.getByText("Gói hỗ trợ trọn gói")).toBeInTheDocument();
+    expect(screen.getByText(/VietinBank/)).toBeInTheDocument();
+    expect(screen.getByText("Mô tả chi tiết gói thứ nhất")).toBeInTheDocument();
+    expect(screen.queryByText("Gói hỗ trợ nhanh")).not.toBeInTheDocument();
+  });
+
+  it("resolves and renders candidate details from the BANKING_OPTION_MATRIX for option readiness list", () => {
+    const runArtifacts = [
+      {
+        artifact_id: "ART-MATRIX",
+        artifact_type: "BANKING_OPTION_MATRIX",
+        version: 1,
+        validation_status: "VALID",
+        payload: {
+          candidates: [
+            {
+              option_id: "OPT-001",
+              product_name: "Performance bond",
+              provider: "VietinBank",
+            }
+          ]
+        }
+      }
+    ];
+
+    render(
+      <ArtifactAssessmentView
+        artifact={{
+          artifact_id: "ART-READINESS",
+          artifact_type: "BANKING_PRECHECK_READINESS",
+          version: 1,
+          validation_status: "VALID",
+          payload: {
+            status: "READY",
+            option_readiness: [
+              {
+                option_id: "OPT-001",
+                status: "READY",
+              }
+            ]
+          },
+        }}
+        runArtifacts={runArtifacts}
+      />
+    );
+
+    expect(screen.getByText("Phương án: Performance bond — VietinBank: Sẵn sàng")).toBeInTheDocument();
+  });
 });
 

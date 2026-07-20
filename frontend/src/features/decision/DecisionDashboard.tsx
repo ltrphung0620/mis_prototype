@@ -60,7 +60,7 @@ export function DecisionDashboard({ data, onOpenDecisionCard }: DecisionDashboar
       {data.decision_card.available ? (
         <article>
           <h3>{data.decision_card.recommendation_label_vi}</h3>
-          {data.decision_card.executive_summary && <p>{data.decision_card.executive_summary}</p>}
+          {data.decision_card.executive_summary && <p>{translateText(data.decision_card.executive_summary)}</p>}
           {data.decision_card.confidence && <p>Độ tin cậy: {businessValueLabel(data.decision_card.confidence)}</p>}
           {data.residual_risk_level && <p>Rủi ro còn lại: {businessValueLabel(data.residual_risk_level)}</p>}
           {!!data.condition_titles?.length && <><h4>Điều kiện chính</h4><ul>{data.condition_titles.map((title) => <li key={title}>{translateText(title)}</li>)}</ul></>}

@@ -1,8 +1,6 @@
 """Deterministic provider-document checklist construction."""
 
 from dataclasses import dataclass
-from math import isfinite
-from numbers import Real
 
 from opc_mis.business.skills.document.context_loader import DocumentContext
 from opc_mis.domain.document_models import (
@@ -17,8 +15,14 @@ from opc_mis.domain.lineage import LineageFactory, deterministic_id
 from opc_mis.domain.missing_data import MissingDataRequest
 
 _DOCUMENT_SKILL_ID = "DOCUMENT_SKILL"
-_OPC_GLOBAL_LIMITATION = "CASHFLOW_OPC_GLOBAL_NOT_CONTRACT_ATTRIBUTABLE"
 _UNVERIFIED_REFERENCE_LIMITATION = "DOCUMENT_REFERENCE_NOT_REPOSITORY_VERIFIED"
+_PENDING_FOUNDER_ACCEPTANCE_LIMITATION = "SIGNED_CONTRACT_PENDING_FOUNDER_ACCEPTANCE"
+_CONTRACT_SNAPSHOT_FIELDS = (
+    "contract_id",
+    "customer_id",
+    "contract_value",
+    "payment_terms",
+)
 
 
 @dataclass(frozen=True)
@@ -57,11 +61,22 @@ class DocumentChecklistBuilder:
             supplement = supplements.get(code)
             if supplement is not None:
                 artifact = supplement_artifacts[code]
-                sources = tuple(
+                supplement_sources = tuple(
                     item
                     for item in artifact.evidence_refs
                     if item.evidence_id in set(supplement.evidence_ids)
                 )
+                contract_sources = (
+                    tuple(
+                        lineage.record_field(context.contract, field)
+                        for field in _CONTRACT_SNAPSHOT_FIELDS
+                        if field in context.contract.values
+                        and context.contract.values[field] is not None
+                    )
+                    if code is DocumentRequirementCode.SIGNED_CONTRACT
+                    else ()
+                )
+                sources = (*supplement_sources, *contract_sources)
                 item, missing = self._item(
                     context=context,
                     code=code,
@@ -78,17 +93,24 @@ class DocumentChecklistBuilder:
                     evidence=evidence,
                 )
             elif code is DocumentRequirementCode.SIGNED_CONTRACT:
+                contract_sources = tuple(
+                    lineage.record_field(context.contract, field)
+                    for field in _CONTRACT_SNAPSHOT_FIELDS
+                    if field in context.contract.values
+                    and context.contract.values[field] is not None
+                )
                 item, missing = self._item(
                     context=context,
                     code=code,
-                    status=DocumentRequirementStatus.MISSING,
+                    status=DocumentRequirementStatus.DRAFTED,
                     reason=(
-                        "The TeamPack contains structured contract data but no signed "
-                        "contract document reference."
+                        "A masked contract snapshot can be prepared from exact TeamPack "
+                        "evidence. It becomes the signed-contract dossier entry only "
+                        "after the Founder approves an ACCEPT Decision Card."
                     ),
                     source_reference_ids=(context.contract.record_id,),
-                    limitations=(),
-                    sources=self._request_sources(context),
+                    limitations=(_PENDING_FOUNDER_ACCEPTANCE_LIMITATION,),
+                    sources=contract_sources or self._request_sources(context),
                     lineage=lineage,
                     evidence=evidence,
                 )
@@ -123,9 +145,7 @@ class DocumentChecklistBuilder:
                     code=code,
                     status=status,
                     reason=reason,
-                    source_reference_ids=tuple(
-                        item.record_id for item in relevant_profile_records
-                    ),
+                    source_reference_ids=tuple(item.record_id for item in relevant_profile_records),
                     limitations=(),
                     sources=profile_sources or self._request_sources(context),
                     lineage=lineage,
@@ -135,13 +155,13 @@ class DocumentChecklistBuilder:
                 item, missing = self._item(
                     context=context,
                     code=code,
-                    status=DocumentRequirementStatus.DRAFTED,
+                    status=DocumentRequirementStatus.MISSING,
                     reason=(
-                        "A deterministic, non-signed request-form draft can be prepared "
-                        "from the validated handoff."
+                        "Founder must supply the exact performance-bond request-form "
+                        "reference before the internal dossier is complete."
                     ),
                     source_reference_ids=(context.request.request_id,),
-                    limitations=("DRAFT_NOT_SIGNED",),
+                    limitations=(),
                     sources=self._request_sources(context),
                     lineage=lineage,
                     evidence=evidence,
@@ -156,38 +176,24 @@ class DocumentChecklistBuilder:
                         "projected_closing_cash",
                     )
                 )
-                if self._cashflow_records_are_complete(context):
-                    status = DocumentRequirementStatus.AVAILABLE_WITH_LIMITATIONS
-                    reason = (
-                        "Cashflow evidence is available only at OPC_GLOBAL scope and "
-                        "cannot be attributed to this contract."
-                    )
-                    limitations = (_OPC_GLOBAL_LIMITATION,)
-                else:
-                    status = DocumentRequirementStatus.MISSING
-                    reason = (
-                        "Cashflow-buffer evidence requires every selected row to have "
-                        "a non-empty month and finite cash_reserve_minimum and "
-                        "projected_closing_cash values."
-                    )
-                    limitations = ()
                 item, missing = self._item(
                     context=context,
                     code=code,
-                    status=status,
-                    reason=reason,
-                    source_reference_ids=tuple(
-                        item.record_id for item in context.cashflow_records
+                    status=DocumentRequirementStatus.MISSING,
+                    reason=(
+                        "Founder must upload a PDF or DOCX cashflow-buffer evidence "
+                        "document before the internal dossier can continue. TeamPack "
+                        "OPC_GLOBAL cashflow facts are context only and do not replace "
+                        "this required document."
                     ),
-                    limitations=limitations,
+                    source_reference_ids=(context.request.request_id,),
+                    limitations=(),
                     sources=cashflow_sources or self._request_sources(context),
                     lineage=lineage,
                     evidence=evidence,
                 )
             else:
-                raise RuntimeError(
-                    f"Unsupported provider document requirement: {code.value}"
-                )
+                raise RuntimeError(f"Unsupported provider document requirement: {code.value}")
             items.append(item)
             if missing is not None:
                 missing_requests.append(missing)
@@ -216,9 +222,7 @@ class DocumentChecklistBuilder:
             ),
             limitation_codes=tuple(
                 dict.fromkeys(
-                    limitation
-                    for item in item_tuple
-                    for limitation in item.limitation_codes
+                    limitation for item in item_tuple for limitation in item.limitation_codes
                 )
             ),
             source_artifact_ids=source_artifact_ids,
@@ -328,30 +332,10 @@ class DocumentChecklistBuilder:
         )
 
     @staticmethod
-    def _cashflow_records_are_complete(context: DocumentContext) -> bool:
-        if not context.cashflow_records:
-            return False
-        for record in context.cashflow_records:
-            month = record.values.get("month")
-            if not isinstance(month, str) or not month.strip():
-                return False
-            for field in ("cash_reserve_minimum", "projected_closing_cash"):
-                value = record.values.get(field)
-                if (
-                    isinstance(value, bool)
-                    or not isinstance(value, Real)
-                    or not isfinite(float(value))
-                ):
-                    return False
-        return True
-
-    @staticmethod
     def _request_sources(context: DocumentContext) -> tuple[EvidenceRef, ...]:
         requested = set(context.request.evidence_ids)
         return tuple(
-            item
-            for item in context.request_artifact.evidence_refs
-            if item.evidence_id in requested
+            item for item in context.request_artifact.evidence_refs if item.evidence_id in requested
         )
 
     @staticmethod

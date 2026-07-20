@@ -22,8 +22,6 @@ import { normalizeWorkflowDashboard } from "../api/normalize";
 import {
   dashboardReducer,
   initialDashboardState,
-  restoreWorkflowRef,
-  serializeWorkflowRef,
   workflowStorageKey,
 } from "../app/dashboardState";
 import { isTerminalExecutionStatus } from "../shared/workflowLabels";
@@ -60,17 +58,7 @@ export function useWorkflowDashboard() {
     ])
       .then(([capabilities, catalog]) => {
         dispatch({ type: "BOOTSTRAP_SUCCEEDED", capabilities, catalog });
-        const key = workflowStorageKey(catalog.datasetId);
-        const saved = restoreWorkflowRef(localStorage.getItem(key), catalog);
-        if (saved) {
-          dispatch({
-            type: "RESTORE_RUN",
-            workflowRunId: saved.workflowRunId,
-            contractId: saved.contractId,
-          });
-        } else {
-          localStorage.removeItem(key);
-        }
+        localStorage.removeItem(workflowStorageKey(catalog.datasetId));
       })
       .catch((error: unknown) => {
         if (!controller.signal.aborted) {
@@ -177,27 +165,16 @@ export function useWorkflowDashboard() {
   const runSelectedContract = useCallback(async () => {
     if (!state.selectedContractId || !state.catalog) return;
     const contractId = state.selectedContractId;
-    const key = workflowStorageKey(state.catalog.datasetId);
     const pendingStart = pendingStartRef.current;
     const runRequestId =
       pendingStart?.contractId === contractId
         ? pendingStart.runRequestId
         : createRunRequestId();
     pendingStartRef.current = { contractId, runRequestId };
-    localStorage.removeItem(key);
     dispatch({ type: "RUN_REQUESTED", contractId });
     try {
       const result = await startCaseWorkflow(contractId, runRequestId);
       pendingStartRef.current = null;
-      localStorage.setItem(
-        key,
-        serializeWorkflowRef({
-          datasetId: state.catalog.datasetId,
-          snapshotHash: state.catalog.snapshotHash,
-          workflowRunId: result.workflow_run_id,
-          contractId: result.contract_id,
-        }),
-      );
       dispatch({
         type: "RUN_ACCEPTED",
         workflowRunId: result.workflow_run_id,

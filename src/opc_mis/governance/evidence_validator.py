@@ -4755,6 +4755,7 @@ class EvidenceValidator:
             ),
             "recommendation": update.recommendation,
             "outcome": update.outcome,
+            "contract_execution_status": update.contract_execution_status,
             "approved_condition_ids": update.approved_condition_ids,
             "approved_negotiation_strategy_ids": (
                 update.approved_negotiation_strategy_ids
@@ -4827,6 +4828,8 @@ class EvidenceValidator:
             "document_manifest_item_ids": proposal.document_manifest_item_ids,
             "masking_manifest_item_ids": proposal.masking_manifest_item_ids,
             "approval_condition_codes": proposal.approval_condition_codes,
+            "contract_execution_status": proposal.contract_execution_status,
+            "resolved_limitation_codes": proposal.resolved_limitation_codes,
         }
         if draft.identity_inputs != expected_identity:
             errors.append(

@@ -1,6 +1,7 @@
 import type { ReactElement } from "react";
 
 import { businessValueLabel } from "../../shared/businessLabels";
+import { translateText } from "../../shared/translate";
 
 import type {
   ArtifactEnvelope,
@@ -116,7 +117,13 @@ function formatValue(value: AssessmentFact["value"], unit?: string): string {
   if (value === null || value === undefined || value === "") return "Chưa xác định";
   if (typeof value === "boolean") return value ? "Có" : "Không";
   if (typeof value !== "number") return String(value);
-  const normalizedUnit = (unit ?? "").toUpperCase();
+  const normalizedUnit = (unit ?? "").trim().toUpperCase();
+  if (normalizedUnit === "COUNT") {
+    return new Intl.NumberFormat("vi-VN", { maximumFractionDigits: 2 }).format(value);
+  }
+  if (normalizedUnit === "DAYS") {
+    return `${new Intl.NumberFormat("vi-VN", { maximumFractionDigits: 2 }).format(value)} ngày`;
+  }
   if (normalizedUnit === "VND") {
     return new Intl.NumberFormat("vi-VN", {
       style: "currency",
@@ -158,7 +165,9 @@ function FactGrid({ facts }: { facts: AssessmentFact[] }): ReactElement {
         <div key={`${fact.metric ?? fact.code ?? "metric"}-${index}`}>
           <dt>{humanize(fact.metric ?? fact.code ?? fact.title)}</dt>
           <dd>{formatValue(fact.value, fact.unit)}</dd>
-          {fact.note && <small>{fact.note}</small>}
+          {fact.note && fact.note !== "Source contract field; not recalculated from orders." && (
+            <small>{translateText(fact.note)}</small>
+          )}
         </div>
       ))}
     </dl>
@@ -174,8 +183,10 @@ function Notes({ title, items = [] }: { title: string; items?: AssessmentNote[] 
       <ul>
         {visibleItems.map((item, index) => (
           <li key={`${item.code ?? item.title ?? title}-${index}`}>
-            <strong>{item.title ?? humanize(item.code)}</strong>
-            {(item.detail ?? item.text ?? item.description) && <p>{item.detail ?? item.text ?? item.description}</p>}
+            <strong>{translateText(item.title ?? humanize(item.code))}</strong>
+            {(item.detail ?? item.text ?? item.description) && (
+              <p>{translateText(item.detail ?? item.text ?? item.description)}</p>
+            )}
           </li>
         ))}
       </ul>
@@ -194,12 +205,17 @@ export function FinanceAssessmentView({ payload, variant = "ASSESSMENT" }: { pay
     <article aria-label="Đánh giá tài chính" className="assessment-view">
       <header>
         <h3>{variant === "FACTS" ? "Số liệu tài chính của hợp đồng" : "Đánh giá tài chính"}</h3>
-        {payload.assessment_status && <span>{humanize(payload.assessment_status)}</span>}
+        {payload.assessment_status && payload.assessment_status !== "LIMITED_BY_EVIDENCE" && (
+          <span>{humanize(payload.assessment_status)}</span>
+        )}
       </header>
       {facts.length ? <FactGrid facts={facts} /> : variant === "FACTS" ? <p>Chưa có số liệu tài chính phù hợp để hiển thị.</p> : null}
       {payload.narrative && (
         <section aria-label="Diễn giải tài chính">
-          <h4>{payload.narrative.headline ?? "Diễn giải"}</h4>
+          <h4>
+            {payload.narrative.headline ?? "Diễn giải"}
+            {payload.narrative_source === "OPENAI" ? " (Nội dung do OpenAI tạo)" : ""}
+          </h4>
           <ul>
             {(payload.narrative.statements ?? []).filter(
               (statement) => !isGlobalOnlyReference(statement.fact_ids, globalIds),
@@ -221,11 +237,13 @@ export function OperationsAssessmentView({ payload, variant = "ASSESSMENT" }: { 
     <article aria-label="Đánh giá vận hành" className="assessment-view">
       <header>
         <h3>{variant === "FACTS" ? "Số liệu vận hành của hợp đồng" : "Đánh giá vận hành"}</h3>
-        {payload.assessment_status && <span>{humanize(payload.assessment_status)}</span>}
+        {payload.assessment_status && payload.assessment_status !== "LIMITED_BY_EVIDENCE" && (
+          <span>{humanize(payload.assessment_status)}</span>
+        )}
       </header>
       {contractFacts(payload.facts).length ? <FactGrid facts={contractFacts(payload.facts)} /> : variant === "FACTS" ? <p>Chưa có số liệu vận hành phù hợp để hiển thị.</p> : null}
       {!!payload.summary?.length && (
-        <section><h4>Tóm tắt vận hành</h4><ul>{payload.summary.filter((statement) => !isGlobalOnlyReference(statement.fact_ids, globalIds)).map((statement, index) => <li key={index}>{statement.text}</li>)}</ul></section>
+        <section><h4>Tóm tắt vận hành</h4><ul>{payload.summary.filter((statement) => !isGlobalOnlyReference(statement.fact_ids, globalIds)).map((statement, index) => <li key={index}>{translateText(statement.text)}</li>)}</ul></section>
       )}
       {!!payload.order_schedules?.length && (
         <section>
@@ -252,15 +270,15 @@ export function RiskAssessmentView({ payload, phase = "INITIAL" }: { payload: Ri
     <article aria-label="Đánh giá rủi ro" className="assessment-view">
       <header>
         <h3>{phase === "FINAL" ? "Kiểm tra rủi ro cuối" : "Đánh giá rủi ro ban đầu"}</h3>
-        <strong>{phase === "FINAL" ? "Mức còn lại" : "Mức tổng thể"}: {humanize(riskLevel)}</strong>
+        <strong>{phase === "FINAL" ? "Mức còn lại" : "Mức tổng thể"}: {translateText(humanize(riskLevel))}</strong>
       </header>
-      {payload.major_exception_status && <p>Ngoại lệ nghiêm trọng: {humanize(payload.major_exception_status)}</p>}
-      {payload.major_exception_signal && <p>{payload.major_exception_signal.detail}</p>}
+      {payload.major_exception_status && <p>Ngoại lệ nghiêm trọng: {translateText(humanize(payload.major_exception_status))}</p>}
+      {payload.major_exception_signal && <p>{translateText(payload.major_exception_signal.detail)}</p>}
       <Notes title="Rủi ro đang mở" items={payload.residual_findings ?? payload.findings} />
       <Notes title="Biện pháp kiểm soát bắt buộc" items={payload.required_controls} />
-      <Notes title="Giới hạn đánh giá" items={payload.limitations} />
+      {phase === "FINAL" && <Notes title="Giới hạn đánh giá" items={payload.limitations} />}
       {!!payload.human_confirmation_points?.length && (
-        <section><h4>Điểm Nhà sáng lập cần xác nhận</h4><ul>{payload.human_confirmation_points.map((point, index) => <li key={`${point.reason_code ?? "confirmation"}-${index}`}>{point.question}</li>)}</ul></section>
+        <section><h4>Hành động cần Founder xử lý</h4><ul>{payload.human_confirmation_points.map((point, index) => <li key={`${point.reason_code ?? "confirmation"}-${index}`}><strong>Cần xác nhận bối cảnh rủi ro:</strong> {translateText(point.question)}</li>)}</ul></section>
       )}
       {!!payload.unresolved_approval_gates?.length && (
         <section><h4>Cổng kiểm soát đang chờ xử lý</h4><ul>{payload.unresolved_approval_gates.map((gate, index) => <li key={index}><strong>{humanize(gate.protected_action)} · {humanize(gate.request_status)}</strong><p>{gate.reason}</p></li>)}</ul></section>
@@ -330,7 +348,13 @@ export function DocumentPackageView({ payload, variant = "DRAFT" }: { payload: D
   );
 }
 
-export function ArtifactAssessmentView({ artifact }: { artifact: ArtifactEnvelope }): ReactElement {
+export function ArtifactAssessmentView({
+  artifact,
+  runArtifacts = [],
+}: {
+  artifact: ArtifactEnvelope;
+  runArtifacts?: readonly ArtifactEnvelope[];
+}): ReactElement {
   switch (artifact.artifact_type) {
     case "PLANNER_RESULT":
       return <PlannerAssessmentView payload={artifact.payload as PlannerResultPayload} />;
@@ -347,15 +371,25 @@ export function ArtifactAssessmentView({ artifact }: { artifact: ArtifactEnvelop
     case "INITIAL_RISK_ASSESSMENT":
       return <RiskAssessmentView payload={artifact.payload as RiskArtifactPayload} phase="INITIAL" />;
     case "RISK_PRE_SCAN":
-      return <RiskPreScanView payload={artifact.payload as RiskPreScanPayload} />;
+      return <RiskPreScanView payload={artifact.payload as RiskPreScanPayload} runArtifacts={runArtifacts} />;
     case "FINAL_RISK_ASSESSMENT":
       return <RiskAssessmentView payload={artifact.payload as RiskArtifactPayload} phase="FINAL" />;
     case "BANKING_DISCOVERY_REQUEST":
     case "BANKING_OPTION_MATRIX":
     case "BANKING_DISCOVERY_RESULT":
-      return <BankingDiscoveryView payload={artifact.payload as BankingDiscoveryPayload} />;
+      return (
+        <BankingDiscoveryView
+          payload={artifact.payload as BankingDiscoveryPayload}
+          runArtifacts={runArtifacts}
+        />
+      );
     case "BANKING_PRECHECK_READINESS":
-      return <BankingReadinessView payload={artifact.payload as BankingReadinessPayload} />;
+      return (
+        <BankingReadinessView
+          payload={artifact.payload as BankingReadinessPayload}
+          runArtifacts={runArtifacts}
+        />
+      );
     case "BANKING_OPTION_ADVICE":
       return <BankingAdviceView payload={artifact.payload as BankingAdvicePayload} />;
     case "BANKING_PRECHECK_RESULT_SET":

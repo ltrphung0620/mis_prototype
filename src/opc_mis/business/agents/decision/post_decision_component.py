@@ -20,6 +20,7 @@ from opc_mis.domain.enums import ArtifactType, ComponentStatus
 from opc_mis.domain.events import RuntimeEvent
 from opc_mis.domain.evidence import EvidenceRef
 from opc_mis.domain.post_decision_models import (
+    SIGNED_CONTRACT_PENDING_FOUNDER_ACCEPTANCE,
     ExternalDocumentSubmissionProposal,
     ExternalDocumentSubmissionProposalComponentResult,
     ExternalSubmissionReadinessComponentResult,
@@ -28,6 +29,7 @@ from opc_mis.domain.post_decision_models import (
     PostDecisionUpdateComponentResult,
     ReadyForExternalSubmission,
     approval_business_identity,
+    contract_execution_status,
     external_document_submission_proposal_id,
     post_decision_outcome,
     post_decision_update_id,
@@ -43,6 +45,7 @@ class PostDecisionUpdateBuilder:
         card = context.card
         card_artifact = _artifact_ref(context.card_artifact)
         outcome = post_decision_outcome(card.recommendation)
+        execution_status = contract_execution_status(card.recommendation)
         condition_ids = tuple(item.condition_id for item in card.conditions)
         evidence_ids = card.evidence_ids
         update_id = post_decision_update_id(
@@ -51,10 +54,9 @@ class PostDecisionUpdateBuilder:
             founder_approval=context.approval,
             recommendation=card.recommendation,
             outcome=outcome,
+            contract_execution_status=execution_status,
             approved_condition_ids=condition_ids,
-            approved_negotiation_strategy_ids=(
-                card.selected_negotiation_strategy_ids
-            ),
+            approved_negotiation_strategy_ids=(card.selected_negotiation_strategy_ids),
             selected_option_ids=card.selected_option_ids,
             document_release_package=card.document_release_package,
             evidence_ids=evidence_ids,
@@ -69,10 +71,9 @@ class PostDecisionUpdateBuilder:
             founder_approval=context.approval,
             recommendation=card.recommendation,
             outcome=outcome,
+            contract_execution_status=execution_status,
             approved_condition_ids=condition_ids,
-            approved_negotiation_strategy_ids=(
-                card.selected_negotiation_strategy_ids
-            ),
+            approved_negotiation_strategy_ids=(card.selected_negotiation_strategy_ids),
             selected_option_ids=card.selected_option_ids,
             document_release_package=card.document_release_package,
             external_document_release_required=(
@@ -108,6 +109,20 @@ class ExternalDocumentSubmissionProposalBuilder:
             or card.document_release_package != snapshot
         ):
             raise ValueError("External release does not bind the approved Decision Card")
+        if update.contract_execution_status.value != "SIGNED":
+            raise ValueError("External release requires a signed contract disposition")
+        if "SIGNED_CONTRACT" not in {item.value for item in package.document_codes}:
+            raise ValueError("External release package lacks SIGNED_CONTRACT")
+        resolved_limitations = tuple(
+            item
+            for item in snapshot.limitation_codes
+            if item == SIGNED_CONTRACT_PENDING_FOUNDER_ACCEPTANCE
+        )
+        effective_limitations = tuple(
+            item
+            for item in snapshot.limitation_codes
+            if item not in set(resolved_limitations)
+        )
         update_ref = _artifact_ref(context.update_artifact)
         card_ref = _artifact_ref(context.card_artifact)
         evidence_refs = _evidence_union(
@@ -126,6 +141,8 @@ class ExternalDocumentSubmissionProposalBuilder:
             document_manifest_item_ids=manifest_ids,
             masking_manifest_item_ids=package.masking_manifest_item_ids,
             approval_condition_codes=package.approval_condition_codes,
+            contract_execution_status=update.contract_execution_status,
+            resolved_limitation_codes=resolved_limitations,
             evidence_ids=evidence_ids,
         )
         return ExternalDocumentSubmissionProposal(
@@ -137,6 +154,9 @@ class ExternalDocumentSubmissionProposalBuilder:
             post_decision_update_id=update.update_id,
             decision_card_artifact=card_ref,
             decision_card_id=card.decision_card_id,
+            contract_execution_status=update.contract_execution_status,
+            signed_contract_completed=True,
+            resolved_limitation_codes=resolved_limitations,
             document_release_package=snapshot,
             recipient=package.recipient,
             purpose=package.purpose,
@@ -145,7 +165,7 @@ class ExternalDocumentSubmissionProposalBuilder:
             masking_manifest_id=package.masking_manifest_id,
             masking_manifest_item_ids=package.masking_manifest_item_ids,
             approval_condition_codes=package.approval_condition_codes,
-            limitation_codes=package.limitation_codes,
+            limitation_codes=effective_limitations,
             source_artifact_ids=(
                 context.update_artifact.artifact_id,
                 context.card_artifact.artifact_id,
@@ -205,19 +225,14 @@ class PostDecisionUpdateComponent:
             payload=update.model_dump(mode="json"),
             evidence_refs=loaded.card_artifact.evidence_refs,
             identity_inputs={
-                "decision_card_artifact": update.decision_card_artifact.model_dump(
-                    mode="json"
-                ),
+                "decision_card_artifact": update.decision_card_artifact.model_dump(mode="json"),
                 "decision_card_id": update.decision_card_id,
-                "founder_approval": approval_business_identity(
-                    update.founder_approval
-                ),
+                "founder_approval": approval_business_identity(update.founder_approval),
                 "recommendation": update.recommendation,
                 "outcome": update.outcome,
+                "contract_execution_status": update.contract_execution_status,
                 "approved_condition_ids": update.approved_condition_ids,
-                "approved_negotiation_strategy_ids": (
-                    update.approved_negotiation_strategy_ids
-                ),
+                "approved_negotiation_strategy_ids": (update.approved_negotiation_strategy_ids),
                 "selected_option_ids": update.selected_option_ids,
                 "document_release_package": (
                     None
@@ -239,6 +254,7 @@ class PostDecisionUpdateComponent:
                     ),
                     metadata={
                         "outcome": update.outcome.value,
+                        "contract_execution_status": (update.contract_execution_status.value),
                         "external_document_release_required": (
                             update.external_document_release_required
                         ),
@@ -293,9 +309,7 @@ class ExternalDocumentSubmissionProposalComponent:
                     proposal.post_decision_update_artifact.model_dump(mode="json")
                 ),
                 "post_decision_update_id": proposal.post_decision_update_id,
-                "decision_card_artifact": proposal.decision_card_artifact.model_dump(
-                    mode="json"
-                ),
+                "decision_card_artifact": proposal.decision_card_artifact.model_dump(mode="json"),
                 "decision_card_id": proposal.decision_card_id,
                 "document_release_package": (
                     proposal.document_release_package.model_dump(mode="json")
@@ -303,6 +317,8 @@ class ExternalDocumentSubmissionProposalComponent:
                 "document_manifest_item_ids": proposal.document_manifest_item_ids,
                 "masking_manifest_item_ids": proposal.masking_manifest_item_ids,
                 "approval_condition_codes": proposal.approval_condition_codes,
+                "contract_execution_status": proposal.contract_execution_status,
+                "resolved_limitation_codes": proposal.resolved_limitation_codes,
             },
         )
         return ExternalDocumentSubmissionProposalComponentResult(
@@ -319,6 +335,7 @@ class ExternalDocumentSubmissionProposalComponent:
                     metadata={
                         "recipient": proposal.recipient,
                         "document_count": len(proposal.document_codes),
+                        "signed_contract_completed": (proposal.signed_contract_completed),
                     },
                 ),
             ),

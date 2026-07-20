@@ -40,6 +40,26 @@ describe("useWorkflowDashboard workflow start", () => {
     );
   });
 
+  it("does not restore or rerun a contract after a page reload", async () => {
+    localStorage.setItem(
+      "opc-mis:workflow:TEAM-PACK-V3",
+      JSON.stringify({
+        datasetId: "TEAM-PACK-V3",
+        snapshotHash: "snapshot-a",
+        workflowRunId: "CWF-OLD",
+        contractId: "CON-004",
+      }),
+    );
+
+    const { result } = renderHook(() => useWorkflowDashboard());
+    await waitFor(() => expect(result.current.state.phase).toBe("ready"));
+
+    expect(result.current.state.workflowRunId).toBe("");
+    expect(api.getWorkflowDashboard).not.toHaveBeenCalled();
+    expect(api.startCaseWorkflow).not.toHaveBeenCalled();
+    expect(localStorage.getItem("opc-mis:workflow:TEAM-PACK-V3")).toBeNull();
+  });
+
   it("reuses the same cycle id when retrying a start request that was not accepted", async () => {
     api.startCaseWorkflow
       .mockRejectedValueOnce(new Error("Mất kết nối tạm thời"))

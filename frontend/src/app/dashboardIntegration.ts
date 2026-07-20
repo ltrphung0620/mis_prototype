@@ -391,11 +391,25 @@ const DOCUMENT_TYPES = new Set<DocumentRequirementCode>([
 
 export function allowedDocumentTypes(
   artifacts: readonly ApiArtifactEnvelope[],
+  missingRequestId?: string | null,
 ): DocumentRequirementCode[] {
   const checklist = [...artifacts]
     .reverse()
     .find((item) => item.artifact_type === "DOCUMENT_CHECKLIST");
-  const missing = strings(record(checklist?.payload).missing_document_codes).filter(
+  const payload = record(checklist?.payload);
+  if (missingRequestId && Array.isArray(payload.items)) {
+    const requestedItem = payload.items
+      .map(record)
+      .find((item) => item.missing_request_id === missingRequestId);
+    const requestedType = requestedItem?.document_code;
+    if (
+      typeof requestedType === "string" &&
+      DOCUMENT_TYPES.has(requestedType as DocumentRequirementCode)
+    ) {
+      return [requestedType as DocumentRequirementCode];
+    }
+  }
+  const missing = strings(payload.missing_document_codes).filter(
     (item): item is DocumentRequirementCode =>
       DOCUMENT_TYPES.has(item as DocumentRequirementCode),
   );

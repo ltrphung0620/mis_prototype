@@ -887,7 +887,7 @@ Master Workflow tự tiếp tục chỉ khi có đúng một `DOCUMENT_PREPARATI
 
 | Enum | Ý nghĩa trong current scenario |
 |---|---|
-| `SIGNED_CONTRACT` | Cần reference đến hợp đồng đã ký; TeamPack structured row không đủ. |
+| `SIGNED_CONTRACT` | TeamPack contract fields tạo masked draft; trước Founder-approved `ACCEPT` phải giữ `SIGNED_CONTRACT_PENDING_FOUNDER_ACCEPTANCE`. |
 | `COMPANY_PROFILE` | Dùng exact `02_OPC_PROFILE`, sau đó phải minimize/mask. |
 | `PERFORMANCE_BOND_REQUEST_FORM` | OPC tạo internal unsigned draft. |
 | `CASHFLOW_BUFFER_EVIDENCE` | Chỉ có thể dùng với scope limitation; OPC-global evidence không được quy cho contract. |

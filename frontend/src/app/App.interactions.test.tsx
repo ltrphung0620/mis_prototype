@@ -284,7 +284,7 @@ describe("Founder interaction popups", () => {
     ).toBeInTheDocument();
   });
 
-  it("automatically opens the typed missing-data form", async () => {
+  it("keeps the dashboard visible until Founder opens the missing-data form", async () => {
     const currentDashboard = {
       ...dashboard([
         {
@@ -302,14 +302,9 @@ describe("Founder interaction popups", () => {
 
     render(<App />);
 
-    await waitFor(() =>
-      expect(
-        screen.getByRole("dialog", { name: "Bổ sung số tiền yêu cầu" }),
-      ).toBeInTheDocument(),
-    );
-    expect(
-      screen.getByRole("button", { name: "Mở biểu mẫu bổ sung dữ liệu" }),
-    ).toBeInTheDocument();
+    expect(screen.queryByRole("dialog", { name: "Bổ sung số tiền yêu cầu" })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Mở biểu mẫu bổ sung dữ liệu" }));
+    expect(await screen.findByRole("dialog", { name: "Bổ sung số tiền yêu cầu" })).toBeInTheDocument();
   });
 
   it("opens the exact current final-decision control while workflow playback is still catching up", async () => {

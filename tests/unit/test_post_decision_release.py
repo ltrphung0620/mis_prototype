@@ -49,6 +49,7 @@ from opc_mis.domain.enums import (
 )
 from opc_mis.domain.evidence import EvidenceRef
 from opc_mis.domain.post_decision_models import (
+    ContractExecutionStatus,
     ExternalReleaseAuthorizationReference,
     ExternalSubmissionReadinessStatus,
     FinalDecisionApprovalReference,
@@ -95,7 +96,10 @@ def _release_snapshot() -> DecisionDocumentReleaseSnapshot:
         purpose="PERFORMANCE_BOND_APPLICATION",
         document_codes=("SIGNED_CONTRACT",),
         masking_manifest_id="MASK-1",
-        limitation_codes=("NON_BINDING_PROVIDER_RESULT",),
+        limitation_codes=(
+            "SIGNED_CONTRACT_PENDING_FOUNDER_ACCEPTANCE",
+            "NON_BINDING_PROVIDER_RESULT",
+        ),
         evidence_ids=("EVD-DRP",),
     )
 
@@ -216,25 +220,29 @@ def _approved_context(
 
 
 @pytest.mark.parametrize(
-    ("recommendation", "outcome"),
+    ("recommendation", "outcome", "execution_status"),
     (
         (
             DecisionRecommendation.ACCEPT,
             PostDecisionOutcome.FINAL_DECISION_ACCEPTED,
+            ContractExecutionStatus.SIGNED,
         ),
         (
             DecisionRecommendation.NEGOTIATE_CONDITIONS_TO_ACCEPT,
             PostDecisionOutcome.NEGOTIATION_AUTHORIZED,
+            ContractExecutionStatus.PENDING_NEGOTIATION,
         ),
         (
             DecisionRecommendation.DO_NOT_ACCEPT,
             PostDecisionOutcome.CASE_CLOSED_NO_EXTERNAL_ACTION,
+            ContractExecutionStatus.NOT_SIGNED,
         ),
     ),
 )
 def test_post_decision_routes_approved_recommendations_deterministically(
     recommendation: DecisionRecommendation,
     outcome: PostDecisionOutcome,
+    execution_status: ContractExecutionStatus,
 ) -> None:
     context = _approved_context(
         recommendation,
@@ -244,6 +252,7 @@ def test_post_decision_routes_approved_recommendations_deterministically(
     update = PostDecisionUpdateBuilder.build(context)
 
     assert update.outcome is outcome
+    assert update.contract_execution_status is execution_status
     assert update.external_document_release_required is (
         recommendation is DecisionRecommendation.ACCEPT
     )
@@ -282,7 +291,10 @@ def _release_package() -> DocumentReleasePackage:
         checklist_item_id="DCLI-1",
         document_code=DocumentRequirementCode.SIGNED_CONTRACT,
         status="AVAILABLE",
-        limitation_codes=("NON_BINDING_PROVIDER_RESULT",),
+        limitation_codes=(
+            "SIGNED_CONTRACT_PENDING_FOUNDER_ACCEPTANCE",
+            "NON_BINDING_PROVIDER_RESULT",
+        ),
         source_reference_ids=("DOCREF-1",),
         evidence_ids=("EVD-DRP",),
     )
@@ -351,6 +363,12 @@ def test_external_proposal_is_exact_and_never_authorizes_or_sends() -> None:
     assert proposal.approval_requested is False
     assert proposal.release_authorized is False
     assert proposal.external_submission_performed is False
+    assert proposal.contract_execution_status is ContractExecutionStatus.SIGNED
+    assert proposal.signed_contract_completed is True
+    assert proposal.resolved_limitation_codes == (
+        "SIGNED_CONTRACT_PENDING_FOUNDER_ACCEPTANCE",
+    )
+    assert proposal.limitation_codes == ("NON_BINDING_PROVIDER_RESULT",)
     assert action_payload["document_sent_to_partner"] is True
     assert action_payload["release_package_input_hash"] == "HASH-ART-DRP"
     assert "sanitized_payload" not in proposal.model_dump(mode="json")

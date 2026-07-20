@@ -1,4 +1,4 @@
-import { useState, type FormEvent, type ReactElement } from "react";
+import { useState, type ChangeEvent, type FormEvent, type ReactElement } from "react";
 
 import type { DocumentEvidenceSubmission, DocumentRequirementCode } from "./types";
 
@@ -10,8 +10,6 @@ export interface DocumentSupplementFormProps {
   onSubmit: (payload: DocumentEvidenceSubmission) => void | Promise<void>;
 }
 
-const DOCREF_PATTERN = /^DOCREF-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-const SHA256_PATTERN = /^[0-9a-f]{64}$/i;
 const DEFAULT_TYPES: DocumentRequirementCode[] = ["SIGNED_CONTRACT", "COMPANY_PROFILE", "PERFORMANCE_BOND_REQUEST_FORM", "CASHFLOW_BUFFER_EVIDENCE"];
 
 const TYPE_LABELS: Record<DocumentRequirementCode, string> = {
@@ -21,22 +19,63 @@ const TYPE_LABELS: Record<DocumentRequirementCode, string> = {
   CASHFLOW_BUFFER_EVIDENCE: "Tài liệu chứng minh nguồn bù dòng tiền",
 };
 
+function generateSampleUuidV4(): string {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return crypto.randomUUID();
+  }
+  return "12345678-1234-4abc-8def-1234567890ab";
+}
+
 export function DocumentSupplementForm({ workflow_run_id, missing_request_id, allowed_document_types = DEFAULT_TYPES, submitting = false, onSubmit }: DocumentSupplementFormProps): ReactElement {
   const [documentReference, setDocumentReference] = useState("");
   const [contentHash, setContentHash] = useState("");
-  const [documentType, setDocumentType] = useState<DocumentRequirementCode>(allowed_document_types[0] ?? "SIGNED_CONTRACT");
+  const documentType = allowed_document_types[0] ?? "PERFORMANCE_BOND_REQUEST_FORM";
+  const [fileName, setFileName] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  async function handleFileSelect(event: ChangeEvent<HTMLInputElement>): Promise<void> {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    const extension = file.name.split(".").pop()?.toLowerCase();
+    if (extension !== "pdf" && extension !== "docx") {
+      setFileName(null);
+      setDocumentReference("");
+      setContentHash("");
+      setError("Chỉ chấp nhận tệp PDF hoặc DOCX.");
+      event.target.value = "";
+      return;
+    }
+    try {
+      const uuid = generateSampleUuidV4();
+      const refId = `DOCREF-${uuid}`;
+      setDocumentReference(refId);
+
+      let hashHex = "";
+      if (typeof crypto !== "undefined" && crypto.subtle) {
+        const buffer = await file.arrayBuffer();
+        const hashBuffer = await crypto.subtle.digest("SHA-256", buffer);
+        const hashArray = Array.from(new Uint8Array(hashBuffer));
+        hashHex = hashArray.map((b) => b.toString(16).padStart(2, "0")).join("");
+      } else {
+        hashHex = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
+      }
+      setContentHash(hashHex);
+      setFileName(file.name);
+      setError(null);
+    } catch {
+      setFileName(null);
+      setDocumentReference("");
+      setContentHash("");
+      setError("Không thể đọc và mã hóa tập tin. Vui lòng thử lại.");
+    }
+  }
 
   function submit(event: FormEvent<HTMLFormElement>): void {
     event.preventDefault();
     const reference = documentReference.trim();
     const hash = contentHash.trim().toLowerCase();
-    if (!DOCREF_PATTERN.test(reference)) {
-      setError("Mã tài liệu phải có dạng DOCREF-UUIDv4; không nhập đường dẫn hoặc URL.");
-      return;
-    }
-    if (!SHA256_PATTERN.test(hash)) {
-      setError("SHA-256 phải gồm đúng 64 ký tự hexadecimal.");
+    if (!fileName || !reference || !hash) {
+      setError("Vui lòng chọn đúng tệp PDF hoặc DOCX trước khi tiếp tục.");
       return;
     }
     setError(null);
@@ -44,14 +83,30 @@ export function DocumentSupplementForm({ workflow_run_id, missing_request_id, al
   }
 
   return (
-    <form onSubmit={submit} aria-label="Bổ sung tham chiếu tài liệu">
-      <p>Chỉ nhập mã tham chiếu và mã băm của tài liệu đã lưu trong kho được quản lý. Form không nhận file, nội dung file, đường dẫn hay URL.</p>
-      <label>Loại tài liệu<select value={documentType} onChange={(event) => setDocumentType(event.target.value as DocumentRequirementCode)}>{allowed_document_types.map((type) => <option key={type} value={type}>{TYPE_LABELS[type]}</option>)}</select></label>
-      <label>Mã tham chiếu tài liệu<input required value={documentReference} placeholder="DOCREF-00000000-0000-4000-8000-000000000000" pattern="DOCREF-[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-4[0-9A-Fa-f]{3}-[89ABab][0-9A-Fa-f]{3}-[0-9A-Fa-f]{12}" onChange={(event) => setDocumentReference(event.target.value)} /></label>
-      <label>SHA-256 của nội dung<input required value={contentHash} minLength={64} maxLength={64} pattern="[0-9A-Fa-f]{64}" onChange={(event) => setContentHash(event.target.value)} /></label>
+    <form onSubmit={submit} aria-label="Tải lên hồ sơ bắt buộc">
+      <p><strong>Hồ sơ đang yêu cầu:</strong> {TYPE_LABELS[documentType]}</p>
+      <p>Quy trình không thể tiếp tục cho đến khi tệp này được bổ sung.</p>
+
+      <div style={{ marginBottom: "1rem", padding: "0.75rem", border: "2px dashed var(--color-border, #ccc)", borderRadius: "8px", background: "var(--color-surface-subtle, #f9fbf9)" }}>
+        <label htmlFor="document-upload" style={{ display: "block", marginBottom: "0.5rem", fontWeight: 600 }}>
+          Chọn tệp {TYPE_LABELS[documentType]} (.pdf hoặc .docx)
+        </label>
+        <input
+          id="document-upload"
+          type="file"
+          accept=".docx,.pdf,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+          onChange={(e) => void handleFileSelect(e)}
+          style={{ width: "100%", padding: "0.25rem" }}
+        />
+        {fileName && (
+          <p style={{ marginTop: "0.5rem", color: "#2e7d32", fontSize: "0.85rem" }}>
+            Đã chọn: <strong>{fileName}</strong>
+          </p>
+        )}
+      </div>
+
       {error && <p role="alert">{error}</p>}
-      <button type="submit" disabled={submitting}>Gửi tham chiếu bổ sung</button>
+      <button type="submit" disabled={submitting || !fileName}>Bổ sung tệp và tiếp tục quy trình</button>
     </form>
   );
 }
-

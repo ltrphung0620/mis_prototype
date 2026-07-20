@@ -197,7 +197,12 @@ def _context() -> DocumentContext:
         "04_CONTRACTS",
         2,
         CONTRACT_ID,
-        {"contract_id": CONTRACT_ID, "customer_id": "CUS-TEST"},
+        {
+            "contract_id": CONTRACT_ID,
+            "customer_id": "CUS-TEST",
+            "contract_value": 4_200_000_000,
+            "payment_terms": "Performance bond required before mobilization.",
+        },
     )
     profile = (
         _record(
@@ -468,17 +473,22 @@ def _with_company_profile_supplement(context: DocumentContext) -> DocumentContex
     )
 
 
-def _ready_context() -> DocumentContext:
-    context = _context()
+def _with_required_document_supplement(
+    context: DocumentContext,
+    document_type: DocumentRequirementCode,
+    *,
+    reference_suffix: str,
+    hash_character: str,
+) -> DocumentContext:
     missing_request_id = deterministic_id(
         "MDR",
         CASE_ID,
         "DOCUMENT_SKILL",
         context.request.request_id,
-        DocumentRequirementCode.SIGNED_CONTRACT,
+        document_type,
     )
-    document_reference_id = "DOCREF-00000000-0000-4000-8000-000000000102"
-    content_sha256 = "c" * 64
+    document_reference_id = f"DOCREF-00000000-0000-4000-8000-{reference_suffix}"
+    content_sha256 = hash_character * 64
     provided_by = "FOUNDER"
     evidence_note = (
         DocumentEvidenceReasonCode.REQUESTED_DOCUMENT_REFERENCE_SUPPLIED
@@ -492,7 +502,7 @@ def _ready_context() -> DocumentContext:
         missing_request_id,
         document_reference_id,
         content_sha256,
-        DocumentRequirementCode.SIGNED_CONTRACT,
+        document_type,
         provided_by,
         evidence_note,
     )
@@ -521,7 +531,7 @@ def _ready_context() -> DocumentContext:
         missing_request_id=missing_request_id,
         document_reference_id=document_reference_id,
         content_sha256=content_sha256,
-        document_type=DocumentRequirementCode.SIGNED_CONTRACT,
+        document_type=document_type,
         provided_by=provided_by,
         evidence_note=evidence_note,
         source_package_artifact_id=source_package_artifact_id,
@@ -529,19 +539,34 @@ def _ready_context() -> DocumentContext:
         evidence_ids=(evidence.evidence_id,),
     )
     artifact = _envelope(
-        artifact_id="ART-SIGNED-SUPPLEMENT",
+        artifact_id=f"ART-{document_type.value}-SUPPLEMENT",
         artifact_type=ArtifactType.DOCUMENT_EVIDENCE_SUPPLEMENT,
         payload=supplement.model_dump(mode="json"),
         evidence_refs=(evidence,),
     )
     return replace(
         context,
-        supplement_artifacts=(artifact,),
-        supplements=(supplement,),
+        supplement_artifacts=(*context.supplement_artifacts, artifact),
+        supplements=(*context.supplements, supplement),
     )
 
 
-def test_document_core_blocks_signed_contract_and_masks_company_identity() -> None:
+def _ready_context() -> DocumentContext:
+    context = _with_required_document_supplement(
+        _context(),
+        DocumentRequirementCode.PERFORMANCE_BOND_REQUEST_FORM,
+        reference_suffix="000000000102",
+        hash_character="c",
+    )
+    return _with_required_document_supplement(
+        context,
+        DocumentRequirementCode.CASHFLOW_BUFFER_EVIDENCE,
+        reference_suffix="000000000103",
+        hash_character="d",
+    )
+
+
+def test_document_core_drafts_signed_contract_and_masks_contract_and_company() -> None:
     context = _context()
     checklist = DocumentChecklistBuilder(
         required_profile_fields=REQUIRED_PROFILE_FIELDS
@@ -557,9 +582,16 @@ def test_document_core_blocks_signed_contract_and_masks_company_identity() -> No
         for item in checklist.checklist.items
         if item.document_code is DocumentRequirementCode.CASHFLOW_BUFFER_EVIDENCE
     )
-    assert signed.status is DocumentRequirementStatus.MISSING
-    assert checklist.missing_data_requests[0].request_id == signed.missing_request_id
-    assert cashflow.status is DocumentRequirementStatus.AVAILABLE_WITH_LIMITATIONS
+    assert signed.status is DocumentRequirementStatus.DRAFTED
+    assert signed.missing_request_id is None
+    assert signed.limitation_codes == (
+        "SIGNED_CONTRACT_PENDING_FOUNDER_ACCEPTANCE",
+    )
+    assert tuple(item.field for item in checklist.missing_data_requests) == (
+        DocumentRequirementCode.PERFORMANCE_BOND_REQUEST_FORM.value,
+        DocumentRequirementCode.CASHFLOW_BUFFER_EVIDENCE.value,
+    )
+    assert cashflow.status is DocumentRequirementStatus.MISSING
 
     package = DocumentPackageBuilder(
         masking_service=_policy(),
@@ -571,14 +603,15 @@ def test_document_core_blocks_signed_contract_and_masks_company_identity() -> No
     serialized = json.dumps(package.package_draft.sanitized_payload, sort_keys=True)
     assert "OPC-RAW-ID" not in serialized
     assert "OPC Raw Company Name" not in serialized
+    assert "CUS-TEST" not in serialized
+    assert package.package_draft.sanitized_payload["contract_value"] != 4_200_000_000
     assert package.package_draft.masking_manifest.fail_closed is True
     assert package.package_draft.approval_condition_codes == (
         "CONTRACT_SIGNED",
         "CASHFLOW_BUFFER_CONFIRMED",
     )
     assert package.package_draft.limitation_codes == (
-        "DRAFT_NOT_SIGNED",
-        "CASHFLOW_OPC_GLOBAL_NOT_CONTRACT_ATTRIBUTABLE",
+        "SIGNED_CONTRACT_PENDING_FOUNDER_ACCEPTANCE",
     )
 
 
@@ -653,9 +686,8 @@ def test_ready_release_preserves_conditions_limitations_and_document_manifest() 
     release = package.release_package
     assert release.approval_condition_codes == context.request.approval_condition_codes
     assert release.limitation_codes == (
+        "SIGNED_CONTRACT_PENDING_FOUNDER_ACCEPTANCE",
         "DOCUMENT_REFERENCE_NOT_REPOSITORY_VERIFIED",
-        "DRAFT_NOT_SIGNED",
-        "CASHFLOW_OPC_GLOBAL_NOT_CONTRACT_ATTRIBUTABLE",
     )
     assert tuple(item.document_code for item in release.document_manifest) == (
         release.document_codes
@@ -672,15 +704,13 @@ def test_ready_release_preserves_conditions_limitations_and_document_manifest() 
     )
     assert cashflow.status is DocumentRequirementStatus.AVAILABLE_WITH_LIMITATIONS
     assert cashflow.limitation_codes == (
-        "CASHFLOW_OPC_GLOBAL_NOT_CONTRACT_ATTRIBUTABLE",
-    )
-    assert signed.status is DocumentRequirementStatus.AVAILABLE_WITH_LIMITATIONS
-    assert signed.limitation_codes == (
         "DOCUMENT_REFERENCE_NOT_REPOSITORY_VERIFIED",
     )
-    assert signed.source_reference_ids == (
-        "DOCREF-00000000-0000-4000-8000-000000000102",
+    assert signed.status is DocumentRequirementStatus.DRAFTED
+    assert signed.limitation_codes == (
+        "SIGNED_CONTRACT_PENDING_FOUNDER_ACCEPTANCE",
     )
+    assert signed.source_reference_ids == (CONTRACT_ID,)
     action = document_release_action_payload(release)
     assert action["approval_condition_codes"] == release.approval_condition_codes
     assert action["limitation_codes"] == release.limitation_codes
@@ -690,7 +720,7 @@ def test_ready_release_preserves_conditions_limitations_and_document_manifest() 
     assert "document_bytes" not in serialized
 
 
-def test_document_component_is_side_effect_free_and_waits_for_signed_contract() -> None:
+def test_document_component_does_not_wait_for_signed_contract_before_decision() -> None:
     class StaticContextLoader:
         async def load(self, _execution: ExecutionContext) -> DocumentContext:
             return _context()
@@ -1016,6 +1046,21 @@ def test_unrelated_profile_field_is_ignored_before_masking() -> None:
 def test_evidence_intake_resolves_exact_request_without_raw_content() -> None:
     async def scenario() -> None:
         context = _context()
+        context = replace(
+            context,
+            cashflow_records=(
+                _record(
+                    "09_CASHFLOW",
+                    2,
+                    "2026-06",
+                    {
+                        "month": "2026-06",
+                        "cash_reserve_minimum": None,
+                        "projected_closing_cash": None,
+                    },
+                ),
+            ),
+        )
         checklist = DocumentChecklistBuilder(
             required_profile_fields=REQUIRED_PROFILE_FIELDS
         ).build(context)
@@ -1031,7 +1076,11 @@ def test_evidence_intake_resolves_exact_request_without_raw_content() -> None:
             evidence_refs=package_build.evidence_refs,
         )
         await repository.save(package_artifact)
-        request_id = checklist.missing_data_requests[0].request_id
+        request_id = next(
+            item.request_id
+            for item in checklist.missing_data_requests
+            if item.field == DocumentRequirementCode.CASHFLOW_BUFFER_EVIDENCE.value
+        )
         component = DocumentEvidenceIntake(
             artifacts=repository,
             redactor=DeterministicFreeTextRedactor(),
@@ -1051,7 +1100,7 @@ def test_evidence_intake_resolves_exact_request_without_raw_content() -> None:
                             "DOCREF-00000000-0000-4000-8000-000000000103"
                         ),
                         "content_sha256": "b" * 64,
-                        "document_type": "SIGNED_CONTRACT",
+                        "document_type": "CASHFLOW_BUFFER_EVIDENCE",
                         "provided_by": "FOUNDER",
                         "evidence_note": "REQUESTED_DOCUMENT_REFERENCE_SUPPLIED",
                     },
@@ -1090,7 +1139,7 @@ def test_evidence_intake_resolves_exact_request_without_raw_content() -> None:
                             "DOCREF-00000000-0000-4000-8000-000000000104"
                         ),
                         "content_sha256": "c" * 64,
-                        "document_type": "SIGNED_CONTRACT",
+                        "document_type": "CASHFLOW_BUFFER_EVIDENCE",
                         "provided_by": "FOUNDER",
                         "evidence_note": f"access_token={secret}",
                     },
@@ -1124,7 +1173,7 @@ def test_evidence_intake_resolves_exact_request_without_raw_content() -> None:
                                 f"{index + 105:012d}"
                             ),
                             "content_sha256": f"{index + 1:x}" * 64,
-                            "document_type": "SIGNED_CONTRACT",
+                            "document_type": "CASHFLOW_BUFFER_EVIDENCE",
                             "provided_by": "FOUNDER",
                             "evidence_note": unsafe_note,
                         },

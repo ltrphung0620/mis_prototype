@@ -120,24 +120,24 @@ _STAGES = (
     ),
     _StageDefinition(
         "DECISION_ROUTE_PLANNING",
-        "Lập tuyến xử lý ban đầu",
+        "Xác định nhu cầu vốn từ ngân hàng nếu cần",
         (
             _TaskDefinition(
                 "DECISION_ROUTE_PLANNING",
                 "DECISION",
-                "Xác định tuyến nội bộ hoặc tuyến ngân hàng",
+                "Xác định hợp đồng có cần nguồn vốn hoặc bảo lãnh từ ngân hàng hay không",
                 WorkflowNode.DECISION_ROUTE_PLANNING,
             ),
         ),
     ),
     _StageDefinition(
         "BANKING_DISCOVERY_HANDOFF",
-        "Bàn giao yêu cầu khảo sát ngân hàng",
+        "Bàn giao khảo sát ngân hàng cho Banking Integration Skill",
         (
             _TaskDefinition(
                 "BANKING_DISCOVERY_HANDOFF",
                 "DECISION",
-                "Tạo yêu cầu khảo sát ngân hàng",
+                "Bàn giao nhu cầu và evidence cho Banking Integration Skill",
                 WorkflowNode.BANKING_DISCOVERY_HANDOFF,
             ),
         ),
@@ -156,84 +156,84 @@ _STAGES = (
     ),
     _StageDefinition(
         "BANKING_PRECHECK_READINESS",
-        "Kiểm tra mức sẵn sàng làm việc sơ bộ với ngân hàng",
+        "Kiểm tra dữ liệu đầu vào cho precheck",
         (
             _TaskDefinition(
                 "BANKING_PRECHECK_READINESS",
                 "BANKING",
-                "Kiểm tra điều kiện dữ liệu trước khi làm việc sơ bộ với ngân hàng",
+                "Đối chiếu dữ liệu bắt buộc trước khi chạy precheck",
                 WorkflowNode.BANKING_PRECHECK_READINESS,
             ),
         ),
     ),
     _StageDefinition(
         "DECISION_POST_BANKING_REVIEW",
-        "Rà soát kết quả khảo sát ngân hàng",
+        "Dữ liệu đầu vào có đủ để chạy precheck?",
         (
             _TaskDefinition(
                 "DECISION_POST_BANKING_REVIEW",
                 "DECISION",
-                "Xác định có thể gửi yêu cầu kiểm tra sơ bộ tới ngân hàng hay không",
+                "Kết luận có phương án nào đủ dữ liệu để chạy precheck hay không",
                 WorkflowNode.DECISION_POST_BANKING_REVIEW,
             ),
         ),
     ),
     _StageDefinition(
         "BANKING_PRECHECK_SUBMISSION_PROPOSAL",
-        "Lập đề xuất gửi yêu cầu kiểm tra sơ bộ",
+        "Chuẩn bị yêu cầu precheck — chưa gửi",
         (
             _TaskDefinition(
                 "BANKING_PRECHECK_SUBMISSION_PROPOSAL",
                 "BANKING",
-                "Tạo đề xuất kiểm tra sơ bộ chưa gửi tới ngân hàng",
+                "Tạo chính xác yêu cầu precheck để trình Founder, chưa gửi tới ngân hàng",
                 WorkflowNode.BANKING_PRECHECK_SUBMISSION_PROPOSAL,
             ),
         ),
     ),
     _StageDefinition(
         "BANKING_PRECHECK_APPROVAL",
-        "Phê duyệt gửi yêu cầu kiểm tra sơ bộ",
+        "Founder duyệt precheck",
         (
             _TaskDefinition(
                 "BANKING_PRECHECK_APPROVAL",
                 "GOVERNANCE",
-                "Nhà sáng lập quyết định có cho phép gửi yêu cầu tới ngân hàng",
+                "Founder quyết định có cho phép chạy precheck với ngân hàng hay không",
                 protected_action=ProtectedAction.SUBMIT_BANKING_PRECHECK,
             ),
         ),
     ),
     _StageDefinition(
         "BANKING_PRECHECK_EXECUTION",
-        "Thực hiện kiểm tra sơ bộ với ngân hàng",
+        "Chạy precheck và nhận phản hồi từ ngân hàng",
         (
             _TaskDefinition(
                 "BANKING_PRECHECK_EXECUTION",
                 "BANKING",
-                "Gửi và tiếp nhận kết quả kiểm tra sơ bộ đã được cho phép",
+                "Chạy precheck đã được Founder cho phép và tiếp nhận phản hồi",
                 WorkflowNode.BANKING_PRECHECK_EXECUTION,
             ),
         ),
     ),
     _StageDefinition(
         "DECISION_POST_PRECHECK_REVIEW",
-        "Rà soát kết quả kiểm tra sơ bộ với ngân hàng",
+        "Đọc kết quả precheck và xác định bước tiếp theo",
         (
             _TaskDefinition(
                 "DECISION_POST_PRECHECK_REVIEW",
                 "DECISION",
-                "Phân loại kết quả kiểm tra sơ bộ và chọn tuyến tiếp theo",
+                "Phân loại phản hồi precheck và xác định tuyến xử lý tiếp theo",
                 WorkflowNode.DECISION_POST_PRECHECK_REVIEW,
             ),
         ),
     ),
     _StageDefinition(
         "DECISION_DOCUMENT_HANDOFF",
-        "Bàn giao yêu cầu chuẩn bị hồ sơ",
+        "Bàn giao yêu cầu chuẩn bị hồ sơ cho Document Skill",
         (
             _TaskDefinition(
                 "DECISION_DOCUMENT_HANDOFF",
                 "DECISION",
-                "Tạo yêu cầu chuẩn bị hồ sơ theo phương án có điều kiện",
+                "Bàn giao yêu cầu và điều kiện hồ sơ cho Document Skill",
                 WorkflowNode.DECISION_DOCUMENT_HANDOFF,
             ),
         ),
@@ -1071,9 +1071,11 @@ def _pending_interactions(
         )
     elif summary.current_stage == WorkflowNode.DOCUMENT_PREPARATION.value:
         interaction_type = DashboardInteractionType.DOCUMENT_EVIDENCE
-        title = "Bổ sung tham chiếu tài liệu"
+        title = "Bổ sung hồ sơ bắt buộc"
         instruction = (
-            "Cung cấp mã tài liệu, SHA-256 và đúng loại tài liệu; không gửi đường dẫn hoặc tệp thô."
+            "Tải lên đúng tệp PDF hoặc DOCX đang được yêu cầu. Quy trình sẽ tạm dừng "
+            "an toàn và không đi tiếp cho đến khi đủ Đơn đề nghị bảo lãnh thực hiện "
+            "và Tài liệu chứng minh nguồn bù dòng tiền."
         )
         endpoint = (
             f"/api/cases/{summary.evaluation_case_id}/documents/evidence-supplements"

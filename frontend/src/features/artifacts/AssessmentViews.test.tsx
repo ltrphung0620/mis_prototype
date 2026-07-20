@@ -28,8 +28,8 @@ describe("artifact assessment views", () => {
     expect(screen.queryByText("Không quy cho hợp đồng")).not.toBeInTheDocument();
     expect(screen.getByText("Số đơn hàng liên kết")).toBeInTheDocument();
     expect(screen.queryByText(/Chất lượng:/i)).not.toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "Tóm tắt" })).toBeInTheDocument();
-    expect(screen.queryByText(/OPENAI|gpt-private-model-name|SECRET-EVIDENCE-ID|08_FINANCE|row_number/)).not.toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Tóm tắt (Nội dung do OpenAI tạo)" })).toBeInTheDocument();
+    expect(screen.queryByText(/gpt-private-model-name|SECRET-EVIDENCE-ID|08_FINANCE|row_number/)).not.toBeInTheDocument();
   });
 
   it("labels simulated Banking results as non-binding", () => {

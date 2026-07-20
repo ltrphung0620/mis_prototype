@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
 import { BankingAmountForm } from "./BankingAmountForm";
@@ -6,23 +6,23 @@ import { DocumentSupplementForm } from "./DocumentSupplementForm";
 import { PrecheckEvidenceForm } from "./PrecheckEvidenceForm";
 
 describe("typed missing-data forms", () => {
-  it("submits only opaque document metadata and a content hash", () => {
+  it("derives opaque document metadata from an uploaded PDF", async () => {
     const submit = vi.fn();
-    const { container } = render(<DocumentSupplementForm workflow_run_id="RUN-1" missing_request_id="MDR-1" allowed_document_types={["SIGNED_CONTRACT"]} onSubmit={submit} />);
-    fireEvent.change(screen.getByLabelText("Mã tham chiếu tài liệu"), { target: { value: "DOCREF-12345678-1234-4abc-8def-1234567890ab" } });
-    fireEvent.change(screen.getByLabelText("SHA-256 của nội dung"), { target: { value: "a".repeat(64) } });
-    fireEvent.click(screen.getByRole("button", { name: "Gửi tham chiếu bổ sung" }));
-    expect(submit).toHaveBeenCalledWith({ workflow_run_id: "RUN-1", missing_request_id: "MDR-1", document_reference_id: "DOCREF-12345678-1234-4abc-8def-1234567890ab", content_sha256: "a".repeat(64), document_type: "SIGNED_CONTRACT", evidence_note: "REQUESTED_DOCUMENT_REFERENCE_SUPPLIED" });
-    expect(container.querySelector('input[type="file"]')).toBeNull();
+    render(<DocumentSupplementForm workflow_run_id="RUN-1" missing_request_id="MDR-1" allowed_document_types={["PERFORMANCE_BOND_REQUEST_FORM"]} onSubmit={submit} />);
+    const file = new File(["bank form"], "don-de-nghi.pdf", { type: "application/pdf" });
+    Object.defineProperty(file, "arrayBuffer", { value: async () => new TextEncoder().encode("bank form").buffer });
+    fireEvent.change(screen.getByLabelText(/Chọn tệp Đơn đề nghị bảo lãnh thực hiện/i), { target: { files: [file] } });
+    await waitFor(() => expect(screen.getByText("don-de-nghi.pdf")).toBeInTheDocument());
+    fireEvent.click(screen.getByRole("button", { name: "Bổ sung tệp và tiếp tục quy trình" }));
+    expect(submit).toHaveBeenCalledWith(expect.objectContaining({ workflow_run_id: "RUN-1", missing_request_id: "MDR-1", document_reference_id: expect.stringMatching(/^DOCREF-/), content_sha256: expect.stringMatching(/^[a-f0-9]{64}$/), document_type: "PERFORMANCE_BOND_REQUEST_FORM", evidence_note: "REQUESTED_DOCUMENT_REFERENCE_SUPPLIED" }));
   });
 
-  it("rejects paths and invalid hashes", () => {
+  it("rejects file types other than PDF and DOCX", async () => {
     const submit = vi.fn();
     render(<DocumentSupplementForm workflow_run_id="RUN-1" missing_request_id="MDR-1" onSubmit={submit} />);
-    fireEvent.change(screen.getByLabelText("Mã tham chiếu tài liệu"), { target: { value: "C:\\secret\\contract.pdf" } });
-    fireEvent.change(screen.getByLabelText("SHA-256 của nội dung"), { target: { value: "bad" } });
-    fireEvent.submit(screen.getByRole("form", { name: "Bổ sung tham chiếu tài liệu" }));
-    expect(screen.getByRole("alert")).toHaveTextContent(/không nhập đường dẫn/i);
+    const file = new File(["bad"], "malware.exe", { type: "application/octet-stream" });
+    fireEvent.change(screen.getByLabelText(/Chọn tệp/i), { target: { files: [file] } });
+    expect(await screen.findByRole("alert")).toHaveTextContent(/chỉ chấp nhận tệp PDF hoặc DOCX/i);
     expect(submit).not.toHaveBeenCalled();
   });
 
@@ -44,4 +44,5 @@ describe("typed missing-data forms", () => {
     expect(screen.getByRole("alert")).toHaveTextContent(/số nguyên VND dương/i);
     expect(submit).not.toHaveBeenCalled();
   });
+
 });

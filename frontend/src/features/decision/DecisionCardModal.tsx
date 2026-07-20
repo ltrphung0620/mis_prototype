@@ -42,15 +42,15 @@ const LABELS: Record<string, string> = {
   GTE: "≥",
   LTE: "≤",
   EQ: "=",
-  ORDER_GROSS_MARGIN: "Biên lợi nhuận gộp của các order liên kết",
+  ORDER_GROSS_MARGIN: "Biên lợi nhuận gộp của các đơn hàng liên kết",
   CONTRACT_GROSS_MARGIN_SOURCE: "Biên lợi nhuận gộp ghi nhận trong hợp đồng",
-  RELATED_ORDER_COUNT: "Số order liên kết",
-  ORDER_REVENUE_TOTAL: "Tổng doanh thu của order liên kết",
-  ORDER_ESTIMATED_COST_TOTAL: "Tổng chi phí ước tính của order liên kết",
-  ORDER_GROSS_PROFIT: "Lợi nhuận gộp của order liên kết",
-  ORDER_COVERAGE_RATIO: "Tỷ lệ giá trị hợp đồng được order giải thích",
-  UNCOVERED_CONTRACT_VALUE: "Giá trị hợp đồng chưa được order giải thích",
-  RELATED_INVOICE_COUNT: "Số hóa đơn liên kết qua order",
+  RELATED_ORDER_COUNT: "Số đơn hàng liên kết",
+  ORDER_REVENUE_TOTAL: "Tổng doanh thu của đơn hàng liên kết",
+  ORDER_ESTIMATED_COST_TOTAL: "Tổng chi phí ước tính của đơn hàng liên kết",
+  ORDER_GROSS_PROFIT: "Lợi nhuận gộp của đơn hàng liên kết",
+  ORDER_COVERAGE_RATIO: "Tỷ lệ giá trị hợp đồng được đơn hàng giải thích",
+  UNCOVERED_CONTRACT_VALUE: "Giá trị hợp đồng chưa được đơn hàng giải thích",
+  RELATED_INVOICE_COUNT: "Số hóa đơn liên kết qua đơn hàng",
   INVOICE_TOTAL: "Tổng giá trị hóa đơn liên kết",
   PAID_INVOICE_TOTAL: "Tổng hóa đơn đã thanh toán",
   OPEN_INVOICE_TOTAL: "Tổng hóa đơn đang mở",
@@ -60,27 +60,30 @@ const LABELS: Record<string, string> = {
   CONTRACT_START_DATE: "Ngày bắt đầu hợp đồng",
   CONTRACT_END_DATE: "Ngày kết thúc hợp đồng",
   CONTRACT_DURATION_DAYS: "Thời lượng hợp đồng",
-  EARLIEST_ORDER_DATE: "Ngày order sớm nhất",
-  LATEST_ORDER_DUE_DATE: "Hạn order muộn nhất",
-  ORDER_SCHEDULE_SPAN_DAYS: "Khoảng thời gian triển khai order",
-  ORDER_OUTSIDE_CONTRACT_WINDOW_COUNT: "Số order ngoài thời hạn hợp đồng",
-  ORDER_INTERVAL_GAP_COUNT: "Số khoảng trống giữa các order",
-  MAX_ORDER_INTERVAL_GAP_DAYS: "Khoảng trống order dài nhất",
-  ORDER_INTERVAL_OVERLAP_COUNT: "Số lần lịch order chồng lấn",
+  EARLIEST_ORDER_DATE: "Ngày đơn hàng sớm nhất",
+  LATEST_ORDER_DUE_DATE: "Hạn đơn hàng muộn nhất",
+  ORDER_SCHEDULE_SPAN_DAYS: "Khoảng thời gian triển khai đơn hàng",
+  ORDER_OUTSIDE_CONTRACT_WINDOW_COUNT: "Số đơn hàng ngoài thời hạn hợp đồng",
+  ORDER_INTERVAL_GAP_COUNT: "Số khoảng trống giữa các đơn hàng",
+  MAX_ORDER_INTERVAL_GAP_DAYS: "Khoảng trống đơn hàng dài nhất",
+  ORDER_INTERVAL_OVERLAP_COUNT: "Số lần lịch đơn hàng chồng lấn",
   MAX_ORDER_INTERVAL_OVERLAP_DAYS: "Số ngày chồng lấn lớn nhất",
-  SOURCE_COMPLETED_ORDER_COUNT: "Số order đã hoàn thành",
-  SOURCE_ACTIVE_ORDER_COUNT: "Số order đang triển khai",
-  SOURCE_PLANNED_ORDER_COUNT: "Số order đã lên kế hoạch",
-  SOURCE_PENDING_ORDER_COUNT: "Số order đang chờ",
-  SOURCE_FLAGGED_ORDER_COUNT: "Số order được gắn cờ",
-  UNCLASSIFIED_ORDER_STATUS_COUNT: "Số trạng thái order chưa phân loại",
-  OPEN_PAST_DUE_ORDER_COUNT: "Số order đang mở và quá hạn",
-  MAX_OPEN_PAST_DUE_DAYS: "Số ngày quá hạn lớn nhất của order đang mở",
+  SOURCE_COMPLETED_ORDER_COUNT: "Số đơn hàng đã hoàn thành",
+  SOURCE_ACTIVE_ORDER_COUNT: "Số đơn hàng đang triển khai",
+  SOURCE_PLANNED_ORDER_COUNT: "Số đơn hàng đã lên kế hoạch",
+  SOURCE_PENDING_ORDER_COUNT: "Số đơn hàng đang chờ",
+  SOURCE_FLAGGED_ORDER_COUNT: "Số đơn hàng được gắn cờ",
+  UNCLASSIFIED_ORDER_STATUS_COUNT: "Số trạng thái đơn hàng chưa phân loại",
+  OPEN_PAST_DUE_ORDER_COUNT: "Số đơn hàng đang mở và quá hạn",
+  MAX_OPEN_PAST_DUE_DAYS: "Số ngày quá hạn lớn nhất của đơn hàng đang mở",
   SOURCE_DELIVERY_NOTE_COUNT: "Số ghi chú giao hàng",
-  RELATED_ORDER_REVENUE: "Doanh thu của các order liên kết",
-  RELATED_ORDER_ESTIMATED_COST: "Chi phí ước tính của các order liên kết",
-  RELATED_ORDER_GROSS_PROFIT: "Lợi nhuận gộp của các order liên kết",
+  RELATED_ORDER_REVENUE: "Doanh thu của các đơn hàng liên kết",
+  RELATED_ORDER_ESTIMATED_COST: "Chi phí ước tính của các đơn hàng liên kết",
+  RELATED_ORDER_GROSS_PROFIT: "Lợi nhuận gộp của các đơn hàng liên kết",
   CONTRACT_VALUE: "Giá trị hợp đồng",
+  CONTRACT_ORDER_COUNT: "Số đơn hàng liên quan",
+  CONTRACT_PHASE_COUNT: "Số giai đoạn triển khai",
+  CONTRACT_PROVINCE_COUNT: "Số tỉnh triển khai",
 };
 
 function label(value?: string | null): string {
@@ -92,11 +95,18 @@ function formatNumber(value: string | number | boolean | null | undefined, unit?
   if (value === null || value === undefined) return "Chưa xác định";
   if (typeof value === "boolean") return value ? "Có" : "Không";
   if (typeof value === "string") return value;
-  if ((unit ?? "").toUpperCase() === "VND") {
+  const normalizedUnit = (unit ?? "").trim().toUpperCase();
+  if (normalizedUnit === "VND") {
     return new Intl.NumberFormat("vi-VN", { style: "currency", currency: "VND", maximumFractionDigits: 0 }).format(value);
   }
-  if (["RATIO", "PERCENT", "PERCENTAGE"].includes((unit ?? "").toUpperCase())) {
+  if (["RATIO", "PERCENT", "PERCENTAGE"].includes(normalizedUnit)) {
     return `${new Intl.NumberFormat("vi-VN", { maximumFractionDigits: 2 }).format(Math.abs(value) <= 1 ? value * 100 : value)}%`;
+  }
+  if (normalizedUnit === "COUNT") {
+    return new Intl.NumberFormat("vi-VN", { maximumFractionDigits: 2 }).format(value);
+  }
+  if (normalizedUnit === "DAYS") {
+    return `${new Intl.NumberFormat("vi-VN", { maximumFractionDigits: 2 }).format(value)} ngày`;
   }
   return `${new Intl.NumberFormat("vi-VN", { maximumFractionDigits: 2 }).format(value)}${unit ? ` ${unit}` : ""}`;
 }
@@ -242,7 +252,7 @@ export function DecisionCardModal({
         {!isCurrent && <p role="alert">Đây không phải Decision Card hiện hành; thao tác phê duyệt đã bị khóa.</p>}
         <section>
           <h3>Tóm tắt cho Nhà sáng lập</h3>
-          <p>{payload.executive_summary}</p>
+          <p>{translateText(payload.executive_summary)}</p>
           <ul>{payload.reasons.map((reason, index) => <li key={reason.code ?? index}><strong>{translateText(reason.title)}</strong>: {translateText(reason.detail)}</li>)}</ul>
         </section>
 
@@ -257,8 +267,8 @@ export function DecisionCardModal({
             <h3>Phương án đàm phán</h3>
             <ul>{payload.selected_negotiation_strategies.map((strategy, index) => (
               <li key={strategy.strategy_id ?? index}>
-                <strong>{strategy.title}</strong>
-                <p>{strategy.founder_instruction}</p>
+                <strong>{translateText(strategy.title)}</strong>
+                <p>{translateText(strategy.founder_instruction)}</p>
                 {strategy.required_adjustment_value != null && <p>Mức điều chỉnh tối thiểu: {formatNumber(strategy.required_adjustment_value, strategy.currency ?? "VND")}.</p>}
               </li>
             ))}</ul>

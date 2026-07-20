@@ -35,7 +35,7 @@ POST /api/cases/run
                           -> conditional full-coverage result:
                              DECISION_DOCUMENT_HANDOFF
                              -> exactly one request: DOCUMENT_PREPARATION
-                             -> missing signed contract: WAITING_FOR_INPUT
+                             -> missing performance-bond request form: WAITING_FOR_INPUT
                              -> document supplement: auto-resume
                              -> DOCUMENT_RELEASE_PACKAGE_READY
                              -> INTERNAL_DECISION_PACKAGE_ASSEMBLY
@@ -303,8 +303,10 @@ resolved.
 
 The current conditional `API-002` scenario is server-owned mock data; the TeamPack has no real
 VietinBank response. It declares four document requirements. Structured company profile and an
-unsigned request-form draft are available internally, cashflow evidence keeps its OPC-global
-limitation, and `SIGNED_CONTRACT` blocks the package until an exact reference is supplied.
+masked contract snapshot are available internally, cashflow evidence keeps its OPC-global
+limitation, and `PERFORMANCE_BOND_REQUEST_FORM` blocks until Founder supplies an exact reference.
+`SIGNED_CONTRACT` keeps `SIGNED_CONTRACT_PENDING_FOUNDER_ACCEPTANCE` until an approved `ACCEPT`
+Post-Decision Update; it does not block Internal Decision assembly.
 
 Document intake accepts an opaque `document_reference_id`, a SHA-256 content digest, the exact
 pending request/type, and an evidence note. It does not accept bytes, URL, or filesystem path.

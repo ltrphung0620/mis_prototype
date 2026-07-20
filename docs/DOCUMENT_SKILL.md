@@ -74,9 +74,9 @@ simulated, non-binding codes:
 
 | Document code | Current deterministic handling |
 |---|---|
-| `SIGNED_CONTRACT` | `MISSING` until exact opaque reference metadata is supplied; then `AVAILABLE_WITH_LIMITATIONS` with `DOCUMENT_REFERENCE_NOT_REPOSITORY_VERIFIED` because repository/signature verification is not implemented |
+| `SIGNED_CONTRACT` | `DRAFTED` from exact TeamPack contract fields, minimized and masked, with `SIGNED_CONTRACT_PENDING_FOUNDER_ACCEPTANCE`; it never creates a pre-Decision missing-data request |
 | `COMPANY_PROFILE` | `AVAILABLE` only from exact configured `02_OPC_PROFILE` fields; if those fields are absent, an exact opaque supplement resolves the document requirement as `AVAILABLE_WITH_LIMITATIONS` without inventing structured profile values |
-| `PERFORMANCE_BOND_REQUEST_FORM` | `DRAFTED` with limitation `DRAFT_NOT_SIGNED` |
+| `PERFORMANCE_BOND_REQUEST_FORM` | `MISSING` until Founder supplies an exact opaque reference and declared content digest |
 | `CASHFLOW_BUFFER_EVIDENCE` | `AVAILABLE_WITH_LIMITATIONS` when OPC-global cashflow exists; never attributed to the contract |
 
 The provider condition codes carried into the handoff are `CONTRACT_SIGNED` and
@@ -116,10 +116,14 @@ Only `MISSING` items produce blocking `MissingDataRequest` objects. The package 
 | `READY_FOR_INTERNAL_DECISION` | No blocking request remains; the package can become an internal Decision input. This is not release review or authorization. |
 | `READY_FOR_RELEASE_REVIEW` | Legacy persisted value accepted for backward compatibility; new runs do not emit it. |
 
-With the current TeamPack, structured contract rows are not proof of a signed file. Therefore the
-first `API-002` Document run pauses for `SIGNED_CONTRACT` rather than inventing a file reference.
+With the current TeamPack, structured contract rows are not proof of a signed file. Document therefore
+creates only a masked contract snapshot and preserves `SIGNED_CONTRACT_PENDING_FOUNDER_ACCEPTANCE`.
+The first `API-002` Document run pauses for `PERFORMANCE_BOND_REQUEST_FORM`, not for
+`SIGNED_CONTRACT`. An approved `ACCEPT` Post-Decision Update establishes `SIGNED`; rejection closes
+the case without external action.
 Non-blocking limitations are aggregated without being converted into risk conclusions or satisfied
-conditions. The current release review can therefore expose `DRAFT_NOT_SIGNED`,
+conditions. The current package can therefore expose
+`SIGNED_CONTRACT_PENDING_FOUNDER_ACCEPTANCE`,
 `CASHFLOW_OPC_GLOBAL_NOT_CONTRACT_ATTRIBUTABLE`, and after a reference supplement,
 `DOCUMENT_REFERENCE_NOT_REPOSITORY_VERIFIED`.
 

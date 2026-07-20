@@ -88,21 +88,52 @@ def complete_banking_pause_if_required(
         ] == "DOCUMENT_PREPARATION":
             pending_ids = current["pending_missing_data_ids"]
             assert isinstance(pending_ids, list)
-            assert len(pending_ids) == 1
+            assert pending_ids
             evaluation_case_id = str(current["evaluation_case_id"])
+            artifacts = client.get(
+                f"/api/cases/{evaluation_case_id}/artifacts"
+            ).json()
+            checklist = next(
+                item
+                for item in reversed(artifacts)
+                if item["artifact_type"] == "DOCUMENT_CHECKLIST"
+            )
+            document_type = next(
+                item["document_code"]
+                for item in checklist["payload"]["items"]
+                if item["missing_request_id"] == pending_ids[0]
+            )
             accepted = client.post(
                 f"/api/cases/{evaluation_case_id}/documents/evidence-supplements",
                 json={
                     "workflow_run_id": current["workflow_run_id"],
                     "missing_request_id": pending_ids[0],
-                    "document_reference_id": "DOCREF-00000000-0000-4000-8000-000000000002",
+                    "document_reference_id": (
+                        "DOCREF-00000000-0000-4000-8000-000000000002"
+                        if document_type == "PERFORMANCE_BOND_REQUEST_FORM"
+                        else "DOCREF-00000000-0000-4000-8000-000000000005"
+                    ),
                     "content_sha256": "b" * 64,
-                    "document_type": "SIGNED_CONTRACT",
+                    "document_type": document_type,
                     "evidence_note": "REQUESTED_DOCUMENT_REFERENCE_SUPPLIED",
                 },
             )
             assert accepted.status_code == 202
-            current = wait_for_terminal(client, str(current["workflow_run_id"]))
+            deadline = time.monotonic() + 10
+            while time.monotonic() < deadline:
+                candidate = client.get(
+                    f"/api/workflows/{current['workflow_run_id']}"
+                ).json()
+                durable = candidate["status"] not in {"PENDING", "RUNNING"}
+                document_was_applied = pending_ids[0] not in candidate[
+                    "pending_missing_data_ids"
+                ]
+                if durable and document_was_applied:
+                    current = candidate
+                    break
+                time.sleep(0.02)
+            else:
+                raise AssertionError("Document supplement was not applied in time.")
             continue
         if current["status"] == "WAITING_FOR_APPROVAL":
             evaluation_case_id = str(current["evaluation_case_id"])

@@ -25,6 +25,11 @@ _BASE_REQUIRED_FIELDS = (
     "bank_product_id",
     "request_type",
 )
+_SIGNED_CONTRACT_FIELDS = (
+    "customer_id",
+    "contract_value",
+    "payment_terms",
+)
 
 
 class DocumentPackageBuildError(RuntimeError):
@@ -67,8 +72,7 @@ class DocumentPackageBuilder:
         checklist_build: DocumentChecklistBuild,
     ) -> DocumentPackageBuild:
         company_profile_required = (
-            DocumentRequirementCode.COMPANY_PROFILE
-            in context.request.required_document_codes
+            DocumentRequirementCode.COMPANY_PROFILE in context.request.required_document_codes
         )
         company_profile_reference_supplied = company_profile_required and any(
             supplement.document_type is DocumentRequirementCode.COMPANY_PROFILE
@@ -77,7 +81,11 @@ class DocumentPackageBuilder:
         structured_profile_required = (
             company_profile_required and not company_profile_reference_supplied
         )
+        signed_contract_required = (
+            DocumentRequirementCode.SIGNED_CONTRACT in context.request.required_document_codes
+        )
         profile = self._profile(context) if structured_profile_required else {}
+        contract_snapshot = self._contract_snapshot(context) if signed_contract_required else {}
         missing_profile_fields = (
             tuple(
                 field
@@ -110,6 +118,7 @@ class DocumentPackageBuilder:
             "currency": context.request.currency.value,
             "bank_product_id": context.request.bank_product_id,
             "request_type": "PERFORMANCE_BOND",
+            **contract_snapshot,
             **profile,
         }
         available_required_profile_fields = (
@@ -123,6 +132,7 @@ class DocumentPackageBuilder:
         )
         required_fields = (
             *_BASE_REQUIRED_FIELDS,
+            *(_SIGNED_CONTRACT_FIELDS if signed_contract_required else ()),
             *available_required_profile_fields,
         )
         source_evidence_ids_by_field = self._masking_source_evidence(
@@ -145,9 +155,7 @@ class DocumentPackageBuilder:
                 "Outbound masking policy omitted required Document fields: "
                 + ", ".join(omitted_required_fields)
             )
-        decision_ids = tuple(
-            item.decision_id for item in masked.classification_decisions
-        )
+        decision_ids = tuple(item.decision_id for item in masked.classification_decisions)
         manifest_item_ids = tuple(
             deterministic_id("MASKI", masked.manifest.manifest_id, item.field_name)
             for item in masked.manifest.items
@@ -168,9 +176,7 @@ class DocumentPackageBuilder:
             else DocumentPackageReadiness.READY_FOR_INTERNAL_DECISION
         )
         lineage = LineageFactory(context.dataset.dataset_id, context.dataset.source_hash)
-        evidence = {
-            item.evidence_id: item for item in checklist_build.evidence_refs
-        }
+        evidence = {item.evidence_id: item for item in checklist_build.evidence_refs}
         sources = tuple(
             item
             for item in checklist_build.evidence_refs
@@ -201,9 +207,7 @@ class DocumentPackageBuilder:
             contract_id=context.request.contract_id,
             preparation_request_id=context.request.request_id,
             checklist_id=checklist_build.checklist.checklist_id,
-            approval_condition_codes=(
-                checklist_build.checklist.approval_condition_codes
-            ),
+            approval_condition_codes=(checklist_build.checklist.approval_condition_codes),
             limitation_codes=checklist_build.checklist.limitation_codes,
             recipient=context.request.provider,
             purpose=DOCUMENT_RELEASE_PURPOSE,
@@ -258,9 +262,7 @@ class DocumentPackageBuilder:
                 limitation_codes=package.limitation_codes,
                 recipient=package.recipient,
                 purpose=package.purpose,
-                document_codes=tuple(
-                    item.document_code for item in document_manifest
-                ),
+                document_codes=tuple(item.document_code for item in document_manifest),
                 document_manifest=document_manifest,
                 sanitized_payload=package.sanitized_payload,
                 classification_decisions=package.classification_decisions,
@@ -301,6 +303,24 @@ class DocumentPackageBuilder:
         return profile
 
     @staticmethod
+    def _contract_snapshot(context: DocumentContext) -> dict[str, MaskableScalar]:
+        """Select only explicit contract fields needed by the bank-facing dossier."""
+
+        snapshot: dict[str, MaskableScalar] = {}
+        for field in _SIGNED_CONTRACT_FIELDS:
+            value = context.contract.values.get(field)
+            if value is None or (isinstance(value, str) and not value.strip()):
+                raise DocumentPackageBuildError(
+                    f"Signed-contract snapshot requires exact contract field {field!r}."
+                )
+            if not isinstance(value, (str, bool, int, float)):
+                raise DocumentPackageBuildError(
+                    f"Signed-contract field {field!r} is not a JSON-safe scalar."
+                )
+            snapshot[field] = value
+        return snapshot
+
+    @staticmethod
     def _masking_source_evidence(
         *,
         context: DocumentContext,
@@ -318,6 +338,18 @@ class DocumentPackageBuilder:
         for field_name in field_names:
             if field_name in _BASE_REQUIRED_FIELDS:
                 sources[field_name] = request_sources
+                continue
+            if field_name in _SIGNED_CONTRACT_FIELDS:
+                contract_sources = tuple(
+                    item.evidence_id
+                    for item in available_evidence
+                    if item.record_id == context.contract.record_id and item.field == field_name
+                )
+                if not contract_sources:
+                    raise DocumentPackageBuildError(
+                        f"Document masking field {field_name!r} lacks exact contract evidence."
+                    )
+                sources[field_name] = contract_sources
                 continue
             profile_sources = tuple(
                 item.evidence_id

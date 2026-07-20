@@ -239,7 +239,10 @@ def test_pending_precheck_approval_resumes_after_restart_without_release_gate(
                 restarted, workflow_run_id, {"WAITING_FOR_INPUT"}
             )
             assert document_wait["current_stage"] == "DOCUMENT_PREPARATION"
-            assert document_wait["document_pending_codes"] == ["SIGNED_CONTRACT"]
+            assert document_wait["document_pending_codes"] == [
+                "PERFORMANCE_BOND_REQUEST_FORM",
+                "CASHFLOW_BUFFER_EVIDENCE",
+            ]
             evidence_response = restarted.post(
                 f"/api/cases/{case_id}/documents/evidence-supplements",
                 json={
@@ -251,11 +254,43 @@ def test_pending_precheck_approval_resumes_after_restart_without_release_gate(
                         "DOCREF-00000000-0000-4000-8000-000000000001"
                     ),
                     "content_sha256": "c" * 64,
-                    "document_type": "SIGNED_CONTRACT",
+                    "document_type": "PERFORMANCE_BOND_REQUEST_FORM",
                     "evidence_note": "REQUESTED_DOCUMENT_REFERENCE_SUPPLIED",
                 },
             )
             assert evidence_response.status_code == 202
+            deadline = time.monotonic() + 10
+            cashflow_wait: dict[str, object] | None = None
+            while time.monotonic() < deadline:
+                candidate = restarted.get(
+                    f"/api/workflows/{workflow_run_id}"
+                ).json()
+                if (
+                    candidate["status"] == "WAITING_FOR_INPUT"
+                    and candidate["pending_missing_data_ids"]
+                    and document_wait["pending_missing_data_ids"][0]
+                    not in candidate["pending_missing_data_ids"]
+                ):
+                    cashflow_wait = candidate
+                    break
+                time.sleep(0.02)
+            assert cashflow_wait is not None
+            cashflow_response = restarted.post(
+                f"/api/cases/{case_id}/documents/evidence-supplements",
+                json={
+                    "workflow_run_id": workflow_run_id,
+                    "missing_request_id": cashflow_wait[
+                        "pending_missing_data_ids"
+                    ][0],
+                    "document_reference_id": (
+                        "DOCREF-00000000-0000-4000-8000-000000000006"
+                    ),
+                    "content_sha256": "d" * 64,
+                    "document_type": "CASHFLOW_BUFFER_EVIDENCE",
+                    "evidence_note": "REQUESTED_DOCUMENT_REFERENCE_SUPPLIED",
+                },
+            )
+            assert cashflow_response.status_code == 202
             resumed = wait_for_status(restarted, workflow_run_id, {"COMPLETED"})
             assert resumed["pending_approval_ids"] == []
             assert resumed["resume_stage"] is None

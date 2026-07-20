@@ -32,9 +32,22 @@ const BUSINESS_VALUE_LABELS: Readonly<Record<string, string>> = {
   OPTION_REQUIREMENTS_NOT_MET: "Chưa đáp ứng điều kiện của phương án",
   CONDITIONAL_PRECHECK: "Kiểm tra sơ bộ có điều kiện",
   MISSING_EVIDENCE: "Còn thiếu tài liệu xác nhận",
-  NOT_ELIGIBLE: "Không đủ điều kiện",
-  NO_RECOMMENDATION: "Chưa có khuyến nghị",
-  SERVICE_UNAVAILABLE: "Dịch vụ hiện không khả dụng",
+  RELATED_ORDER_COUNT: "Số đơn hàng liên kết",
+  RELATED_INVOICE_COUNT: "Số hóa đơn liên kết qua đơn hàng",
+  CONTRACT_ORDER_COUNT: "Số đơn hàng liên quan",
+  CONTRACT_PHASE_COUNT: "Số giai đoạn triển khai",
+  CONTRACT_PROVINCE_COUNT: "Số tỉnh triển khai",
+  ORDER_OUTSIDE_CONTRACT_WINDOW_COUNT: "Số đơn hàng ngoài thời hạn hợp đồng",
+  ORDER_INTERVAL_GAP_COUNT: "Số khoảng trống giữa các đơn hàng",
+  ORDER_INTERVAL_OVERLAP_COUNT: "Số lần lịch đơn hàng chồng lấn",
+  SOURCE_COMPLETED_ORDER_COUNT: "Số đơn hàng đã hoàn thành",
+  SOURCE_ACTIVE_ORDER_COUNT: "Số đơn hàng đang triển khai",
+  SOURCE_PLANNED_ORDER_COUNT: "Số đơn hàng đã lên kế hoạch",
+  SOURCE_PENDING_ORDER_COUNT: "Số đơn hàng đang chờ",
+  SOURCE_FLAGGED_ORDER_COUNT: "Số đơn hàng được gắn cờ",
+  UNCLASSIFIED_ORDER_STATUS_COUNT: "Số trạng thái đơn hàng chưa phân loại",
+  OPEN_PAST_DUE_ORDER_COUNT: "Số đơn hàng đang mở và quá hạn",
+  SOURCE_DELIVERY_NOTE_COUNT: "Số ghi chú giao hàng",
 };
 
 export function businessValueLabel(
@@ -42,5 +55,16 @@ export function businessValueLabel(
   fallback = "Trạng thái đã được hệ thống ghi nhận",
 ): string {
   if (!value) return "Chưa xác định";
-  return BUSINESS_VALUE_LABELS[value.toUpperCase()] ?? fallback;
+  const upper = value.toUpperCase();
+  if (BUSINESS_VALUE_LABELS[upper]) {
+    return BUSINESS_VALUE_LABELS[upper];
+  }
+  if (upper.includes("COUNT")) {
+    const clean = upper
+      .replace(/_COUNT$/, "")
+      .replace(/^COUNT_/, "")
+      .replace(/_COUNT_/g, "_");
+    return BUSINESS_VALUE_LABELS[clean] ?? `Số lượng ${clean.toLowerCase().replace(/_/g, " ")}`;
+  }
+  return fallback;
 }

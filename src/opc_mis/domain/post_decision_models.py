@@ -44,6 +44,17 @@ class PostDecisionOutcome(StrEnum):
     CASE_CLOSED_NO_EXTERNAL_ACTION = "CASE_CLOSED_NO_EXTERNAL_ACTION"
 
 
+class ContractExecutionStatus(StrEnum):
+    """Contract disposition established by the approved Founder recommendation."""
+
+    SIGNED = "SIGNED"
+    PENDING_NEGOTIATION = "PENDING_NEGOTIATION"
+    NOT_SIGNED = "NOT_SIGNED"
+
+
+SIGNED_CONTRACT_PENDING_FOUNDER_ACCEPTANCE = "SIGNED_CONTRACT_PENDING_FOUNDER_ACCEPTANCE"
+
+
 class ExternalSubmissionReadinessStatus(StrEnum):
     """The only honest result before an external connector exists."""
 
@@ -69,9 +80,7 @@ class FinalDecisionApprovalReference(BaseModel):
     subject_artifact_id: StrictStr = Field(min_length=1)
     subject_artifact_version: int = Field(ge=1)
     subject_input_hash: StrictStr = Field(min_length=1)
-    protected_action: ProtectedAction = (
-        ProtectedAction.CONFIRM_FINAL_CONTRACT_DECISION
-    )
+    protected_action: ProtectedAction = ProtectedAction.CONFIRM_FINAL_CONTRACT_DECISION
     status: ApprovalRequestStatus
     decision: ApprovalDecision
     decided_by: StrictStr = Field(min_length=1)
@@ -88,8 +97,7 @@ class FinalDecisionApprovalReference(BaseModel):
     @model_validator(mode="after")
     def validate_approval(self) -> FinalDecisionApprovalReference:
         if (
-            self.protected_action
-            is not ProtectedAction.CONFIRM_FINAL_CONTRACT_DECISION
+            self.protected_action is not ProtectedAction.CONFIRM_FINAL_CONTRACT_DECISION
             or self.status is not ApprovalRequestStatus.APPROVED
             or self.decision is not ApprovalDecision.APPROVE
         ):
@@ -125,9 +133,7 @@ class ExternalReleaseAuthorizationReference(BaseModel):
     subject_artifact_id: StrictStr = Field(min_length=1)
     subject_artifact_version: int = Field(ge=1)
     subject_input_hash: StrictStr = Field(min_length=1)
-    protected_action: ProtectedAction = (
-        ProtectedAction.SEND_DOCUMENT_TO_EXTERNAL_PARTNER
-    )
+    protected_action: ProtectedAction = ProtectedAction.SEND_DOCUMENT_TO_EXTERNAL_PARTNER
     status: ApprovalRequestStatus
     decision: ApprovalDecision
     authorized_by: StrictStr = Field(min_length=1)
@@ -143,8 +149,7 @@ class ExternalReleaseAuthorizationReference(BaseModel):
     @model_validator(mode="after")
     def validate_authorization(self) -> ExternalReleaseAuthorizationReference:
         if (
-            self.protected_action
-            is not ProtectedAction.SEND_DOCUMENT_TO_EXTERNAL_PARTNER
+            self.protected_action is not ProtectedAction.SEND_DOCUMENT_TO_EXTERNAL_PARTNER
             or self.status is not ApprovalRequestStatus.APPROVED
             or self.decision is not ApprovalDecision.APPROVE
         ):
@@ -183,6 +188,7 @@ class PostDecisionUpdate(BaseModel):
     founder_approval: FinalDecisionApprovalReference
     recommendation: DecisionRecommendation
     outcome: PostDecisionOutcome
+    contract_execution_status: ContractExecutionStatus
     approved_condition_ids: tuple[StrictStr, ...] = ()
     approved_negotiation_strategy_ids: tuple[StrictStr, ...] = ()
     selected_option_ids: tuple[StrictStr, ...] = ()
@@ -202,26 +208,25 @@ class PostDecisionUpdate(BaseModel):
             raise ValueError("Founder approval belongs to another case")
         if (
             approval.subject_artifact_id != self.decision_card_artifact.artifact_id
-            or approval.subject_artifact_version
-            != self.decision_card_artifact.version
+            or approval.subject_artifact_version != self.decision_card_artifact.version
             or approval.subject_input_hash != self.decision_card_artifact.input_hash
         ):
             raise ValueError("Founder approval does not bind the exact Decision Card")
         expected_outcome = post_decision_outcome(self.recommendation)
         if self.outcome is not expected_outcome:
             raise ValueError("Post-decision outcome contradicts the recommendation")
+        expected_execution_status = contract_execution_status(self.recommendation)
+        if self.contract_execution_status is not expected_execution_status:
+            raise ValueError("Contract execution status contradicts the approved recommendation")
         expected_release = (
             self.recommendation is DecisionRecommendation.ACCEPT
             and self.document_release_package is not None
         )
         if self.external_document_release_required is not expected_release:
             raise ValueError("External-document route contradicts the approved Card")
-        if (
-            self.document_release_package is not None
-            and not set(self.document_release_package.evidence_ids).issubset(
-                self.evidence_ids
-            )
-        ):
+        if self.document_release_package is not None and not set(
+            self.document_release_package.evidence_ids
+        ).issubset(self.evidence_ids):
             raise ValueError("Approved package evidence is absent from the Card lineage")
         for label, values in (
             ("approved_condition_ids", self.approved_condition_ids),
@@ -240,10 +245,9 @@ class PostDecisionUpdate(BaseModel):
             founder_approval=self.founder_approval,
             recommendation=self.recommendation,
             outcome=self.outcome,
+            contract_execution_status=self.contract_execution_status,
             approved_condition_ids=self.approved_condition_ids,
-            approved_negotiation_strategy_ids=(
-                self.approved_negotiation_strategy_ids
-            ),
+            approved_negotiation_strategy_ids=(self.approved_negotiation_strategy_ids),
             selected_option_ids=self.selected_option_ids,
             document_release_package=self.document_release_package,
             evidence_ids=self.evidence_ids,
@@ -266,6 +270,11 @@ class ExternalDocumentSubmissionProposal(BaseModel):
     post_decision_update_id: StrictStr = Field(min_length=1)
     decision_card_artifact: ExactDecisionArtifactRef
     decision_card_id: StrictStr = Field(min_length=1)
+    contract_execution_status: Literal[ContractExecutionStatus.SIGNED] = (
+        ContractExecutionStatus.SIGNED
+    )
+    signed_contract_completed: Literal[True] = True
+    resolved_limitation_codes: tuple[StrictStr, ...] = ()
     document_release_package: DecisionDocumentReleaseSnapshot
     recipient: StrictStr = Field(min_length=1)
     purpose: StrictStr = Field(min_length=1)
@@ -275,9 +284,7 @@ class ExternalDocumentSubmissionProposal(BaseModel):
     masking_manifest_item_ids: tuple[StrictStr, ...] = Field(min_length=1)
     approval_condition_codes: tuple[StrictStr, ...] = Field(min_length=1)
     limitation_codes: tuple[StrictStr, ...] = ()
-    proposed_action: ProtectedAction = (
-        ProtectedAction.SEND_DOCUMENT_TO_EXTERNAL_PARTNER
-    )
+    proposed_action: ProtectedAction = ProtectedAction.SEND_DOCUMENT_TO_EXTERNAL_PARTNER
     source_artifact_ids: tuple[StrictStr, StrictStr, StrictStr]
     evidence_ids: tuple[StrictStr, ...] = Field(min_length=1)
     governance_evaluated: Literal[False] = False
@@ -290,8 +297,7 @@ class ExternalDocumentSubmissionProposal(BaseModel):
         if (
             self.post_decision_update_artifact.artifact_type
             is not ArtifactType.POST_DECISION_UPDATE
-            or self.decision_card_artifact.artifact_type
-            is not ArtifactType.DECISION_CARD
+            or self.decision_card_artifact.artifact_type is not ArtifactType.DECISION_CARD
             or self.document_release_package.artifact.artifact_type
             is not ArtifactType.DOCUMENT_RELEASE_PACKAGE
         ):
@@ -306,9 +312,18 @@ class ExternalDocumentSubmissionProposal(BaseModel):
             or self.purpose != snapshot.purpose
             or self.document_codes != snapshot.document_codes
             or self.masking_manifest_id != snapshot.masking_manifest_id
-            or self.limitation_codes != snapshot.limitation_codes
+            or self.limitation_codes
+            != tuple(
+                item
+                for item in snapshot.limitation_codes
+                if item not in set(self.resolved_limitation_codes)
+            )
         ):
             raise ValueError("External proposal metadata differs from the approved snapshot")
+        if "SIGNED_CONTRACT" not in self.document_codes:
+            raise ValueError("External proposal requires a completed signed-contract entry")
+        if not set(self.resolved_limitation_codes).issubset(snapshot.limitation_codes):
+            raise ValueError("External proposal resolved unknown package limitations")
         expected_sources = (
             self.post_decision_update_artifact.artifact_id,
             self.decision_card_artifact.artifact_id,
@@ -322,6 +337,7 @@ class ExternalDocumentSubmissionProposal(BaseModel):
             ("masking_manifest_item_ids", self.masking_manifest_item_ids),
             ("approval_condition_codes", self.approval_condition_codes),
             ("limitation_codes", self.limitation_codes),
+            ("resolved_limitation_codes", self.resolved_limitation_codes),
             ("evidence_ids", self.evidence_ids),
         ):
             if len(set(values)) != len(values):
@@ -335,6 +351,8 @@ class ExternalDocumentSubmissionProposal(BaseModel):
             document_manifest_item_ids=self.document_manifest_item_ids,
             masking_manifest_item_ids=self.masking_manifest_item_ids,
             approval_condition_codes=self.approval_condition_codes,
+            contract_execution_status=self.contract_execution_status,
+            resolved_limitation_codes=self.resolved_limitation_codes,
             evidence_ids=self.evidence_ids,
         )
         if self.proposal_id != expected_id:
@@ -472,14 +490,30 @@ def post_decision_outcome(
         DecisionRecommendation.NEGOTIATE_CONDITIONS_TO_ACCEPT: (
             PostDecisionOutcome.NEGOTIATION_AUTHORIZED
         ),
-        DecisionRecommendation.DO_NOT_ACCEPT: (
-            PostDecisionOutcome.CASE_CLOSED_NO_EXTERNAL_ACTION
-        ),
+        DecisionRecommendation.DO_NOT_ACCEPT: (PostDecisionOutcome.CASE_CLOSED_NO_EXTERNAL_ACTION),
     }
     try:
         return mapping[recommendation]
     except KeyError as exc:
         raise ValueError("NOT_EVALUABLE cannot become an approved final decision") from exc
+
+
+def contract_execution_status(
+    recommendation: DecisionRecommendation,
+) -> ContractExecutionStatus:
+    """Map the exact approved recommendation to one contract disposition."""
+
+    mapping = {
+        DecisionRecommendation.ACCEPT: ContractExecutionStatus.SIGNED,
+        DecisionRecommendation.NEGOTIATE_CONDITIONS_TO_ACCEPT: (
+            ContractExecutionStatus.PENDING_NEGOTIATION
+        ),
+        DecisionRecommendation.DO_NOT_ACCEPT: ContractExecutionStatus.NOT_SIGNED,
+    }
+    try:
+        return mapping[recommendation]
+    except KeyError as exc:
+        raise ValueError("NOT_EVALUABLE has no contract execution status") from exc
 
 
 def final_decision_action_payload(card: DecisionCard) -> dict[str, object]:
@@ -491,9 +525,7 @@ def final_decision_action_payload(card: DecisionCard) -> dict[str, object]:
         "decision_card_id": card.decision_card_id,
         "recommendation": card.recommendation.value,
         "condition_ids": [item.condition_id for item in card.conditions],
-        "selected_negotiation_strategy_ids": list(
-            card.selected_negotiation_strategy_ids
-        ),
+        "selected_negotiation_strategy_ids": list(card.selected_negotiation_strategy_ids),
         "selected_option_ids": list(card.selected_option_ids),
         "document_release_package": (
             None
@@ -522,15 +554,11 @@ def external_document_release_action_payload(
         "proposal_id": proposal.proposal_id,
         "decision_card_id": proposal.decision_card_id,
         "post_decision_update_id": proposal.post_decision_update_id,
-        "release_package_artifact_id": (
-            proposal.document_release_package.artifact.artifact_id
-        ),
-        "release_package_artifact_version": (
-            proposal.document_release_package.artifact.version
-        ),
-        "release_package_input_hash": (
-            proposal.document_release_package.artifact.input_hash
-        ),
+        "contract_execution_status": proposal.contract_execution_status.value,
+        "signed_contract_completed": proposal.signed_contract_completed,
+        "release_package_artifact_id": (proposal.document_release_package.artifact.artifact_id),
+        "release_package_artifact_version": (proposal.document_release_package.artifact.version),
+        "release_package_input_hash": (proposal.document_release_package.artifact.input_hash),
         "release_package_id": proposal.document_release_package.release_package_id,
         "recipient": proposal.recipient,
         "purpose": proposal.purpose,
@@ -554,8 +582,7 @@ def approval_reference_from_request(
         request.status is not ApprovalRequestStatus.APPROVED
         or decision is None
         or decision.decision is not ApprovalDecision.APPROVE
-        or request.command.action_type
-        is not ProtectedAction.CONFIRM_FINAL_CONTRACT_DECISION
+        or request.command.action_type is not ProtectedAction.CONFIRM_FINAL_CONTRACT_DECISION
         or request.command.evaluation_case_id != request.evaluation_case_id
         or request.command.payload_artifact_id != request.subject_artifact_id
         or request.command.payload != expected_payload
@@ -596,8 +623,7 @@ def external_authorization_from_request(
         request.status is not ApprovalRequestStatus.APPROVED
         or decision is None
         or decision.decision is not ApprovalDecision.APPROVE
-        or request.command.action_type
-        is not ProtectedAction.SEND_DOCUMENT_TO_EXTERNAL_PARTNER
+        or request.command.action_type is not ProtectedAction.SEND_DOCUMENT_TO_EXTERNAL_PARTNER
         or request.command.evaluation_case_id != request.evaluation_case_id
         or request.command.payload_artifact_id != request.subject_artifact_id
         or request.command.payload != expected_payload
@@ -632,6 +658,7 @@ def post_decision_update_id(
     founder_approval: FinalDecisionApprovalReference,
     recommendation: DecisionRecommendation,
     outcome: PostDecisionOutcome,
+    contract_execution_status: ContractExecutionStatus,
     approved_condition_ids: tuple[str, ...],
     approved_negotiation_strategy_ids: tuple[str, ...],
     selected_option_ids: tuple[str, ...],
@@ -647,6 +674,7 @@ def post_decision_update_id(
         approval_business_identity(founder_approval),
         recommendation,
         outcome,
+        contract_execution_status,
         approved_condition_ids,
         approved_negotiation_strategy_ids,
         selected_option_ids,
@@ -669,6 +697,8 @@ def external_document_submission_proposal_id(
     document_manifest_item_ids: tuple[str, ...],
     masking_manifest_item_ids: tuple[str, ...],
     approval_condition_codes: tuple[str, ...],
+    contract_execution_status: ContractExecutionStatus,
+    resolved_limitation_codes: tuple[str, ...],
     evidence_ids: tuple[str, ...],
 ) -> str:
     """Build an exact idempotent protected-action proposal identity."""
@@ -683,6 +713,8 @@ def external_document_submission_proposal_id(
         document_manifest_item_ids,
         masking_manifest_item_ids,
         approval_condition_codes,
+        contract_execution_status,
+        resolved_limitation_codes,
         evidence_ids,
     )
 

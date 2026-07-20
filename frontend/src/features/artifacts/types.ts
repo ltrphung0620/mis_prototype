@@ -43,6 +43,7 @@ export interface FinanceArtifactPayload {
   observations?: AssessmentNote[];
   limitations?: AssessmentNote[];
   narrative?: NarrativePayload;
+  narrative_source?: string;
 }
 
 export interface OperationsArtifactPayload {
@@ -92,6 +93,15 @@ export interface RiskPreScanPayload {
     severity?: string;
     description: string;
     recommended_action?: string;
+  }>;
+}
+
+export interface ApprovalCheckpointPayload {
+  checkpoints?: Array<{
+    source_rule_id?: string;
+    protected_action?: string;
+    trigger_event?: string;
+    approver_role?: string;
   }>;
 }
 
@@ -207,6 +217,7 @@ export interface BankingDiscoveryPayload {
 export interface BankingReadinessPayload {
   status?: string;
   option_readiness?: Array<{
+    option_id?: string;
     status: string;
     required_fields?: string[];
     missing_fields?: string[];
@@ -224,6 +235,8 @@ export interface DocumentChecklistPayload {
     status: string;
     reason: string;
     limitation_codes?: string[];
+    source_reference_ids?: string[];
+    missing_request_id?: string | null;
   }>;
   missing_document_codes?: string[];
   approval_condition_codes?: string[];

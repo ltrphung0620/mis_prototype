@@ -293,11 +293,44 @@ def test_con004_card_carries_one_precomputed_margin_negotiation_strategy(
                 "DOCREF-00000000-0000-4000-8000-000000000077"
             ),
             "content_sha256": "7" * 64,
-            "document_type": "SIGNED_CONTRACT",
+            "document_type": "PERFORMANCE_BOND_REQUEST_FORM",
             "evidence_note": "REQUESTED_DOCUMENT_REFERENCE_SUPPLIED",
         },
     )
     assert supplied.status_code == 202
+
+    deadline = time.monotonic() + 10
+    cashflow_wait: dict[str, object] | None = None
+    while time.monotonic() < deadline:
+        candidate = decision_client.get(
+            f"/api/workflows/{workflow_run_id}"
+        ).json()
+        if (
+            candidate["status"] == "WAITING_FOR_INPUT"
+            and candidate["pending_missing_data_ids"]
+            and document_wait["pending_missing_data_ids"][0]
+            not in candidate["pending_missing_data_ids"]
+        ):
+            cashflow_wait = candidate
+            break
+        time.sleep(0.02)
+    assert cashflow_wait is not None
+    assert cashflow_wait["current_stage"] == "DOCUMENT_PREPARATION"
+    cashflow_supplied = decision_client.post(
+        f"/api/cases/{cashflow_wait['evaluation_case_id']}"
+        "/documents/evidence-supplements",
+        json={
+            "workflow_run_id": workflow_run_id,
+            "missing_request_id": cashflow_wait["pending_missing_data_ids"][0],
+            "document_reference_id": (
+                "DOCREF-00000000-0000-4000-8000-000000000078"
+            ),
+            "content_sha256": "8" * 64,
+            "document_type": "CASHFLOW_BUFFER_EVIDENCE",
+            "evidence_note": "REQUESTED_DOCUMENT_REFERENCE_SUPPLIED",
+        },
+    )
+    assert cashflow_supplied.status_code == 202
 
     decision_wait = _wait_for_pause_or_completion(
         decision_client, workflow_run_id

@@ -41,15 +41,16 @@
 
 .brand__mark {
   display: grid;
-  width: 44px;
-  height: 44px;
+  width: 46px;
+  height: 46px;
   place-items: center;
-  border-radius: 50% 50% 50% 18%;
+  border-radius: 14px;
   color: var(--color-white);
-  background: var(--color-forest-900);
-  font-size: 13px;
+  background: var(--gradient-brand);
+  font-size: 14px;
   font-weight: 800;
-  letter-spacing: 0.04em;
+  letter-spacing: 0.05em;
+  box-shadow: 0 4px 14px rgba(11, 37, 29, 0.22);
 }
 
 .brand__copy {
@@ -60,6 +61,7 @@
 
 .brand__copy strong {
   font-size: 16px;
+  font-weight: 750;
   letter-spacing: -0.01em;
 }
 
@@ -77,13 +79,15 @@
 
 .system-badge {
   gap: 8px;
-  padding: 7px 11px;
+  padding: 7px 13px;
   border: 1px solid var(--color-line);
-  border-radius: 999px;
-  color: var(--color-ink-600);
-  background: rgb(255 255 255 / 58%);
+  border-radius: var(--radius-full);
+  color: var(--color-ink-800);
+  background: rgba(255, 255, 255, 0.75);
+  backdrop-filter: blur(8px);
   font-size: 12px;
   font-weight: 650;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.02);
 }
 
 .system-badge i {
@@ -93,9 +97,15 @@
   background: var(--color-ink-450);
 }
 
+@keyframes pulseDot {
+  0% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.5); }
+  70% { box-shadow: 0 0 0 7px rgba(16, 185, 129, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0); }
+}
+
 .system-badge--live i {
-  background: #40a274;
-  box-shadow: 0 0 0 4px rgb(64 162 116 / 12%);
+  background: var(--color-emerald-500);
+  animation: pulseDot 2s infinite;
 }
 
 .system-badge--ai {
@@ -160,10 +170,16 @@
 .panel {
   min-width: 0;
   overflow: hidden;
-  border: 1px solid var(--color-line);
+  border: 1px solid rgba(226, 231, 227, 0.85);
   border-radius: var(--radius-lg);
-  background: rgb(255 254 250 / 94%);
+  background: var(--color-surface-glass);
+  backdrop-filter: blur(14px);
   box-shadow: var(--shadow-soft);
+  transition: transform 0.22s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.panel:hover {
+  box-shadow: var(--shadow-elevated);
 }
 
 .panel__header {
@@ -174,7 +190,7 @@
   gap: var(--space-4);
   padding: var(--space-5) var(--space-6);
   border-bottom: 1px solid var(--color-line);
-  background: linear-gradient(135deg, rgb(227 238 232 / 75%), rgb(255 254 250 / 25%));
+  background: linear-gradient(135deg, rgba(230, 242, 236, 0.75), rgba(255, 255, 255, 0.3));
 }
 
 .panel__header > div:first-child {
@@ -182,15 +198,15 @@
 }
 
 .workflow-panel .panel__header {
-  background: linear-gradient(135deg, rgb(238 233 246 / 78%), rgb(255 254 250 / 25%));
+  background: linear-gradient(135deg, rgba(240, 235, 248, 0.75), rgba(255, 255, 255, 0.3));
 }
 
 .decision-panel .panel__header {
-  background: linear-gradient(135deg, rgb(220 239 229 / 85%), rgb(255 254 250 / 25%));
+  background: linear-gradient(135deg, rgba(209, 250, 229, 0.65), rgba(255, 255, 255, 0.3));
 }
 
 .decision-panel .panel__eyebrow {
-  color: var(--color-forest-700);
+  color: var(--color-emerald-600);
 }
 
 .panel__header h2 {
@@ -1318,6 +1334,22 @@
   font-size: 11px;
 }
 
+@keyframes modalBackdropFade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes modalPopIn {
+  from {
+    opacity: 0;
+    transform: scale(0.95) translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
 .modal-layer,
 .decision-card-modal,
 .approval-dialog,
@@ -1329,8 +1361,9 @@
   overflow-y: auto;
   place-items: center;
   padding: var(--space-6);
-  background: rgb(17 24 22 / 60%);
-  backdrop-filter: blur(5px);
+  background: rgba(11, 25, 20, 0.65);
+  backdrop-filter: blur(10px);
+  animation: modalBackdropFade 0.2s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .modal-card,
@@ -1342,10 +1375,12 @@
   max-height: calc(100vh - 48px);
   overflow-x: hidden;
   overflow-y: auto;
-  border: 1px solid rgb(255 255 255 / 30%);
-  border-radius: 18px;
-  background: var(--color-surface);
-  box-shadow: 0 28px 80px rgb(0 0 0 / 28%);
+  border: 1px solid rgba(255, 255, 255, 0.4);
+  border-radius: 20px;
+  background: rgba(255, 255, 255, 0.96);
+  backdrop-filter: blur(20px);
+  box-shadow: 0 25px 70px -10px rgba(11, 37, 29, 0.35);
+  animation: modalPopIn 0.25s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .decision-card-modal > article {
