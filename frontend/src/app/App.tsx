@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-
 import { ArtifactAssessmentView, type ArtifactEnvelope } from "../features/artifacts";
 import { DecisionCardModal, DecisionDashboard } from "../features/decision";
 import { ApprovalDialog, type ApprovalDecision } from "../features/governance";
@@ -28,6 +27,16 @@ import {
   pendingNotEvaluableReview,
   selectAssessmentArtifact,
 } from "./dashboardIntegration";
+
+function documentRequirementLabel(code: string): string {
+  const labels: Record<string, string> = {
+    SIGNED_CONTRACT: "Hợp đồng đã ký",
+    COMPANY_PROFILE: "Hồ sơ doanh nghiệp",
+    PERFORMANCE_BOND_REQUEST_FORM: "Đơn đề nghị bảo lãnh thực hiện",
+    CASHFLOW_BUFFER_EVIDENCE: "Tài liệu chứng minh nguồn bù dòng tiền",
+  };
+  return labels[code] ?? code;
+}
 
 function AssessmentDialog({
   artifact,
@@ -303,7 +312,7 @@ export function App() {
           <span className="brand__mark">OPC</span>
           <span className="brand__copy">
             <strong>MIS Agentic AI</strong>
-            <small>Bảng điều hành dành cho Nhà sáng lập</small>
+            <small>Bảng điều hành dành cho Founder</small>
           </span>
         </a>
         <div className="system-badges" aria-label="Tình trạng hệ thống">
@@ -348,7 +357,7 @@ export function App() {
           <div>
             <strong>
               {activeApproval
-                ? "Quy trình đang chờ Nhà sáng lập xác nhận hoặc phê duyệt"
+                ? "Quy trình đang chờ Founder xác nhận hoặc phê duyệt"
                 : notEvaluableReview
                   ? notEvaluableReview.title_vi
                 : "Quy trình đang chờ bổ sung dữ liệu"}
@@ -419,15 +428,59 @@ export function App() {
             <>
               <DecisionDashboard
                 data={decisionData}
-                onOpenDecisionCard={
-                  presentationCard ? () => setDecisionCardOpen(true) : undefined
-                }
               />
               <section className="founder-actions" aria-labelledby="founder-actions-title">
                 <header>
                   <span>ĐIỂM DỪNG CÓ KIỂM SOÁT</span>
-                  <h3 id="founder-actions-title">Hành động của Nhà sáng lập</h3>
+                  <h3 id="founder-actions-title">Những chỗ đang chờ Founder phê duyệt</h3>
                 </header>
+
+                <div className="pending-actions-list" style={{ marginBottom: "16px", display: "flex", flexDirection: "column", gap: "10px" }}>
+                  {activeApproval && (
+                    <div style={{ background: "rgba(224, 86, 36, 0.05)", padding: "12px", borderRadius: "8px", borderLeft: "4px solid var(--color-red-650)" }}>
+                      <strong style={{ display: "block", color: "var(--color-red-700)", marginBottom: "4px" }}>Yêu cầu phê duyệt đang chờ</strong>
+                      <span style={{ fontSize: "12px", display: "block", fontWeight: 600 }}>{approvalSubject?.title}</span>
+                      <span style={{ fontSize: "11px", color: "var(--color-ink-500)", marginTop: "2px", display: "block" }}>
+                        {approvalSubject?.description}
+                      </span>
+                    </div>
+                  )}
+                  {notEvaluableReview && (
+                    <div style={{ background: "rgba(217, 119, 6, 0.05)", padding: "12px", borderRadius: "8px", borderLeft: "4px solid var(--color-amber-600)" }}>
+                      <strong style={{ display: "block", color: "var(--color-amber-700)", marginBottom: "4px" }}>Yêu cầu xem xét tài liệu/sơ đồ quyết định</strong>
+                      <span style={{ fontSize: "12px", display: "block" }}>{notEvaluableReview.title_vi || "Yêu cầu Founder xem xét hồ sơ quyết định"}</span>
+                      <span style={{ fontSize: "11px", color: "var(--color-ink-500)", marginTop: "2px", display: "block" }}>
+                        {notEvaluableReview.instruction_vi}
+                      </span>
+                    </div>
+                  )}
+                  {missingInteraction && (
+                    <div style={{ background: "rgba(37, 99, 235, 0.05)", padding: "12px", borderRadius: "8px", borderLeft: "4px solid var(--color-blue-500)" }}>
+                      <strong style={{ display: "block", color: "var(--color-blue-700)", marginBottom: "4px" }}>Yêu cầu bổ sung dữ liệu/tài liệu</strong>
+                      <span style={{ fontSize: "12px", display: "block", fontWeight: 600 }}>{missingInteraction.title_vi}</span>
+                      <span style={{ fontSize: "11px", color: "var(--color-ink-500)", marginTop: "2px", display: "block" }}>
+                        {missingInteraction.instruction_vi}
+                      </span>
+                      {/* Hiển thị chi tiết từng loại tài liệu cần bổ sung */}
+                      {!!documentTypes.length && (
+                        <div style={{ marginTop: "6px", fontSize: "11px" }}>
+                          <span style={{ fontWeight: 600, color: "var(--color-ink-700)" }}>Danh sách tài liệu cần bổ sung:</span>
+                          <ul style={{ margin: "2px 0 0 0", paddingLeft: "1.2rem", color: "var(--color-red-650)", fontWeight: 600 }}>
+                            {documentTypes.map((type) => (
+                              <li key={type}>{documentRequirementLabel(type)}</li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                  {!activeApproval && !notEvaluableReview && !missingInteraction && (
+                    <p style={{ fontSize: "12px", color: "var(--color-ink-450)", margin: 0 }}>
+                      Hiện không có yêu cầu nào cần Founder xử lý.
+                    </p>
+                  )}
+                </div>
+
                 {isFinalDecisionAction && !isFinalDecisionApproval ? (
                   <button type="button" disabled>
                     Đang hoàn thiện Decision Card theo tiến trình…
@@ -459,8 +512,17 @@ export function App() {
                   <button type="button" onClick={() => setMissingDataOpen(true)}>
                     Bổ sung dữ liệu để quy trình tiếp tục
                   </button>
-                ) : (
-                  <p>Hiện không có yêu cầu nào cần Nhà sáng lập xử lý.</p>
+                ) : null}
+
+                {/* Nút xem Decision Card — chỉ hiện khi có card và không trùng với nút hành động ở trên */}
+                {presentationCard && !isFinalDecisionApproval && !isExactNotEvaluableReview && (
+                  <button
+                    type="button"
+                    style={{ marginTop: activeApproval || notEvaluableReview || missingInteraction ? "8px" : undefined, background: "var(--color-ink-100)", color: "var(--color-ink-800)", border: "1px solid var(--color-line-strong)" }}
+                    onClick={() => setDecisionCardOpen(true)}
+                  >
+                    Xem Decision Card hiện hành
+                  </button>
                 )}
               </section>
             </>

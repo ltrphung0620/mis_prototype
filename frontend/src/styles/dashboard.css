@@ -1646,16 +1646,6 @@
   .decision-panel {
     grid-column: 1 / -1;
   }
-
-  .decision-panel .panel__body {
-    display: grid;
-    grid-template-columns: minmax(0, 1.4fr) minmax(270px, 0.6fr);
-    gap: var(--space-5);
-  }
-
-  .decision-panel .founder-actions {
-    margin-top: 0;
-  }
 }
 
 @media (max-width: 1240px) {

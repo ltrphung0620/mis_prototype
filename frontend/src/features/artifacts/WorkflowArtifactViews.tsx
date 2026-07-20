@@ -54,9 +54,29 @@ const LABELS: Record<string, string> = {
   FINANCE: "Đánh giá tài chính",
   OPERATIONS: "Đánh giá vận hành",
   RISK: "Quét rủi ro ban đầu",
-  SEND_DOCUMENT_TO_EXTERNAL_PARTNER: "gửi hồ sơ ra bên ngoài",
-  COMMIT_LARGE_FINANCIAL_DECISION: "cam kết quyết định tài chính lớn",
-  SUBMIT_BANKING_PRECHECK: "chạy precheck với ngân hàng",
+  SEND_DOCUMENT_TO_EXTERNAL_PARTNER: "Gửi tài liệu ra đối tác bên ngoài",
+  COMMIT_LARGE_FINANCIAL_DECISION: "Cam kết quyết định tài chính lớn",
+  SUBMIT_BANKING_PRECHECK: "Chạy precheck với ngân hàng",
+  // TeamPack sheet names (source_record_counts)
+  "06_Risk_Rules": "Quy tắc rủi ro (Sheet 06)",
+  "07_Alerts": "Cảnh báo rủi ro (Sheet 07)",
+  "08_Bank_Transactions": "Giao dịch ngân hàng (Sheet 08)",
+  "09_Data_Classification": "Phân loại dữ liệu (Sheet 09)",
+  // Risk types
+  MARGIN_RISK: "Rủi ro biên lợi nhuận",
+  EXECUTION_RISK: "Rủi ro triển khai",
+  CASHFLOW_RISK: "Rủi ro dòng tiền",
+  CREDIT_RISK: "Rủi ro tín dụng",
+  DELIVERY_RISK: "Rủi ro giao hàng",
+  COMPLIANCE_RISK: "Rủi ro tuân thủ",
+  // Alert types
+  CONTRACT_ALERT: "Cảnh báo hợp đồng",
+  CUSTOMER_ALERT: "Cảnh báo khách hàng",
+  FINANCIAL_ALERT: "Cảnh báo tài chính",
+  OPERATIONAL_ALERT: "Cảnh báo vận hành",
+  // Trigger events
+  DOCUMENT_EXTERNAL_RELEASE_REQUESTED: "Yêu cầu phát hành tài liệu ra ngoài",
+  LARGE_FINANCIAL_DECISION_REQUESTED: "Yêu cầu cam kết tài chính lớn",
 };
 
 function label(value?: string | null): string {
@@ -141,34 +161,123 @@ export function RiskPreScanView({
   payload: RiskPreScanPayload;
   runArtifacts?: readonly ArtifactEnvelope[];
 }): ReactElement {
-  const alerts = payload.case_alerts ?? [];
+  const caseAlerts = payload.case_alerts ?? [];
+  const globalAlerts = payload.global_alerts ?? [];
+  const rules = payload.source_rules ?? [];
+  const recordCounts = payload.source_record_counts ?? {};
+  const recordCountEntries = Object.entries(recordCounts);
+
   const checkpointArtifact = runArtifacts.find(
     (item) => item.artifact_type === "APPROVAL_CHECKPOINTS" && item.version === 1,
   ) ?? runArtifacts.find((item) => item.artifact_type === "APPROVAL_CHECKPOINTS");
   const checkpoints = (
     checkpointArtifact?.payload as ApprovalCheckpointPayload | undefined
   )?.checkpoints ?? [];
+
   return (
     <article className="assessment-view" aria-label="Quét rủi ro ban đầu">
-      <header><h3>Quét tín hiệu rủi ro liên quan trực tiếp đến hợp đồng</h3></header>
-      {alerts.length ? <ul>{alerts.map((alert, index) => (
-        <li key={`${alert.alert_type ?? "alert"}-${index}`}>
-          <strong>{label(alert.alert_type)} · {label(alert.severity)}</strong>
-          <p>{translateText(alert.description)}</p>
-          {alert.recommended_action && <p>Hướng xử lý được ghi nhận: {translateText(alert.recommended_action)}</p>}
-        </li>
-      ))}</ul> : <p>Không có cảnh báo được liên kết rõ ràng với hợp đồng ở bước quét ban đầu.</p>}
+      <header><h3>Quét tín hiệu rủi ro sơ bộ</h3></header>
+
+      {/* Mục 1: Dữ liệu nguồn & Quy tắc rủi ro đã quét */}
       <section>
-        <h4>Các điểm phê duyệt được đăng ký</h4>
-        {checkpoints.length ? (
-          <ul>{checkpoints.map((checkpoint, index) => (
-            <li key={`${checkpoint.source_rule_id ?? "approval"}-${index}`}>
-              <strong>{checkpoint.source_rule_id ?? "Quy tắc kiểm soát"}</strong>: Founder cần phê duyệt trước khi {label(checkpoint.protected_action).toLocaleLowerCase("vi-VN")}.
-            </li>
-          ))}</ul>
-        ) : <p>Không có điểm phê duyệt nào được đăng ký ở bước quét này.</p>}
+        <h4>1. Dữ liệu nguồn & Quy tắc rủi ro đã quét (Sheet 06)</h4>
+        {!!recordCountEntries.length && (
+          <p style={{ margin: "0 0 10px 0" }}>
+            <strong>Dữ liệu nguồn đã quét:</strong>{" "}
+            {recordCountEntries
+              .map(([sheet, count]) => `${translateText(label(sheet))}: ${count} dòng`)
+              .join(" · ")}
+          </p>
+        )}
+        {rules.length ? (
+          <ul>
+            {rules.map((rule) => (
+              <li key={rule.rule_id} style={{ marginBottom: "8px" }}>
+                <strong>{rule.rule_id} · {translateText(label(rule.risk_type))} · {translateText(label(rule.severity))}</strong>
+                <p style={{ margin: "2px 0" }}>{translateText(rule.declared_condition)}</p>
+                <p style={{ margin: "0", fontSize: "12px", color: "var(--color-ink-600)" }}>
+                  Hành động yêu cầu: {translateText(rule.required_action)}
+                </p>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p>Không tìm thấy quy tắc rủi ro nào được nạp từ nguồn.</p>
+        )}
       </section>
-      <p>Kết quả này mới là tín hiệu đầu vào; mức rủi ro được kết luận sau khi có kết quả Tài chính và Vận hành.</p>
+
+      {/* Mục 2: Cảnh báo rủi ro được phát hiện */}
+      <section>
+        <h4>2. Cảnh báo rủi ro phát hiện (Sheet 07)</h4>
+        {caseAlerts.length ? (
+          <div>
+            <h5 style={{ margin: "5px 0" }}>Cảnh báo riêng của Hợp đồng:</h5>
+            <ul>
+              {caseAlerts.map((alert, index) => (
+                <li key={`case-alert-${index}`} style={{ marginBottom: "6px" }}>
+                  <strong>{translateText(label(alert.alert_type))} · {translateText(label(alert.severity))}</strong>
+                  <p style={{ margin: "2px 0" }}>{translateText(alert.description)}</p>
+                  {alert.recommended_action && (
+                    <p style={{ margin: "0", fontSize: "12px", color: "var(--color-ink-600)" }}>
+                      Hướng xử lý: {translateText(alert.recommended_action)}
+                    </p>
+                  )}
+                  {!!alert.related_entity_ids?.length && (
+                    <p style={{ margin: "0", fontSize: "11px", color: "var(--color-ink-450)" }}>
+                      Thực thể liên quan: {alert.related_entity_ids.join(", ")}
+                    </p>
+                  )}
+                </li>
+              ))}
+            </ul>
+          </div>
+        ) : null}
+
+        {globalAlerts.length ? (
+          <div style={{ marginTop: "10px" }}>
+            <h5 style={{ margin: "5px 0" }}>Cảnh báo rủi ro toàn OPC:</h5>
+            <ul>
+              {globalAlerts.map((alert, index) => (
+                <li key={`global-alert-${index}`} style={{ marginBottom: "6px" }}>
+                  <strong>{translateText(label(alert.alert_type))} · {translateText(label(alert.severity))}</strong>
+                  <p style={{ margin: "2px 0" }}>{translateText(alert.description)}</p>
+                  {alert.recommended_action && (
+                    <p style={{ margin: "0", fontSize: "12px", color: "var(--color-ink-600)" }}>
+                      Hướng xử lý: {translateText(alert.recommended_action)}
+                    </p>
+                  )}
+                </li>
+              ))}
+            </ul>
+          </div>
+        ) : null}
+
+        {!caseAlerts.length && !globalAlerts.length && (
+          <p>Không ghi nhận cảnh báo rủi ro nào trực tiếp hoặc gián tiếp ở bước này.</p>
+        )}
+      </section>
+
+      {/* Mục 3: Cổng kiểm soát phê duyệt cần thiết */}
+      <section>
+        <h4>3. Các điểm phê duyệt được đăng ký (Approval signals)</h4>
+        {checkpoints.length ? (
+          <ul>
+            {checkpoints.map((checkpoint, index) => (
+              <li key={`${checkpoint.source_rule_id ?? "approval"}-${index}`}>
+                <strong>{checkpoint.source_rule_id ?? "Quy tắc kiểm soát"}</strong>: Founder cần phê duyệt trước khi{" "}
+                {translateText(label(checkpoint.protected_action)).toLowerCase()}
+                {checkpoint.source_rule_id === "RR-005" ? " (lớn hơn 300 triệu)" : ""}.
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p>Không có điểm phê duyệt nào được kích hoạt ở bước quét sơ bộ này.</p>
+        )}
+      </section>
+
+      <p style={{ marginTop: "15px", fontStyle: "italic", fontSize: "12px", color: "var(--color-ink-600)" }}>
+        Kết quả này mới là tín hiệu đầu vào; mức rủi ro được kết luận sau khi có kết quả Tài chính và Vận hành.
+      </p>
     </article>
   );
 }

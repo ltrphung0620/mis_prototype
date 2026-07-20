@@ -59,7 +59,10 @@ def start_completed_workflow(
         return terminal
     assert terminal["status"] != "WAITING_FOR_INPUT"
     if terminal["status"] == "WAITING_FOR_APPROVAL":
-        assert terminal["blocked_action"] == "SUBMIT_BANKING_PRECHECK"
+        assert terminal["blocked_action"] in {
+            "SUBMIT_BANKING_PRECHECK",
+            "CONFIRM_FINAL_CONTRACT_DECISION",
+        }
         pending_approval_ids = terminal["pending_approval_ids"]
         assert len(pending_approval_ids) == 1
         approved = client.post(

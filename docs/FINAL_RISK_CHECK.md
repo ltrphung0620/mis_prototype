@@ -45,20 +45,22 @@ versioning và persistence.
 
 Final Risk v1 thực hiện các bước sau:
 
-1. Carry forward từng Initial Risk finding thành `ResidualRiskFinding` với
-   `status = OPEN_UNCHANGED`.
-2. Giữ `residual_risk_level` bằng `initial_risk_level`. Không có mitigation rule nên bước này
-   không được tự giảm hoặc đổi risk level.
-3. Giữ nguyên evidence limitations. Initial assessment bị giới hạn bởi evidence thì
+1. Chỉ carry forward Initial Risk finding còn chưa có bằng chứng kiểm soát thành
+   `ResidualRiskFinding` với `status = OPEN_UNCHANGED`.
+2. Tính `residual_risk_level` từ chính tập residual finding còn mở. `initial_risk_level` chỉ còn
+   là dữ liệu lịch sử phục vụ audit, không bị sao chép cưỡng bức sang mức cuối.
+3. Trả `conclusion = SAFE` chỉ khi không còn residual finding, approval gate, xác nhận Founder
+   hoặc giới hạn bằng chứng; các trường hợp khác trả `ATTENTION_REQUIRED`.
+4. Giữ nguyên evidence limitations. Initial assessment bị giới hạn bởi evidence thì
    `assessment_status = LIMITED_BY_EVIDENCE`; ngược lại là `COMPLETE`.
-4. Xác định major exception chỉ từ explicit residual finding có severity `CRITICAL`:
+5. Xác định major exception chỉ từ explicit residual finding có severity `CRITICAL`:
    - có finding CRITICAL: `DETECTED` và tạo `major_exception_signal`;
    - không có finding CRITICAL nhưng evidence còn hạn chế: `NOT_EVALUABLE`;
    - không có finding CRITICAL và evidence đầy đủ: `NOT_DETECTED`.
-5. Tạo `required_controls` từ explicit human-confirmation points, evidence limitations,
+6. Tạo `required_controls` từ explicit human-confirmation points, evidence limitations,
    registered Governance checkpoints, resolved rejection references, simulated Banking result và
    Document release boundary có trong package.
-6. Không xem checkpoint đã đăng ký là approval gate đang active. Trong v1, một package READY không
+7. Không xem checkpoint đã đăng ký là approval gate đang active. Trong v1, một package READY không
    thể được tạo khi approval request còn pending; vì vậy `unresolved_approval_gates` rỗng.
 
 `NOT_EVALUABLE` không có nghĩa là “không có rủi ro”; nó có nghĩa evidence hiện tại chưa đủ để kết
@@ -125,6 +127,8 @@ Sau khi signed-contract evidence được bổ sung và Internal Decision Packag
 CON-004 tạo kết quả sau tại `FINAL_RISK_READY` trước khi Workflow chuyển sang Decision:
 
 - residual risk vẫn là `HIGH`;
+- conclusion là `ATTENTION_REQUIRED` vì cảnh báo năng lực triển khai AL-003 vẫn cần Founder xác
+  nhận và RR-003 chưa có bằng chứng xử lý biên lợi nhuận;
 - status là `LIMITED_BY_EVIDENCE`;
 - không có CRITICAL finding nhưng evidence còn hạn chế, nên major exception là `NOT_EVALUABLE`;
 - RR-004/RR-005 đã đăng ký vẫn dormant, nên không có unresolved approval gate;

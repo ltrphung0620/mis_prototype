@@ -106,9 +106,9 @@ describe("InputPanel", () => {
         dashboard={{
           ...completedDashboard,
           status: "WAITING_FOR_APPROVAL",
-          statusLabel: "Chờ Nhà sáng lập phê duyệt",
+          statusLabel: "Chờ Founder phê duyệt",
           currentStage: "WAITING_FOR_APPROVAL",
-          currentStageLabel: "Chờ Nhà sáng lập phê duyệt",
+          currentStageLabel: "Chờ Founder phê duyệt",
           pendingApprovalCount: 1,
         }}
         bootstrapping={false}

@@ -12,8 +12,9 @@ describe("workflow artifact presenters", () => {
   });
 
   it("labels Final Risk separately from Initial Risk", () => {
-    render(<ArtifactAssessmentView artifact={{ artifact_id: "ART-R", artifact_type: "FINAL_RISK_ASSESSMENT", version: 1, validation_status: "VALID", payload: { residual_risk_level: "MEDIUM", residual_findings: [], evidence_ids: ["EVD-HIDDEN"] } }} />);
+    render(<ArtifactAssessmentView artifact={{ artifact_id: "ART-R", artifact_type: "FINAL_RISK_ASSESSMENT", version: 1, validation_status: "VALID", payload: { residual_risk_level: "NO_CASE_SIGNAL", conclusion: "SAFE", residual_findings: [], evidence_ids: ["EVD-HIDDEN"] } }} />);
     expect(screen.getByRole("heading", { name: "Kiểm tra rủi ro cuối" })).toBeInTheDocument();
+    expect(screen.getByText(/An toàn: không còn rủi ro/)).toBeInTheDocument();
     expect(screen.queryByText(/EVD-HIDDEN/)).not.toBeInTheDocument();
   });
 
@@ -117,4 +118,3 @@ describe("workflow artifact presenters", () => {
     expect(screen.getByText("Phương án: Performance bond — VietinBank: Sẵn sàng")).toBeInTheDocument();
   });
 });
-

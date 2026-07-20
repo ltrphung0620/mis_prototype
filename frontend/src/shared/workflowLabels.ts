@@ -24,15 +24,15 @@ const WORKFLOW_LABELS: Readonly<Record<string, string>> = {
   FINAL_RISK_CHECK: "Kiểm tra rủi ro cuối",
   DECISION_CARD_COMPOSITION: "Lập Decision Card",
   DECISION_CARD_READY: "Decision Card đã sẵn sàng",
-  FINAL_DECISION_APPROVAL: "Nhà sáng lập xem xét quyết định cuối",
+  FINAL_DECISION_APPROVAL: "Founder xem xét quyết định cuối",
   POST_DECISION_UPDATE: "Cập nhật sau quyết định",
   NEGOTIATION_IN_PROGRESS: "Đang chờ kết quả đàm phán",
   FINAL_DECISION_ACCEPTED: "Hợp đồng đã được chấp nhận",
   FINAL_DECISION_NOT_ACCEPTED: "Hợp đồng không được chấp nhận",
   EXTERNAL_DOCUMENT_SUBMISSION_PROPOSAL: "Lập đề xuất gửi hồ sơ bên ngoài",
   READY_FOR_EXTERNAL_SUBMISSION: "Hồ sơ sẵn sàng để gửi",
-  APPROVAL_GATE: "Cổng phê duyệt của Nhà sáng lập",
-  WAITING_FOR_APPROVAL: "Đang chờ Nhà sáng lập phê duyệt",
+  APPROVAL_GATE: "Cổng phê duyệt của Founder",
+  WAITING_FOR_APPROVAL: "Đang chờ Founder phê duyệt",
 };
 
 export function stageLabel(code: string): string {
@@ -53,7 +53,7 @@ export function statusLabel(status: string): string {
     EXPIRED: "Yêu cầu đã hết hiệu lực",
     WAITING_FOR_DEPENDENCIES: "Đang chờ tác vụ liên quan",
     WAITING_FOR_INPUT: "Chờ bổ sung dữ liệu",
-    WAITING_FOR_APPROVAL: "Chờ Nhà sáng lập phê duyệt",
+    WAITING_FOR_APPROVAL: "Chờ Founder phê duyệt",
     BLOCKED: "Đã tạm dừng",
     FAILED_SAFE: "Dừng an toàn",
     SKIPPED: "Không áp dụng",

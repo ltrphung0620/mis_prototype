@@ -76,6 +76,7 @@ from opc_mis.domain.enums import (
     DecisionHandoffMode,
     DecisionPostBankingOutcome,
     DecisionRouteOutcome,
+    FinalRiskConclusion,
     FinalRiskControlCode,
     MajorExceptionStatus,
     MissingRequestStatus,
@@ -4456,12 +4457,28 @@ class EvidenceValidator:
                 key=lambda item: severity_order[item.severity],
             )
             expected_level = RiskLevel(highest.severity)
-        if (
-            assessment.initial_risk_level is not expected_level
-            or assessment.residual_risk_level is not expected_level
-        ):
+        if assessment.residual_risk_level is not expected_level:
             errors.append(
                 "FINAL_RISK_ASSESSMENT residual findings contradict its risk level."
+            )
+
+        has_unresolved_confirmation = any(
+            item.code is FinalRiskControlCode.HUMAN_CONFIRMATION_REQUIRED
+            for item in assessment.required_controls
+        )
+        expected_conclusion = (
+            FinalRiskConclusion.ATTENTION_REQUIRED
+            if (
+                assessment.residual_findings
+                or assessment.unresolved_approval_gates
+                or has_unresolved_confirmation
+                or assessment.limitations
+            )
+            else FinalRiskConclusion.SAFE
+        )
+        if assessment.conclusion is not expected_conclusion:
+            errors.append(
+                "FINAL_RISK_ASSESSMENT conclusion contradicts unresolved items."
             )
 
         for finding in assessment.residual_findings:

@@ -100,12 +100,19 @@ def test_initial_route_is_generic_across_actual_contracts(
             }
         ]
 
+        final_decision_wait = (
+            not banking_signal
+            and summary["decision_recommendation"]
+            == "NEGOTIATE_CONDITIONS_TO_ACCEPT"
+        )
         assert summary["status"] == (
-            "WAITING_FOR_APPROVAL" if banking_signal else "COMPLETED"
+            "WAITING_FOR_APPROVAL"
+            if banking_signal or final_decision_wait
+            else "COMPLETED"
         )
         assert summary["current_stage"] == (
             "WAITING_FOR_APPROVAL"
-            if banking_signal
+            if banking_signal or final_decision_wait
             else "DECISION_CARD_READY"
         )
         assert summary["decision_route_outcome"] == expected
@@ -133,10 +140,14 @@ def test_initial_route_is_generic_across_actual_contracts(
         approvals = decision_client.get(
             f"/api/cases/{summary['evaluation_case_id']}/approval-requests"
         ).json()
-        assert bool(approvals) is banking_signal
+        assert bool(approvals) is (banking_signal or final_decision_wait)
         if banking_signal:
             assert {item["command"]["action_type"] for item in approvals} == {
                 "SUBMIT_BANKING_PRECHECK"
+            }
+        elif final_decision_wait:
+            assert {item["command"]["action_type"] for item in approvals} == {
+                "CONFIRM_FINAL_CONTRACT_DECISION"
             }
 
 

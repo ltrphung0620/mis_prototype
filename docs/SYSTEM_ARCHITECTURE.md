@@ -416,8 +416,10 @@ Deterministic policy xác định tập recommendation được phép:
 - `NOT_EVALUABLE`
 
 OpenAI có thể đề xuất một recommendation trong đúng tập được phép nhưng không được mở rộng tập,
-tính toán lại facts, tạo condition/evidence mới hoặc phê duyệt kết quả. Deterministic fallback chỉ
-được trả `NOT_EVALUABLE`.
+tính toán lại facts, tạo condition/evidence mới hoặc phê duyệt kết quả. Model-selected candidate
+codes được hydrate về exact deterministic snapshots và mandatory conditions được policy tự gắn.
+Deterministic fallback chỉ được trả `NEGOTIATE_CONDITIONS_TO_ACCEPT` khi recommendation đã eligible
+và không còn lựa chọn strategy chủ quan; các trường hợp khác vẫn trả `NOT_EVALUABLE`.
 
 Khi current linked-order gross margin thấp hơn OPC target và đủ các operand có evidence, Decision
 tạo deterministic negotiation-strategy candidates. Pure domain logic tính amount và rounding;
@@ -1428,9 +1430,9 @@ not read Excel, call OpenAI, query an external provider, or persist its own outp
 dependency selection, Evidence Validator execution, artifact versioning/persistence and the
 `FINAL_RISK_READY` Risk boundary before Decision composition.
 
-Final Risk v1 deliberately has no mitigation rule. Every explicit Initial Risk finding is carried
-forward as `OPEN_UNCHANGED`, and `residual_risk_level` must equal `initial_risk_level`. Evidence
-limitations are preserved. A CRITICAL residual finding produces an evidence-bound major-exception
+Final Risk keeps the initial level as historical audit context and derives `residual_risk_level`
+only from findings that remain `OPEN_UNCHANGED`. `SAFE` requires no residual finding, unresolved
+approval/confirmation, or evidence limitation. A CRITICAL residual finding produces an evidence-bound major-exception
 signal; without a CRITICAL finding, limited evidence yields `NOT_EVALUABLE`, not a false
 `NOT_DETECTED` conclusion.
 

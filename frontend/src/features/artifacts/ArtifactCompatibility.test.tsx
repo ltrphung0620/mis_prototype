@@ -34,10 +34,11 @@ describe("artifact payload compatibility", () => {
     expect(screen.queryByText(/EVD-HIDDEN/)).not.toBeInTheDocument();
   });
 
-  it("sanitizes Risk pre-scan to contract-linked alerts", () => {
-    render(<ArtifactAssessmentView artifact={artifact("RISK_PRE_SCAN", { source_rule_ids: ["RULE-SECRET"], source_record_counts: { alerts: 2 }, case_alerts: [{ alert_type: "CONTRACT_EXECUTION_RISK", severity: "HIGH", description: "Cảnh báo liên kết trực tiếp với hợp đồng.", recommended_action: "Founder kiểm tra bối cảnh.", evidence_ids: ["EVD-SECRET"] }], global_alerts: [{ description: "GLOBAL-HIDDEN" }], global_signals: [{ detail: "GLOBAL-SIGNAL-HIDDEN" }] })} />);
+  it("renders Risk pre-scan alerts including global alerts", () => {
+    render(<ArtifactAssessmentView artifact={artifact("RISK_PRE_SCAN", { source_rule_ids: ["RULE-SECRET"], source_record_counts: { alerts: 2 }, case_alerts: [{ alert_type: "CONTRACT_EXECUTION_RISK", severity: "HIGH", description: "Cảnh báo liên kết trực tiếp với hợp đồng.", recommended_action: "Founder kiểm tra bối cảnh.", evidence_ids: ["EVD-SECRET"] }], global_alerts: [{ alert_type: "FINANCIAL_ALERT", severity: "MEDIUM", description: "GLOBAL-HIDDEN" }], global_signals: [{ detail: "GLOBAL-SIGNAL-HIDDEN" }] })} />);
     expect(screen.getByText("Cảnh báo liên kết trực tiếp với hợp đồng.")).toBeInTheDocument();
-    expect(screen.queryByText(/RULE-SECRET|EVD-SECRET|GLOBAL-HIDDEN|GLOBAL-SIGNAL-HIDDEN/)).not.toBeInTheDocument();
+    expect(screen.getByText("GLOBAL-HIDDEN")).toBeInTheDocument();
+    expect(screen.queryByText(/RULE-SECRET|EVD-SECRET|GLOBAL-SIGNAL-HIDDEN/)).not.toBeInTheDocument();
   });
 
   it("shows only Banking advice overview and rationales", () => {

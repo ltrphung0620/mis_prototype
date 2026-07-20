@@ -146,9 +146,11 @@ def complete_banking_pause_if_required(
             pending_request = next(
                 item for item in requests if item["request_id"] == pending_ids[0]
             )
-            assert pending_request["command"]["action_type"] == (
-                "SUBMIT_BANKING_PRECHECK"
-            )
+            action_type = pending_request["command"]["action_type"]
+            assert action_type in {
+                "SUBMIT_BANKING_PRECHECK",
+                "CONFIRM_FINAL_CONTRACT_DECISION",
+            }
             approved = client.post(
                 f"/api/approval-requests/{pending_ids[0]}/decision",
                 json={
@@ -307,6 +309,7 @@ def test_con004_uses_planner_amount_then_pauses_for_submission_approval(
     assert final["final_risk_assessment_id"]
     assert final["final_risk_status"] == "LIMITED_BY_EVIDENCE"
     assert final["final_residual_risk_level"] == "HIGH"
+    assert final["final_risk_conclusion"] == "ATTENTION_REQUIRED"
     assert final["final_major_exception"] == "NOT_EVALUABLE"
     assert final["final_unresolved_approval_gate_ids"] == []
     assert final["ai_decision_analysis_id"]
@@ -491,7 +494,10 @@ def test_duplicate_start_reuses_workflow_and_does_not_repeat_nodes(
     workflow_client: TestClient,
 ) -> None:
     first = start(workflow_client, "CON-005")
-    final = wait_for_terminal(workflow_client, str(first["workflow_run_id"]))
+    final = complete_banking_pause_if_required(
+        workflow_client,
+        wait_for_terminal(workflow_client, str(first["workflow_run_id"])),
+    )
     second_started = start(workflow_client, "CON-005")
     second = wait_for_terminal(
         workflow_client, str(second_started["workflow_run_id"])
@@ -595,7 +601,10 @@ def test_event_cursor_scope_validation_and_resume_conflict(
     workflow_client: TestClient,
 ) -> None:
     created = start(workflow_client, "CON-003")
-    final = wait_for_terminal(workflow_client, str(created["workflow_run_id"]))
+    final = complete_banking_pause_if_required(
+        workflow_client,
+        wait_for_terminal(workflow_client, str(created["workflow_run_id"])),
+    )
     workflow_id = str(created["workflow_run_id"])
     events = workflow_client.get(f"/api/workflows/{workflow_id}/events").json()
     cursor = events[len(events) // 2]["sequence"]
@@ -701,6 +710,7 @@ def test_pending_workflow_recovers_after_runtime_restart(
             assert completed["final_risk_assessment_id"]
             assert completed["final_risk_status"] == "LIMITED_BY_EVIDENCE"
             assert completed["final_residual_risk_level"] == "HIGH"
+            assert completed["final_risk_conclusion"] == "ATTENTION_REQUIRED"
             assert completed["final_major_exception"] == "NOT_EVALUABLE"
             assert completed["banking_precheck_result_set_id"]
             assert completed["decision_post_precheck_review_id"]

@@ -13,6 +13,7 @@ from opc_mis.domain.enums import (
     ComponentStatus,
     EvaluationScope,
     FinalRiskAssessmentStatus,
+    FinalRiskConclusion,
     FinalRiskControlCode,
     MajorExceptionStatus,
     ProtectedAction,
@@ -164,6 +165,7 @@ def test_complete_final_risk_is_stable_and_has_no_decision_side_effects() -> Non
         assert first.assessment.assessment_status is FinalRiskAssessmentStatus.COMPLETE
         assert first.assessment.initial_risk_level is RiskLevel.NO_CASE_SIGNAL
         assert first.assessment.residual_risk_level is RiskLevel.NO_CASE_SIGNAL
+        assert first.assessment.conclusion is FinalRiskConclusion.SAFE
         assert first.assessment.major_exception_status is (
             MajorExceptionStatus.NOT_DETECTED
         )
@@ -197,6 +199,9 @@ def test_critical_explicit_finding_emits_major_exception_but_no_approval() -> No
         assert result.status is ComponentStatus.COMPLETED_WITH_WARNINGS
         assert result.assessment is not None
         assert result.assessment.residual_risk_level is RiskLevel.CRITICAL
+        assert result.assessment.conclusion is (
+            FinalRiskConclusion.ATTENTION_REQUIRED
+        )
         assert result.assessment.major_exception_status is MajorExceptionStatus.DETECTED
         assert result.assessment.major_exception_signal is not None
         assert result.assessment.major_exception_signal.evidence_ids == (
@@ -295,6 +300,7 @@ def test_limited_risk_preserves_controls_and_dormant_checkpoint_is_not_gate() ->
             FinalRiskAssessmentStatus.LIMITED_BY_EVIDENCE
         )
         assert assessment.residual_risk_level is RiskLevel.HIGH
+        assert assessment.conclusion is FinalRiskConclusion.ATTENTION_REQUIRED
         assert assessment.major_exception_status is MajorExceptionStatus.NOT_EVALUABLE
         assert assessment.unresolved_approval_gates == ()
         assert {item.code for item in assessment.required_controls} == {

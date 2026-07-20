@@ -2020,6 +2020,7 @@ class CaseWorkflowOrchestrator:
         final_risk_assessment_id: str | None = None
         final_risk_status = None
         final_residual_risk_level = None
+        final_risk_conclusion = None
         final_major_exception = None
         final_unresolved_approval_gate_ids: tuple[str, ...] = ()
         final_required_control_codes = ()
@@ -2298,6 +2299,7 @@ class CaseWorkflowOrchestrator:
                     final_risk_assessment_id = final_risk.assessment_id
                     final_risk_status = final_risk.assessment_status
                     final_residual_risk_level = final_risk.residual_risk_level
+                    final_risk_conclusion = final_risk.conclusion
                     final_major_exception = final_risk.major_exception_status
                     final_unresolved_approval_gate_ids = (
                         final_risk.unresolved_approval_gate_ids
@@ -2557,6 +2559,7 @@ class CaseWorkflowOrchestrator:
             final_risk_assessment_id=final_risk_assessment_id,
             final_risk_status=final_risk_status,
             final_residual_risk_level=final_residual_risk_level,
+            final_risk_conclusion=final_risk_conclusion,
             final_major_exception=final_major_exception,
             final_unresolved_approval_gate_ids=(
                 final_unresolved_approval_gate_ids

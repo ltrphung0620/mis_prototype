@@ -22,6 +22,7 @@ from opc_mis.domain.enums import (
     ArtifactType,
     ComponentStatus,
     EvaluationScope,
+    FinalRiskConclusion,
     MajorExceptionStatus,
     RiskAssessmentStatus,
     RiskLevel,
@@ -249,8 +250,8 @@ def test_final_risk_orchestrator_rejects_risk_downgrade_from_exact_package() -> 
         forged_payload = source.model_dump(mode="python")
         forged_payload.update(
             {
-                "initial_risk_level": RiskLevel.NO_CASE_SIGNAL,
                 "residual_risk_level": RiskLevel.NO_CASE_SIGNAL,
+                "conclusion": FinalRiskConclusion.SAFE,
                 "residual_findings": (),
                 "major_exception_status": MajorExceptionStatus.NOT_DETECTED,
                 "major_exception_signal": None,

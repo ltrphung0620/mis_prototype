@@ -100,7 +100,14 @@ display allowlist. The deterministic domain guard then requires exact candidate 
 packet input hash, valid evidence lineage, recommendation eligibility, option-combination policy,
 and recommendation-specific condition rules.
 
-If the OpenAI path is unavailable, the deterministic fallback may return only `NOT_EVALUABLE`.
+Before validation, model-selected reason/condition codes are hydrated back to the exact
+deterministic candidates. For `NEGOTIATE_CONDITIONS_TO_ACCEPT`, every mandatory `OPEN` or
+`NOT_EVALUABLE` condition is attached by policy rather than relying on the model to reproduce it.
+
+If the OpenAI path is unavailable, the deterministic fallback may return
+`NEGOTIATE_CONDITIONS_TO_ACCEPT` only when that recommendation is already eligible and every
+strategy-backed condition has at most one possible strategy. If a subjective choice remains,
+fallback stays `NOT_EVALUABLE` and records a stable, non-sensitive diagnostic reason code.
 Fallback is not permitted to synthesize `ACCEPT`, `NEGOTIATE_CONDITIONS_TO_ACCEPT`, or
 `DO_NOT_ACCEPT`.
 

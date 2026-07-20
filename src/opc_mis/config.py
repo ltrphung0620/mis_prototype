@@ -144,7 +144,7 @@ class AppSettings:
                 )
             ),
             decision_prompt_version=getenv(
-                "DECISION_PROMPT_VERSION", "decision-analysis-v2"
+                "DECISION_PROMPT_VERSION", "decision-analysis-v3"
             ),
             decision_prompt_path=Path(
                 getenv("DECISION_PROMPT_PATH", str(DEFAULT_DECISION_PROMPT_PATH))

@@ -193,16 +193,6 @@ export function InputPanel({
                 </Notice>
               ) : null}
 
-              {input?.warnings.length ? (
-                <div className="input-warnings">
-                  <strong>Lưu ý không gây dừng</strong>
-                  <ul>
-                    {input.warnings.map((warning, index) => (
-                      <li key={`${warning}-${index}`}>{warning}</li>
-                    ))}
-                  </ul>
-                </div>
-              ) : null}
             </section>
           ) : (
             <div className="input-empty">

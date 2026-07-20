@@ -265,6 +265,7 @@ def test_document_wait_resume_reaches_final_risk_without_release_approval(
     assert final_risk_ready["final_risk_assessment_id"]
     assert final_risk_ready["final_risk_status"] == "LIMITED_BY_EVIDENCE"
     assert final_risk_ready["final_residual_risk_level"] == "HIGH"
+    assert final_risk_ready["final_risk_conclusion"] == "ATTENTION_REQUIRED"
     assert final_risk_ready["final_major_exception"] == "NOT_EVALUABLE"
     assert final_risk_ready["final_unresolved_approval_gate_ids"] == []
     assert final_risk_ready["ai_decision_analysis_source"] == (

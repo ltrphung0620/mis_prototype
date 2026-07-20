@@ -85,7 +85,7 @@ describe("workflow timeline model", () => {
         {
           interaction_type: "APPROVAL",
           title_vi: "Phê duyệt",
-          instruction_vi: "Nhà sáng lập xem xét.",
+          instruction_vi: "Founder xem xét.",
           request_ids: [],
           approval_request_ids: ["APR-1"],
           required_fields: [],

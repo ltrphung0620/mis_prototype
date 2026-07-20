@@ -26,7 +26,7 @@ function dashboard(
     evaluationCaseId: "CASE-1",
     contractId: "CON-004",
     status: "WAITING_FOR_APPROVAL",
-    statusLabel: "Đang chờ Nhà sáng lập",
+    statusLabel: "Đang chờ Founder",
     currentStage: "WAITING_FOR_APPROVAL",
     currentStageLabel: "Điểm dừng có kiểm soát",
     pendingApprovalCount: pendingInteractions.some(
@@ -40,7 +40,7 @@ function dashboard(
       ? 1
       : 0,
     businessStatus: "AWAITING_FOUNDER_ACTION",
-    businessStatusLabel: "Đang chờ Nhà sáng lập xử lý",
+    businessStatusLabel: "Đang chờ Founder xử lý",
     resolvedMilestoneCount: 0,
     totalMilestoneCount: 1,
     progressPercent: 0,

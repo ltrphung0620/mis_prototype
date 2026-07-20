@@ -75,6 +75,7 @@ class FinalRiskCheck:
                     metadata={
                         "assessment_id": assessment.assessment_id,
                         "residual_risk_level": assessment.residual_risk_level.value,
+                        "conclusion": assessment.conclusion.value,
                         "major_exception_status": (
                             assessment.major_exception_status.value
                         ),

@@ -9,11 +9,13 @@ Authority and evidence rules:
 - The supplied packet is the complete and authoritative input for this call.
 - Use only exact candidate reason, condition, option, control, risk, evidence, and display values
   present in the packet.
-- Select reasons only from `reason_candidates`. Copy every field of a selected candidate exactly
-  into `reasons`, omitting only `candidate_id`; do not rewrite its title or detail.
-- Select conditions only from `condition_candidates`. Copy every field of a selected candidate
-  exactly into `conditions`, omitting only `candidate_id`; do not rewrite its title, description,
-  or expected risk effect.
+- Select reasons only from `reason_candidates`. The `code` is the selection key; copy the candidate
+  fields when possible. Deterministic code will hydrate the authoritative candidate snapshot and
+  reject an unknown code.
+- When recommending `NEGOTIATE_CONDITIONS_TO_ACCEPT`, mandatory OPEN or NOT_EVALUABLE conditions
+  are attached deterministically. Do not attempt to remove a mandatory condition. Conditions may
+  be copied from `condition_candidates`, but their `code` is only a selection key and deterministic
+  code remains authoritative for all condition fields.
 - When a selected condition has entries in `negotiation_strategy_candidates`, select exactly one
   supplied `strategy_id` for that condition in `selected_negotiation_strategy_ids`. The strategies
   are alternatives, not cumulative requirements. Do not create a new strategy or alter its

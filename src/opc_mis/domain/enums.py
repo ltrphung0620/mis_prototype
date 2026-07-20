@@ -471,6 +471,13 @@ class FinalRiskAssessmentStatus(StrEnum):
     LIMITED_BY_EVIDENCE = "LIMITED_BY_EVIDENCE"
 
 
+class FinalRiskConclusion(StrEnum):
+    """Whether any residual risk, evidence gap, or human gate remains open."""
+
+    SAFE = "SAFE"
+    ATTENTION_REQUIRED = "ATTENTION_REQUIRED"
+
+
 class ResidualRiskStatus(StrEnum):
     """Whether an initial case finding has explicit mitigation evidence."""
 

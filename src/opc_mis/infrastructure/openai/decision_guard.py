@@ -10,14 +10,89 @@ from pydantic import BaseModel
 from opc_mis.domain.decision_analysis import validate_decision_proposal_prose
 from opc_mis.domain.decision_models import (
     AIDecisionProposalDraft,
+    AIDecisionReasonDraft,
     DecisionConditionStatus,
     DecisionConfidence,
     DecisionRecommendation,
     DecisionReferenceKind,
     DecisionScenarioPacket,
+    NegotiationConditionDraft,
     decision_packet_input_hash,
 )
 from opc_mis.domain.lineage import deterministic_id
+
+
+def canonicalize_decision_proposal(
+    proposal: AIDecisionProposalDraft,
+    packet: DecisionScenarioPacket,
+) -> AIDecisionProposalDraft:
+    """Hydrate model selections from deterministic candidates before validation.
+
+    The model may select candidates by their stable business code without having to
+    reproduce every evidence ID and nested target byte-for-byte. Mandatory unresolved
+    conditions are always attached by deterministic policy for a negotiation proposal.
+    """
+
+    reasons_by_code = {item.code: item for item in packet.reason_candidates}
+    if len(reasons_by_code) != len(packet.reason_candidates):
+        raise ValueError("Decision packet reason candidate codes must be unique.")
+    canonical_reasons = tuple(
+        AIDecisionReasonDraft.model_validate(
+            reasons_by_code[item.code].model_dump(
+                mode="json", exclude={"candidate_id"}
+            )
+        )
+        if item.code in reasons_by_code
+        else item
+        for item in proposal.reasons
+    )
+
+    conditions_by_code = {item.code: item for item in packet.condition_candidates}
+    if len(conditions_by_code) != len(packet.condition_candidates):
+        raise ValueError("Decision packet condition candidate codes must be unique.")
+    if proposal.recommendation is DecisionRecommendation.NEGOTIATE_CONDITIONS_TO_ACCEPT:
+        selected_condition_candidates = tuple(
+            item
+            for item in packet.condition_candidates
+            if item.status
+            in {DecisionConditionStatus.OPEN, DecisionConditionStatus.NOT_EVALUABLE}
+        )
+    else:
+        selected_condition_candidates = tuple(
+            conditions_by_code.get(item.code, item)
+            for item in proposal.conditions
+        )
+    canonical_conditions = tuple(
+        NegotiationConditionDraft.model_validate(
+            item.model_dump(mode="json", exclude={"candidate_id"})
+        )
+        for item in selected_condition_candidates
+    )
+
+    selected_strategy_ids = list(proposal.selected_negotiation_strategy_ids)
+    if proposal.recommendation is DecisionRecommendation.NEGOTIATE_CONDITIONS_TO_ACCEPT:
+        selected_codes = {item.code for item in canonical_conditions}
+        for condition_code in selected_codes:
+            matching = tuple(
+                item
+                for item in packet.negotiation_strategy_candidates
+                if item.condition_code == condition_code
+            )
+            already_selected = tuple(
+                item
+                for item in matching
+                if item.strategy_id in selected_strategy_ids
+            )
+            if not already_selected and len(matching) == 1:
+                selected_strategy_ids.append(matching[0].strategy_id)
+
+    return proposal.model_copy(
+        update={
+            "reasons": canonical_reasons,
+            "conditions": canonical_conditions,
+            "selected_negotiation_strategy_ids": tuple(selected_strategy_ids),
+        }
+    )
 
 
 def decision_composer_cache_key(

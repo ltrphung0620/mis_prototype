@@ -42,6 +42,7 @@ const PRESENTABLE_ARTIFACT_TYPES = new Set([
   "DOCUMENT_PACKAGE_DRAFT",
   "DOCUMENT_RELEASE_PACKAGE",
   "INTERNAL_DECISION_PACKAGE",
+  "DECISION_POST_PRECHECK_REVIEW",
 ]);
 
 const ARTIFACT_PREFERENCE = [
@@ -63,6 +64,7 @@ const ARTIFACT_PREFERENCE = [
   "EVALUATION_CASE",
   "BANKING_DISCOVERY_REQUEST",
   "FINANCE_FACTS",
+  "DECISION_POST_PRECHECK_REVIEW",
   "OPERATIONS_FACTS",
 ] as const;
 
@@ -291,7 +293,7 @@ export function approvalSubjectSummary(
     : [];
   const firstOption = selectedOptions[0] ?? {};
   const releasePackage = record(payload.document_release_package);
-  const title = interaction?.title_vi || "Yêu cầu Nhà sáng lập xác nhận";
+  const title = interaction?.title_vi || "Yêu cầu Founder xác nhận";
   const descriptionByAction: Record<string, string> = {
     SUBMIT_BANKING_PRECHECK:
       "Cho phép quy trình gửi yêu cầu kiểm tra sơ bộ với ngân hàng; đây không phải phê duyệt cấp tín dụng hay bảo lãnh.",
@@ -309,7 +311,7 @@ export function approvalSubjectSummary(
     description:
       descriptionByAction[action] ??
       interaction?.instruction_vi ??
-      "Quy trình đang tạm dừng để Nhà sáng lập xem xét hành động được bảo vệ.",
+      "Quy trình đang tạm dừng để Founder xem xét hành động được bảo vệ.",
     recommendation:
       typeof payload.recommendation === "string"
         ? payload.recommendation

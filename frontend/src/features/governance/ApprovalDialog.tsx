@@ -47,15 +47,15 @@ function documentLabel(code: string): string {
 function actionExplanation(action: ProtectedAction): ReactElement {
   switch (action) {
     case "CONFIRM_FINAL_CONTRACT_DECISION":
-      return <p>Phê duyệt sẽ ghi nhận quyết định cuối cùng cho đúng Decision Card hiện hành và cho phép quy trình đi tiếp. Đây không phải thao tác gửi hồ sơ ra ngoài.</p>;
+      return <p>Quyết định này sẽ ghi nhận phê duyệt cuối cùng trên Decision Card để hoàn tất quy trình.</p>;
     case "SUBMIT_BANKING_PRECHECK":
-      return <p>Phê duyệt chỉ cho phép gửi yêu cầu kiểm tra sơ bộ đã xác định tới ngân hàng. Đây không phải chấp thuận cấp tín dụng hay bảo lãnh.</p>;
+      return <p>Lưu ý: Đây chỉ là yêu cầu khảo sát thông tin sơ bộ với ngân hàng, không phải chấp thuận cấp tín dụng hay bảo lãnh chính thức.</p>;
     case "SEND_DOCUMENT_TO_EXTERNAL_PARTNER":
-      return <p>Phê duyệt chỉ cho phép gửi đúng gói hồ sơ đã nêu tới đúng người nhận. Trước khi phê duyệt, hồ sơ chưa được gửi ra ngoài.</p>;
+      return <p>Lưu ý: Trước khi phê duyệt, hồ sơ chưa được gửi ra ngoài; hệ thống chỉ gửi đi sau khi được bạn xác nhận.</p>;
     case "COMMIT_LARGE_FINANCIAL_DECISION":
-      return <p>Phê duyệt cho phép quy trình ghi nhận cam kết tài chính đúng phạm vi đang trình; không mở rộng sang hành động khác.</p>;
+      return <p>Quyết định này ghi nhận cam kết tài chính trong phạm vi được duyệt.</p>;
     default:
-      return <p>Hãy kiểm tra kỹ nội dung và phạm vi trước khi quyết định. Quy trình đang tạm dừng và chưa thực hiện hành động được bảo vệ.</p>;
+      return <p>Vui lòng kiểm tra kỹ nội dung trước khi quyết định. Hệ thống đang chờ sự xác nhận từ bạn.</p>;
   }
 }
 
@@ -71,7 +71,7 @@ export function ApprovalDialog({
   if (!open) return null;
   if (!request || !subject) {
     return (
-      <div role="dialog" aria-modal="true" aria-label="Phê duyệt của Nhà sáng lập">
+      <div role="dialog" aria-modal="true" aria-label="Phê duyệt của Founder">
         <p>Không thể hiển thị yêu cầu phê duyệt vì thiếu nội dung cần xem xét.</p>
         <button type="button" onClick={onClose}>Đóng</button>
       </div>
@@ -83,21 +83,25 @@ export function ApprovalDialog({
   const canDecide = pending && is_current_subject;
   const amount = formatMoney(subject.amount, subject.currency);
 
+  const descriptionText = action === "SUBMIT_BANKING_PRECHECK"
+    ? `Gửi yêu cầu kiểm tra sơ bộ tới ngân hàng để khảo sát các phương án bảo lãnh thực hiện hợp đồng (Performance Bond) trị giá ${amount ?? "chưa xác định"}.`
+    : translateText(subject.description);
+
   return (
     <div role="dialog" aria-modal="true" aria-labelledby="approval-title" className="approval-dialog">
       <article>
         <header>
-          <p>Cổng xác nhận và phê duyệt của Nhà sáng lập</p>
+          <p>Cổng xác nhận và phê duyệt của Founder</p>
           <h2 id="approval-title">{translateText(subject.title)}</h2>
           <p>Trạng thái: {requestStatus(request.status)}</p>
         </header>
-        <p>{translateText(subject.description)}</p>
+        <p>{descriptionText}</p>
         {subject.recommendation && <p>Đề xuất: <strong>{businessValueLabel(subject.recommendation)}</strong></p>}
         {amount && <p>Giá trị: <strong>{amount}</strong></p>}
         {subject.recipient && <p>Người nhận dự kiến: <strong>{subject.recipient}</strong></p>}
         {!!subject.document_codes?.length && <><h3>Hồ sơ trong phạm vi</h3><ul>{subject.document_codes.map((code) => <li key={code}>{documentLabel(code)}</li>)}</ul></>}
         {actionExplanation(action)}
-        {pending && <p role="status">Quy trình đang tạm dừng. Không có hành động được bảo vệ nào được thực hiện trước quyết định này.</p>}
+        {pending && <p role="status">Quy trình đang tạm dừng để chờ bạn xác nhận. Hệ thống sẽ không tự động thực hiện hành động này nếu chưa được bạn phê duyệt.</p>}
         {!is_current_subject && <p role="alert">Yêu cầu này không còn khớp nội dung hiện hành nên không thể quyết định.</p>}
         {!pending && <p>Yêu cầu đã được xử lý; không thể quyết định lại.</p>}
         <footer>

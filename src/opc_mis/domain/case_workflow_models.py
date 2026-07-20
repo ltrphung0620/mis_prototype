@@ -27,6 +27,7 @@ from opc_mis.domain.enums import (
     DecisionRouteOutcome,
     EvaluationScope,
     FinalRiskAssessmentStatus,
+    FinalRiskConclusion,
     FinalRiskControlCode,
     MajorExceptionStatus,
     ProtectedAction,
@@ -190,6 +191,7 @@ class WorkflowRunSummary(BaseModel):
     final_risk_assessment_id: str | None = None
     final_risk_status: FinalRiskAssessmentStatus | None = None
     final_residual_risk_level: RiskLevel | None = None
+    final_risk_conclusion: FinalRiskConclusion | None = None
     final_major_exception: MajorExceptionStatus | None = None
     final_unresolved_approval_gate_ids: tuple[str, ...] = ()
     final_required_control_codes: tuple[FinalRiskControlCode, ...] = ()

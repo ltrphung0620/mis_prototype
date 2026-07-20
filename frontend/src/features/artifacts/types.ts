@@ -68,6 +68,7 @@ export interface RiskArtifactPayload {
   risk_level?: string;
   initial_risk_level?: string;
   residual_risk_level?: string;
+  conclusion?: "SAFE" | "ATTENTION_REQUIRED";
   major_exception_status?: string;
   major_exception_signal?: { detail: string; severity?: string } | null;
   findings?: AssessmentNote[];
@@ -88,20 +89,40 @@ export interface RiskArtifactPayload {
 
 export interface RiskPreScanPayload {
   contract_id?: string;
+  source_rule_ids?: string[];
+  source_rules?: Array<{
+    rule_id: string;
+    risk_type: string;
+    declared_condition: string;
+    severity: string;
+    required_action: string;
+  }>;
   case_alerts?: Array<{
+    alert_id?: string;
+    alert_type?: string;
+    severity?: string;
+    description: string;
+    recommended_action?: string;
+    related_entity_ids?: string[];
+  }>;
+  global_alerts?: Array<{
+    alert_id?: string;
     alert_type?: string;
     severity?: string;
     description: string;
     recommended_action?: string;
   }>;
+  source_record_counts?: Record<string, number>;
 }
 
 export interface ApprovalCheckpointPayload {
   checkpoints?: Array<{
+    checkpoint_id?: string;
     source_rule_id?: string;
     protected_action?: string;
     trigger_event?: string;
     approver_role?: string;
+    status?: string;
   }>;
 }
 
@@ -158,6 +179,7 @@ export interface DocumentArtifactPayload {
   }>;
   release_authorized?: boolean;
   external_release_performed?: boolean;
+  sanitized_payload?: Record<string, string | number | boolean | null>;
 }
 
 export interface PlannerWarningPayload {
@@ -254,4 +276,23 @@ export interface InternalDecisionPackagePayload {
   banking_precheck_result_set?: { authority?: string; results?: unknown[]; bank_approval_obtained?: boolean } | null;
   document_release_package?: { recipient?: string; purpose?: string; document_codes?: string[]; release_authorized?: boolean; external_release_performed?: boolean } | null;
   missing_data_requests?: unknown[];
+}
+
+export interface DecisionPostPrecheckReviewPayload {
+  outcome?: string;
+  option_reviews?: Array<{
+    option_id?: string;
+    bank_product_id?: string;
+    api_provider?: string;
+    source_outcome?: string;
+    disposition?: string;
+    reason_codes?: string[];
+    required_follow_up_fields?: string[];
+  }>;
+  candidate_option_ids?: string[];
+  candidate_bank_product_ids?: string[];
+  conditional_option_ids?: string[];
+  evidence_required_option_ids?: string[];
+  not_eligible_option_ids?: string[];
+  required_input_fields?: string[];
 }

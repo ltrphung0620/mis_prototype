@@ -13,6 +13,7 @@ import type {
   FinanceArtifactPayload,
   OperationsArtifactPayload,
   RiskArtifactPayload,
+  DecisionPostPrecheckReviewPayload,
 } from "./types";
 import {
   BankingAdviceView,
@@ -181,14 +182,19 @@ function Notes({ title, items = [] }: { title: string; items?: AssessmentNote[] 
     <section>
       <h4>{title}</h4>
       <ul>
-        {visibleItems.map((item, index) => (
-          <li key={`${item.code ?? item.title ?? title}-${index}`}>
-            <strong>{translateText(item.title ?? humanize(item.code))}</strong>
-            {(item.detail ?? item.text ?? item.description) && (
-              <p>{translateText(item.detail ?? item.text ?? item.description)}</p>
-            )}
-          </li>
-        ))}
+        {visibleItems.map((item, index) => {
+          const rawTitle = item.title ?? humanize(item.code);
+          const hasTitle = rawTitle && rawTitle !== "Trạng thái đã được hệ thống ghi nhận";
+          const rawDetail = item.detail ?? item.text ?? item.description;
+          return (
+            <li key={`${item.code ?? item.title ?? title}-${index}`}>
+              {hasTitle && <strong>{translateText(rawTitle)}</strong>}
+              {rawDetail && (
+                <p style={hasTitle ? {} : { margin: 0 }}>{translateText(rawDetail)}</p>
+              )}
+            </li>
+          );
+        })}
       </ul>
     </section>
   );
@@ -266,22 +272,65 @@ export function OperationsAssessmentView({ payload, variant = "ASSESSMENT" }: { 
 
 export function RiskAssessmentView({ payload, phase = "INITIAL" }: { payload: RiskArtifactPayload; phase?: "INITIAL" | "FINAL" }): ReactElement {
   const riskLevel = payload.residual_risk_level ?? payload.overall_risk_level ?? payload.risk_level ?? payload.initial_risk_level;
+  const confirmations = payload.human_confirmation_points ?? [];
+  const gates = payload.unresolved_approval_gates ?? [];
+  const hasActions = !!confirmations.length || !!gates.length;
+  const finalConclusion = payload.conclusion === "SAFE"
+    ? "An toàn: không còn rủi ro chưa được kiểm soát và không còn điểm nào chờ Founder xác nhận/phê duyệt."
+    : "Cần tiếp tục xử lý: vẫn còn rủi ro, giới hạn bằng chứng hoặc điểm xác nhận/phê duyệt chưa hoàn tất.";
+
   return (
     <article aria-label="Đánh giá rủi ro" className="assessment-view">
-      <header>
-        <h3>{phase === "FINAL" ? "Kiểm tra rủi ro cuối" : "Đánh giá rủi ro ban đầu"}</h3>
-        <strong>{phase === "FINAL" ? "Mức còn lại" : "Mức tổng thể"}: {translateText(humanize(riskLevel))}</strong>
+      <header style={{ borderBottom: "1px solid var(--color-line)", paddingBottom: "12px", marginBottom: "4px" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "8px" }}>
+          <h3 style={{ margin: 0, fontSize: "18px", fontWeight: 700 }}>
+            {phase === "FINAL" ? "Kiểm tra rủi ro cuối" : "Đánh giá rủi ro ban đầu"}
+          </h3>
+          <span className="status-badge status-badge--success" style={{ fontWeight: 700, fontSize: "12px" }}>
+            {phase === "FINAL" ? "Mức còn lại" : "Mức tổng thể"}: {translateText(humanize(riskLevel))}
+          </span>
+        </div>
+        {(payload.major_exception_status || payload.major_exception_signal) && (
+          <div style={{ display: "flex", flexWrap: "wrap", gap: "8px", marginTop: "8px", fontSize: "11px", color: "var(--color-ink-450)" }}>
+            {payload.major_exception_status && (
+              <span>Ngoại lệ nghiêm trọng: {translateText(humanize(payload.major_exception_status))}</span>
+            )}
+            {payload.major_exception_signal && (
+              <span>· {translateText(payload.major_exception_signal.detail)}</span>
+            )}
+          </div>
+        )}
       </header>
-      {payload.major_exception_status && <p>Ngoại lệ nghiêm trọng: {translateText(humanize(payload.major_exception_status))}</p>}
-      {payload.major_exception_signal && <p>{translateText(payload.major_exception_signal.detail)}</p>}
+
+      {phase === "FINAL" && (
+        <p role="status" className={payload.conclusion === "SAFE" ? "status-badge status-badge--success" : undefined}>
+          {finalConclusion}
+        </p>
+      )}
+
+      {/* Rủi ro và kiểm soát */}
       <Notes title="Rủi ro đang mở" items={payload.residual_findings ?? payload.findings} />
       <Notes title="Biện pháp kiểm soát bắt buộc" items={payload.required_controls} />
       {phase === "FINAL" && <Notes title="Giới hạn đánh giá" items={payload.limitations} />}
-      {!!payload.human_confirmation_points?.length && (
-        <section><h4>Hành động cần Founder xử lý</h4><ul>{payload.human_confirmation_points.map((point, index) => <li key={`${point.reason_code ?? "confirmation"}-${index}`}><strong>Cần xác nhận bối cảnh rủi ro:</strong> {translateText(point.question)}</li>)}</ul></section>
-      )}
-      {!!payload.unresolved_approval_gates?.length && (
-        <section><h4>Cổng kiểm soát đang chờ xử lý</h4><ul>{payload.unresolved_approval_gates.map((gate, index) => <li key={index}><strong>{humanize(gate.protected_action)} · {humanize(gate.request_status)}</strong><p>{gate.reason}</p></li>)}</ul></section>
+
+      {/* Cổng kiểm soát & hành động cần xử lý */}
+      {hasActions && (
+        <section style={{ borderTop: "1px solid var(--color-line)", paddingTop: "12px", marginTop: "8px" }}>
+          <h4 style={{ color: "var(--color-red-700)", marginBottom: "8px" }}>Cần xử lý phê duyệt</h4>
+          <ul style={{ paddingLeft: "1.2rem", margin: 0 }}>
+            {confirmations.map((point, index) => (
+              <li key={`${point.reason_code ?? "confirmation"}-${index}`} style={{ marginBottom: "6px" }}>
+                <strong>Xác nhận bối cảnh rủi ro:</strong> {translateText(point.question)}
+              </li>
+            ))}
+            {gates.map((gate, index) => (
+              <li key={`gate-${index}`} style={{ marginBottom: "6px" }}>
+                <strong>Yêu cầu phê duyệt:</strong> {translateText(humanize(gate.protected_action))} ({translateText(humanize(gate.request_status))})
+                {gate.reason && <p style={{ margin: "2px 0 0 0", fontSize: "11px", color: "var(--color-ink-600)" }}>Lý do: {translateText(gate.reason)}</p>}
+              </li>
+            ))}
+          </ul>
+        </section>
       )}
     </article>
   );
@@ -317,11 +366,27 @@ export function BankingAssessmentView({ payload }: { payload: BankingArtifactPay
   );
 }
 
+const SANITIZED_FIELD_LABELS: Record<string, string> = {
+  company_name: "Tên doanh nghiệp",
+  company_id: "Mã số thuế",
+  customer_id: "Mã khách hàng",
+  contract_value: "Giá trị hợp đồng",
+  payment_terms: "Điều khoản thanh toán",
+  contract_id: "Mã hợp đồng",
+  requested_amount: "Số tiền bảo lãnh yêu cầu",
+  currency: "Loại tiền tệ",
+  bank_product_id: "Sản phẩm bảo lãnh",
+  request_type: "Loại bảo lãnh",
+};
+
 export function DocumentPackageView({ payload, variant = "DRAFT" }: { payload: DocumentArtifactPayload; variant?: "DRAFT" | "RELEASE" }): ReactElement {
   const manifest: Array<{ document_code?: string; status?: string }> =
     payload.document_manifest ??
     payload.document_codes?.map((document_code) => ({ document_code })) ??
     [];
+  const sanitized = payload.sanitized_payload ?? {};
+  const sanitizedEntries = Object.entries(sanitized);
+
   return (
     <article aria-label="Hồ sơ tài liệu" className="assessment-view">
       <header>
@@ -330,20 +395,116 @@ export function DocumentPackageView({ payload, variant = "DRAFT" }: { payload: D
       </header>
       <p>Người nhận dự kiến: {payload.recipient ?? "Chưa xác định"}</p>
       <p>Mục đích: {humanize(payload.purpose)}</p>
-      {!!manifest.length && <ul>
-        {manifest.map((item, index) => (
-          <li key={`${item.document_code ?? "document"}-${index}`}>
-            {humanize(item.document_code)}{item.status ? ` — ${humanize(item.status)}` : ""}
-          </li>
-        ))}
-      </ul>}
-      <p>
+      {!!manifest.length && (
+        <section>
+          <h4 style={{ marginBottom: "8px" }}>Danh mục tài liệu đính kèm</h4>
+          <ul>
+            {manifest.map((item, index) => (
+              <li key={`${item.document_code ?? "document"}-${index}`}>
+                {humanize(item.document_code)}{item.status ? ` — ${humanize(item.status)}` : ""}
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+
+      {/* Dữ liệu đã tối giản & masking */}
+      {!!sanitizedEntries.length && (
+        <section style={{ marginTop: "12px", borderTop: "1px solid var(--color-line)", paddingTop: "12px" }}>
+          <h4 style={{ marginBottom: "8px" }}>Dữ liệu hồ sơ sau khi lọc & mã hóa (Masked/Minimized Data)</h4>
+          <dl className="decision-metrics" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))", gap: "10px" }}>
+            {sanitizedEntries.map(([key, val]) => {
+              const labelText = SANITIZED_FIELD_LABELS[key] ?? key;
+              let displayVal = String(val);
+              if (typeof val === "number") {
+                if (key.includes("value") || key.includes("amount")) {
+                  displayVal = formatValue(val, "VND");
+                } else {
+                  displayVal = formatValue(val);
+                }
+              }
+              return (
+                <div key={key} style={{ background: "rgba(0,0,0,0.02)", padding: "8px 12px", borderRadius: "8px" }}>
+                  <dt style={{ fontSize: "10px", color: "var(--color-ink-450)" }}>{labelText}</dt>
+                  <dd style={{ margin: "2px 0 0 0", fontWeight: 650, fontSize: "13px" }}>{displayVal}</dd>
+                </div>
+              );
+            })}
+          </dl>
+        </section>
+      )}
+
+      <p style={{ marginTop: "12px" }}>
         {payload.external_release_performed
           ? "Hệ thống ghi nhận hồ sơ đã được gửi ra ngoài."
           : payload.release_authorized
             ? "Đã được phép chuẩn bị gửi; chưa có xác nhận đã gửi."
             : "Hồ sơ đang ở nội bộ và chưa được phép gửi ra ngoài."}
       </p>
+    </article>
+  );
+}
+
+const POST_PRECHECK_LABELS: Record<string, string> = {
+  FOLLOW_UP_EVIDENCE_REQUIRED: "Cần bổ sung hồ sơ/bằng chứng",
+  CONDITIONAL_OPTIONS_AVAILABLE: "Có phương án khả thi kèm điều kiện",
+  ALL_OPTIONS_NOT_ELIGIBLE: "Không có phương án nào đủ điều kiện",
+  NO_PROVIDER_RECOMMENDATION: "Không nhận được đề xuất từ ngân hàng",
+  PRECHECK_SERVICE_UNAVAILABLE: "Dịch vụ precheck không khả dụng",
+  MIXED_NON_ACTIONABLE_RESULTS: "Kết quả hỗn hợp không thể xử lý tiếp",
+  PRECHECK_UNAVAILABLE: "Không có dữ liệu precheck",
+  ELIGIBLE: "Đủ điều kiện",
+  CONDITIONAL: "Có điều kiện",
+  NOT_ELIGIBLE: "Không đủ điều kiện",
+};
+
+export function DecisionPostPrecheckReviewView({ payload }: { payload: DecisionPostPrecheckReviewPayload }): ReactElement {
+  const reviews = payload.option_reviews ?? [];
+  const outcomeText = payload.outcome ? (POST_PRECHECK_LABELS[payload.outcome] ?? humanize(payload.outcome)) : "Chưa xác định";
+
+  return (
+    <article aria-label="Kết quả precheck" className="assessment-view">
+      <header style={{ borderBottom: "1px solid var(--color-line)", paddingBottom: "12px", marginBottom: "4px" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "8px" }}>
+          <h3 style={{ margin: 0, fontSize: "18px", fontWeight: 700 }}>Kết quả đánh giá Precheck</h3>
+          <span className="status-badge status-badge--success" style={{ fontWeight: 700, fontSize: "12px" }}>
+            Kết luận: {translateText(outcomeText)}
+          </span>
+        </div>
+      </header>
+
+      {reviews.length ? (
+        <section>
+          <h4 style={{ marginBottom: "8px" }}>Chi tiết kết quả phản hồi từ Ngân hàng</h4>
+          <ul style={{ paddingLeft: "1.2rem", margin: 0 }}>
+            {reviews.map((item, index: number) => {
+              const disp = item.disposition ? (POST_PRECHECK_LABELS[item.disposition] ?? humanize(item.disposition)) : "Chưa rõ";
+              const srcOutcome = item.source_outcome ? (POST_PRECHECK_LABELS[item.source_outcome] ?? humanize(item.source_outcome)) : "Chưa rõ";
+              return (
+                <li key={`${item.option_id ?? "option"}-${index}`} style={{ marginBottom: "12px" }}>
+                  <strong>{item.api_provider ?? "Ngân hàng"} — {humanize(item.bank_product_id)}</strong>
+                  <div style={{ fontSize: "12px", color: "var(--color-ink-600)", marginTop: "4px" }}>
+                    <p style={{ margin: "2px 0" }}>Phản hồi từ ngân hàng: <strong>{translateText(srcOutcome)}</strong></p>
+                    <p style={{ margin: "2px 0" }}>Trạng thái xử lý nội bộ: <strong>{translateText(disp)}</strong></p>
+                    {!!item.reason_codes?.length && (
+                      <p style={{ margin: "2px 0", color: "var(--color-red-650)" }}>
+                        Mã lý do: {item.reason_codes.map((code: string) => translateText(humanize(code))).join(", ")}
+                      </p>
+                    )}
+                    {!!item.required_follow_up_fields?.length && (
+                      <p style={{ margin: "2px 0", color: "var(--color-amber-700)" }}>
+                        Trường thông tin cần bổ sung: {item.required_follow_up_fields.map((f: string) => translateText(humanize(f))).join(", ")}
+                      </p>
+                    )}
+                  </div>
+                </li>
+              );
+            })}
+          </ul>
+        </section>
+      ) : (
+        <p>Không có kết quả precheck nào được ghi nhận.</p>
+      )}
     </article>
   );
 }
@@ -394,6 +555,8 @@ export function ArtifactAssessmentView({
       return <BankingAdviceView payload={artifact.payload as BankingAdvicePayload} />;
     case "BANKING_PRECHECK_RESULT_SET":
       return <BankingAssessmentView payload={artifact.payload as BankingArtifactPayload} />;
+    case "DECISION_POST_PRECHECK_REVIEW":
+      return <DecisionPostPrecheckReviewView payload={artifact.payload as DecisionPostPrecheckReviewPayload} />;
     case "DOCUMENT_CHECKLIST":
       return <DocumentChecklistView payload={artifact.payload as DocumentChecklistPayload} />;
     case "DOCUMENT_PACKAGE_DRAFT":

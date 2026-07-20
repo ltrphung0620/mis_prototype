@@ -288,12 +288,12 @@ _STAGES = (
     ),
     _StageDefinition(
         "FINAL_DECISION_APPROVAL",
-        "Nhà sáng lập quyết định",
+        "Founder quyết định",
         (
             _TaskDefinition(
                 "FINAL_DECISION_APPROVAL",
                 "GOVERNANCE",
-                "Ghi nhận quyết định cuối của Nhà sáng lập",
+                "Ghi nhận quyết định cuối của Founder",
                 protected_action=ProtectedAction.CONFIRM_FINAL_CONTRACT_DECISION,
             ),
         ),
@@ -329,7 +329,7 @@ _STAGES = (
             _TaskDefinition(
                 "EXTERNAL_RELEASE_APPROVAL",
                 "GOVERNANCE",
-                "Nhà sáng lập quyết định có cho phép phát hành hồ sơ",
+                "Founder quyết định có cho phép phát hành hồ sơ",
                 protected_action=ProtectedAction.SEND_DOCUMENT_TO_EXTERNAL_PARTNER,
             ),
         ),
@@ -383,7 +383,7 @@ _BUSINESS_LABELS = {
     ),
     DashboardBusinessStatus.PREPARING_DECISION: "Đang chuẩn bị đề xuất quyết định",
     DashboardBusinessStatus.WAITING_FOR_FINAL_DECISION: (
-        "Phiếu quyết định đã sẵn sàng, đang chờ Nhà sáng lập"
+        "Phiếu quyết định đã sẵn sàng, đang chờ Founder"
     ),
     DashboardBusinessStatus.WAITING_FOR_EXTERNAL_RELEASE_APPROVAL: (
         "Đang chờ cho phép phát hành hồ sơ ra bên ngoài"
@@ -440,7 +440,7 @@ _CURRENT_STAGE_LABELS = {
     WorkflowNode.RISK_WAITING_FOR_FACTS.value: "Rủi ro đang chờ số liệu chuyên môn",
     WorkflowNode.RISK_FINALIZING.value: "Đang hoàn tất đánh giá rủi ro ban đầu",
     WorkflowNode.APPROVAL_GATE.value: "Cổng phê duyệt đang hoạt động",
-    WorkflowNode.WAITING_FOR_APPROVAL.value: "Đang chờ Nhà sáng lập phê duyệt",
+    WorkflowNode.WAITING_FOR_APPROVAL.value: "Đang chờ Founder phê duyệt",
     WorkflowNode.BANKING_INPUT_SUPPLEMENT.value: "Tiếp nhận dữ liệu ngân hàng bổ sung",
     WorkflowNode.BANKING_PRECHECK_EVIDENCE_INTAKE.value: (
         "Tiếp nhận bằng chứng kiểm tra sơ bộ bổ sung"
@@ -736,7 +736,7 @@ def _task_applicability(
         }
     ):
         approval_resolution = (
-            "Nhà sáng lập đã từ chối cho phép gửi yêu cầu kiểm tra sơ bộ tới ngân hàng"
+            "Founder đã từ chối cho phép gửi yêu cầu kiểm tra sơ bộ tới ngân hàng"
             if banking_approval.status is ApprovalRequestStatus.REJECTED
             else "Yêu cầu phê duyệt gửi kiểm tra sơ bộ tới ngân hàng đã hết hạn"
         )

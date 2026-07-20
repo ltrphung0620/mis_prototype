@@ -455,10 +455,11 @@ The later Decision flow can reference this exact package but cannot mutate it. S
 
 ## Final Risk convergence and Decision continuation
 
-Final Risk Check consumes exactly one validated `INTERNAL_DECISION_PACKAGE`. It carries Initial
-Risk findings forward as `OPEN_UNCHANGED`, preserves evidence limitations, and creates deterministic
-required controls. Without an explicit mitigation rule, `residual_risk_level` must equal the
-Initial Risk level. Registered checkpoints remain dormant; they are not unresolved approval gates.
+Final Risk Check consumes exactly one validated `INTERNAL_DECISION_PACKAGE`. It carries only open
+findings forward as `OPEN_UNCHANGED`, preserves evidence limitations, and creates deterministic
+required controls. `residual_risk_level` is derived from the open residual set; `SAFE` requires no
+residual finding, unresolved approval/confirmation, or evidence limitation. Registered checkpoints
+remain dormant; they are not unresolved approval gates.
 
 Workflow validates and persists one `FINAL_RISK_ASSESSMENT`, records
 `FINAL_RISK_CHECK_COMPLETED`, and reaches `FINAL_RISK_READY`. Final Risk itself creates no

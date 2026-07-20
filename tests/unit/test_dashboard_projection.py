@@ -461,7 +461,7 @@ def test_pending_interaction_rejects_actionable_not_evaluable_review() -> None:
 @pytest.mark.parametrize(
     ("approval_status", "expected_resolution"),
     [
-        (ApprovalRequestStatus.REJECTED, "Nhà sáng lập đã từ chối"),
+        (ApprovalRequestStatus.REJECTED, "Founder đã từ chối"),
         (ApprovalRequestStatus.EXPIRED, "đã hết hạn"),
     ],
 )

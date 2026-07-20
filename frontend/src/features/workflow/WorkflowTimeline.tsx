@@ -108,7 +108,7 @@ export function WorkflowTimeline({
 
           {dashboard.status.toUpperCase() === "WAITING_FOR_DEPENDENCIES" ? (
             <Notice tone="info" title="Hệ thống đang tự chờ tác vụ liên quan">
-              Không cần Nhà sáng lập thao tác ở thời điểm này.
+              Không cần Founder thao tác ở thời điểm này.
             </Notice>
           ) : null}
 

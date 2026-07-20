@@ -1,8 +1,8 @@
 """Domain contracts for the deterministic Final Risk Check.
 
-Final Risk consumes one validated Internal Decision Package.  It preserves
-initial case risk unless an explicit mitigation rule exists; the current slice
-has no such rule and therefore cannot reduce the residual risk level.
+Final Risk consumes one validated Internal Decision Package. It preserves the
+historical initial risk separately from the risk and governance items that
+remain open at the final checkpoint.
 """
 
 from __future__ import annotations
@@ -23,6 +23,7 @@ from opc_mis.domain.enums import (
     ApprovalRequestStatus,
     ComponentStatus,
     FinalRiskAssessmentStatus,
+    FinalRiskConclusion,
     FinalRiskControlCode,
     MajorExceptionStatus,
     ProtectedAction,
@@ -42,7 +43,7 @@ from opc_mis.domain.validation_reports import ValidationReport
 
 
 class ResidualRiskFinding(BaseModel):
-    """An explicit initial case finding carried forward without mitigation claims."""
+    """An explicit case finding that is still open at the final checkpoint."""
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
@@ -155,6 +156,7 @@ class FinalRiskAssessment(BaseModel):
     initial_assessment_status: RiskAssessmentStatus
     initial_risk_level: RiskLevel
     residual_risk_level: RiskLevel
+    conclusion: FinalRiskConclusion
     residual_findings: tuple[ResidualRiskFinding, ...]
     unresolved_approval_gates: tuple[UnresolvedApprovalGate, ...] = ()
     unresolved_approval_gate_ids: tuple[StrictStr, ...] = ()
@@ -171,11 +173,44 @@ class FinalRiskAssessment(BaseModel):
 
     @model_validator(mode="after")
     def validate_final_risk_contract(self) -> FinalRiskAssessment:
-        if self.residual_risk_level is not self.initial_risk_level:
-            raise ValueError(
-                "Final Risk cannot reduce or change risk without an explicit mitigation rule"
-            )
         self._validate_unique_indexes()
+        severity_order = {
+            RiskSeverity.LOW: 1,
+            RiskSeverity.MEDIUM: 2,
+            RiskSeverity.HIGH: 3,
+            RiskSeverity.CRITICAL: 4,
+        }
+        expected_residual_level = RiskLevel.NO_CASE_SIGNAL
+        if self.residual_findings:
+            highest = max(
+                self.residual_findings,
+                key=lambda item: severity_order[item.severity],
+            )
+            expected_residual_level = RiskLevel(highest.severity)
+        if self.residual_risk_level is not expected_residual_level:
+            raise ValueError(
+                "Final Risk level must be derived only from open residual findings"
+            )
+
+        has_unresolved_confirmation = any(
+            item.code is FinalRiskControlCode.HUMAN_CONFIRMATION_REQUIRED
+            for item in self.required_controls
+        )
+        expected_conclusion = (
+            FinalRiskConclusion.ATTENTION_REQUIRED
+            if (
+                self.residual_findings
+                or self.unresolved_approval_gates
+                or has_unresolved_confirmation
+                or self.limitations
+            )
+            else FinalRiskConclusion.SAFE
+        )
+        if self.conclusion is not expected_conclusion:
+            raise ValueError(
+                "Final Risk conclusion contradicts unresolved risks, approvals, "
+                "confirmations, or evidence limitations"
+            )
         expected_status = (
             FinalRiskAssessmentStatus.LIMITED_BY_EVIDENCE
             if self.initial_assessment_status

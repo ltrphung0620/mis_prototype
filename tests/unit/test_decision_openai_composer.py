@@ -584,6 +584,58 @@ def test_openai_adapter_receives_precomputed_margin_strategy_values() -> None:
     )
 
 
+def test_openai_adapter_hydrates_candidates_and_mandatory_conditions() -> None:
+    packet = scenario_packet()
+    proposal = valid_proposal()
+    abbreviated = proposal.model_copy(
+        update={
+            "reasons": (
+                proposal.reasons[0].model_copy(
+                    update={"title": "Model-authored text is not authoritative"}
+                ),
+            ),
+            "conditions": (),
+        }
+    )
+
+    class FakeResponses:
+        async def parse(self, **kwargs: object) -> object:
+            del kwargs
+            return SimpleNamespace(output_parsed=abbreviated)
+
+    result = asyncio.run(
+        _composer(SimpleNamespace(responses=FakeResponses())).compose(packet)
+    )
+
+    assert result.proposal.reasons[0].title == packet.reason_candidates[0].title
+    assert tuple(item.code for item in result.proposal.conditions) == tuple(
+        item.code for item in packet.condition_candidates
+    )
+    validate_decision_proposal(result.proposal, packet)
+
+
+def test_openai_adapter_restores_margin_condition_selected_by_strategy() -> None:
+    packet = _margin_strategy_packet()
+    proposal = _margin_strategy_proposal(packet).model_copy(update={"conditions": ()})
+
+    class FakeResponses:
+        async def parse(self, **kwargs: object) -> object:
+            del kwargs
+            return SimpleNamespace(output_parsed=proposal)
+
+    result = asyncio.run(
+        _composer(SimpleNamespace(responses=FakeResponses())).compose(packet)
+    )
+
+    assert tuple(item.code for item in result.proposal.conditions) == (
+        MARGIN_NEGOTIATION_CONDITION_CODE,
+    )
+    assert result.proposal.selected_negotiation_strategy_ids == (
+        packet.negotiation_strategy_candidates[0].strategy_id,
+    )
+    validate_decision_proposal(result.proposal, packet)
+
+
 def test_guard_rejects_an_invented_condition_target() -> None:
     proposal = valid_proposal()
     condition = proposal.conditions[0]
@@ -1113,14 +1165,18 @@ def test_guard_allows_a_pending_human_approval_attention_point() -> None:
     )
 
 
-def test_deterministic_fallback_never_invents_a_recommendation() -> None:
+def test_deterministic_fallback_uses_unambiguous_negotiation_policy() -> None:
     result = asyncio.run(
         DeterministicDecisionAnalysisComposer().compose(scenario_packet())
     )
 
     assert result.source is DecisionAnalysisSource.DETERMINISTIC_FALLBACK
-    assert result.proposal.recommendation is DecisionRecommendation.NOT_EVALUABLE
-    assert result.proposal.conditions == ()
+    assert result.proposal.recommendation is (
+        DecisionRecommendation.NEGOTIATE_CONDITIONS_TO_ACCEPT
+    )
+    assert tuple(item.code for item in result.proposal.conditions) == (
+        _condition_candidate().code,
+    )
     assert result.proposal.selected_option_ids == ()
     assert result.proposal.reasons[0].code == _reason_candidate().code
     assert result.fallback_reason == "OPENAI_NOT_CONFIGURED"
@@ -1147,8 +1203,19 @@ def test_expected_openai_or_guard_failure_uses_safe_fallback() -> None:
 
     result = asyncio.run(composer.compose(scenario_packet()))
 
+    assert result.proposal.recommendation is (
+        DecisionRecommendation.NEGOTIATE_CONDITIONS_TO_ACCEPT
+    )
+    assert result.fallback_reason == "DECISION_PROPOSAL_INVALID"
+
+
+def test_deterministic_fallback_does_not_choose_between_ambiguous_strategies() -> None:
+    result = asyncio.run(
+        DeterministicDecisionAnalysisComposer().compose(_margin_strategy_packet())
+    )
+
     assert result.proposal.recommendation is DecisionRecommendation.NOT_EVALUABLE
-    assert result.fallback_reason == "ValueError"
+    assert result.proposal.selected_negotiation_strategy_ids == ()
 
 
 def test_unexpected_programming_failure_is_not_swallowed() -> None:

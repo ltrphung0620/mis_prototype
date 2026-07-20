@@ -84,6 +84,11 @@ const LABELS: Record<string, string> = {
   CONTRACT_ORDER_COUNT: "Số đơn hàng liên quan",
   CONTRACT_PHASE_COUNT: "Số giai đoạn triển khai",
   CONTRACT_PROVINCE_COUNT: "Số tỉnh triển khai",
+  MULTIPLY: "Giá trị tài sản thế chấp dự kiến",
+  DIFFERENCE: "Khoảng trống tài trợ",
+  PERCENTAGE_POINT_DIFFERENCE: "Chênh lệch biên lợi nhuận gộp",
+  MINIMUM_REVENUE_INCREASE_FOR_TARGET_MARGIN: "Yêu cầu tăng doanh thu tối thiểu để đạt mục tiêu biên lợi nhuận",
+  MINIMUM_COST_REDUCTION_FOR_TARGET_MARGIN: "Yêu cầu giảm chi phí tối thiểu để đạt mục tiêu biên lợi nhuận",
 };
 
 function label(value?: string | null): string {
@@ -250,49 +255,123 @@ export function DecisionCardModal({
         </header>
 
         {!isCurrent && <p role="alert">Đây không phải Decision Card hiện hành; thao tác phê duyệt đã bị khóa.</p>}
-        <section>
-          <h3>Tóm tắt cho Nhà sáng lập</h3>
-          <p>{translateText(payload.executive_summary)}</p>
-          <ul>{payload.reasons.map((reason, index) => <li key={reason.code ?? index}><strong>{translateText(reason.title)}</strong>: {translateText(reason.detail)}</li>)}</ul>
-        </section>
 
-        <Metrics title="Tài chính của hợp đồng" metrics={payload.finance_metrics} />
-        <Metrics title="Vận hành của hợp đồng" metrics={payload.operations_metrics} />
-        <Calculations calculations={payload.calculations} />
-        <Options options={payload.selected_options} />
-        <Conditions conditions={payload.conditions} />
+        {/* CONTAINER 1: ĐỀ XUẤT TỪ TRÍ TUỆ NHÂN TẠO (AI Recommendation) */}
+        <fieldset style={{ border: "2px solid var(--color-emerald-500)", borderRadius: "12px", padding: "16px", marginBottom: "20px", background: "rgba(16, 185, 129, 0.02)" }}>
+          <legend style={{ padding: "0 10px", color: "var(--color-emerald-600)", fontWeight: 700, fontSize: "12px", letterSpacing: "0.5px" }}>
+            ✨ ĐỀ XUẤT TỪ TRÍ TUỆ NHÂN TẠO (AI RECOMMENDATION)
+          </legend>
+          
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "12px" }}>
+            <span style={{ fontSize: "14px", fontWeight: 700 }}>Đề xuất luồng: <span style={{ color: "var(--color-emerald-600)" }}>{label(payload.recommendation)}</span></span>
+            <span style={{ fontSize: "11px", background: "var(--color-emerald-500)", color: "white", padding: "2px 8px", borderRadius: "10px", fontWeight: 600 }}>Do AI phân tích & đề xuất</span>
+          </div>
 
-        {!!payload.selected_negotiation_strategies?.length && (
-          <section>
-            <h3>Phương án đàm phán</h3>
-            <ul>{payload.selected_negotiation_strategies.map((strategy, index) => (
-              <li key={strategy.strategy_id ?? index}>
-                <strong>{translateText(strategy.title)}</strong>
-                <p>{translateText(strategy.founder_instruction)}</p>
-                {strategy.required_adjustment_value != null && <p>Mức điều chỉnh tối thiểu: {formatNumber(strategy.required_adjustment_value, strategy.currency ?? "VND")}.</p>}
-              </li>
-            ))}</ul>
+          <section style={{ margin: "10px 0" }}>
+            <h3 style={{ fontSize: "14px", color: "var(--color-emerald-700)", borderBottom: "1px solid rgba(16, 185, 129, 0.2)", paddingBottom: "6px" }}>Tóm tắt cho Founder</h3>
+            <p style={{ fontSize: "12px", color: "var(--color-ink-600)", lineHeight: 1.5 }}>{translateText(payload.executive_summary)}</p>
+            <ul style={{ paddingLeft: "1.2rem", marginTop: "8px" }}>
+              {payload.reasons.map((reason, index) => (
+                <li key={reason.code ?? index} style={{ marginBottom: "6px" }}>
+                  <strong>{translateText(reason.title)}</strong>: {translateText(reason.detail)}
+                </li>
+              ))}
+            </ul>
           </section>
-        )}
 
-        <section>
-          <h3>Rủi ro còn lại</h3>
-          <p>Mức rủi ro: <strong>{label(payload.residual_risk_level)}</strong>.</p>
-          {payload.major_exception_status && <p>Ngoại lệ nghiêm trọng: {label(payload.major_exception_status)}.</p>}
-          <ul>{(payload.residual_findings ?? []).map((finding, index) => <li key={finding.code ?? index}><strong>{translateText(finding.title)}</strong>: {translateText(finding.detail)}</li>)}</ul>
-        </section>
+          {!!payload.selected_negotiation_strategies?.length && (
+            <section style={{ marginTop: "16px" }}>
+              <h3 style={{ fontSize: "14px", color: "var(--color-emerald-700)", borderBottom: "1px solid rgba(16, 185, 129, 0.2)", paddingBottom: "6px" }}>Phương án đàm phán thương mại đề xuất</h3>
+              <ul style={{ paddingLeft: "1.2rem", marginTop: "8px" }}>
+                {payload.selected_negotiation_strategies.map((strategy, index) => (
+                  <li key={strategy.strategy_id ?? index} style={{ marginBottom: "8px" }}>
+                    <strong>{translateText(strategy.title)}</strong>
+                    <p style={{ margin: "2px 0 0 0", color: "var(--color-ink-500)" }}>{translateText(strategy.founder_instruction)}</p>
+                    {strategy.required_adjustment_value != null && (
+                      <p style={{ margin: "2px 0 0 0", fontSize: "11px", fontWeight: 600, color: "var(--color-emerald-600)" }}>
+                        Mức điều chỉnh tối thiểu: {formatNumber(strategy.required_adjustment_value, strategy.currency ?? "VND")}.
+                      </p>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            </section>
+          )}
+        </fieldset>
 
-        {!!payload.required_controls?.length && <section><h3>Kiểm soát bắt buộc</h3><ul>{payload.required_controls.map((control, index) => <li key={control.code ?? index}>{translateText(control.description)}</li>)}</ul></section>}
-        {!!payload.limitations?.length && <section><h3>Giới hạn cần biết</h3><ul>{payload.limitations.map((item, index) => <li key={item.code ?? index}>{translateText(item.detail)}</li>)}</ul></section>}
-        {!!payload.human_attention_points?.length && <section><h3>Điểm Nhà sáng lập cần xem</h3><ul>{payload.human_attention_points.map((item, index) => <li key={item.code ?? index}>{translateText(item.text)}</li>)}</ul></section>}
+        {/* CONTAINER 2: KẾT QUẢ TÍNH TOÁN & ĐỐI SOÁT HỆ THỐNG (Deterministic System Analysis) */}
+        <fieldset style={{ border: "2px solid var(--color-blue-500)", borderRadius: "12px", padding: "16px", marginBottom: "20px", background: "rgba(37, 99, 235, 0.02)" }}>
+          <legend style={{ padding: "0 10px", color: "var(--color-blue-600)", fontWeight: 700, fontSize: "12px", letterSpacing: "0.5px" }}>
+            🔒 KẾT QUẢ TÍNH TOÁN & ĐỐI SOÁT HỆ THỐNG (DETERMINISTIC SYSTEM ANALYSIS)
+          </legend>
 
-        {payload.document_release_package && (
-          <section>
-            <h3>Hồ sơ dự kiến gửi bên ngoài</h3>
-            <p>{payload.document_release_package.recipient} · {label(payload.document_release_package.purpose)}</p>
-            <p>Hồ sơ này đang ở gói quyết định nội bộ; chưa được phép và chưa được gửi ra ngoài.</p>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "12px" }}>
+            <span style={{ fontSize: "12px", color: "var(--color-blue-700)", fontWeight: 700 }}>Tính toán và kiểm soát logic nghiệp vụ</span>
+            <span style={{ fontSize: "11px", background: "var(--color-blue-500)", color: "white", padding: "2px 8px", borderRadius: "10px", fontWeight: 600 }}>Hệ thống tính toán & xác thực khách quan</span>
+          </div>
+
+          <Metrics title="Tài chính của hợp đồng" metrics={payload.finance_metrics} />
+          <Metrics title="Vận hành của hợp đồng" metrics={payload.operations_metrics} />
+          <Calculations calculations={payload.calculations} />
+          <Options options={payload.selected_options} />
+          <Conditions conditions={payload.conditions} />
+
+          <section style={{ marginTop: "16px", borderTop: "1px solid rgba(37, 99, 235, 0.2)", paddingTop: "12px" }}>
+            <h3 style={{ fontSize: "14px", color: "var(--color-blue-700)", margin: "0 0 8px 0" }}>Trạng thái kiểm soát rủi ro còn lại</h3>
+            <p>Mức rủi ro: <strong style={{ color: "var(--color-red-600)" }}>{label(payload.residual_risk_level)}</strong>.</p>
+            {payload.major_exception_status && <p>Ngoại lệ nghiêm trọng: {label(payload.major_exception_status)}.</p>}
+            {!!payload.residual_findings?.length && (
+              <ul style={{ paddingLeft: "1.2rem", marginTop: "6px" }}>
+                {payload.residual_findings.map((finding, index) => (
+                  <li key={finding.code ?? index}>
+                    <strong>{translateText(finding.title)}</strong>: {translateText(finding.detail)}
+                  </li>
+                ))}
+              </ul>
+            )}
           </section>
-        )}
+
+          {!!payload.required_controls?.length && (
+            <section style={{ marginTop: "12px", borderTop: "1px solid rgba(37, 99, 235, 0.1)", paddingTop: "8px" }}>
+              <h3 style={{ fontSize: "13px", color: "var(--color-blue-700)" }}>Kiểm soát bắt buộc</h3>
+              <ul style={{ paddingLeft: "1.2rem", margin: 0 }}>
+                {payload.required_controls.map((control, index) => (
+                  <li key={control.code ?? index}>{translateText(control.description)}</li>
+                ))}
+              </ul>
+            </section>
+          )}
+
+          {!!payload.limitations?.length && (
+            <section style={{ marginTop: "12px", borderTop: "1px solid rgba(37, 99, 235, 0.1)", paddingTop: "8px" }}>
+              <h3 style={{ fontSize: "13px", color: "var(--color-blue-700)" }}>Giới hạn cần biết</h3>
+              <ul style={{ paddingLeft: "1.2rem", margin: 0 }}>
+                {payload.limitations.map((item, index) => (
+                  <li key={item.code ?? index}>{translateText(item.detail)}</li>
+                ))}
+              </ul>
+            </section>
+          )}
+
+          {!!payload.human_attention_points?.length && (
+            <section style={{ marginTop: "12px", borderTop: "1px solid rgba(37, 99, 235, 0.1)", paddingTop: "8px" }}>
+              <h3 style={{ fontSize: "13px", color: "var(--color-blue-700)" }}>Điểm Founder cần lưu ý</h3>
+              <ul style={{ paddingLeft: "1.2rem", margin: 0 }}>
+                {payload.human_attention_points.map((item, index) => (
+                  <li key={item.code ?? index}>{translateText(item.text)}</li>
+                ))}
+              </ul>
+            </section>
+          )}
+
+          {payload.document_release_package && (
+            <section style={{ marginTop: "12px", borderTop: "1px solid rgba(37, 99, 235, 0.1)", paddingTop: "8px" }}>
+              <h3 style={{ fontSize: "13px", color: "var(--color-blue-700)" }}>Hồ sơ dự kiến gửi bên ngoài</h3>
+              <p>{payload.document_release_package.recipient} · {label(payload.document_release_package.purpose)}</p>
+              <p style={{ fontStyle: "italic", fontSize: "11px" }}>Hồ sơ này đang ở gói quyết định nội bộ; chưa được phép và chưa được gửi ra ngoài.</p>
+            </section>
+          )}
+        </fieldset>
 
         {review_instruction && (
           <section aria-label="Phạm vi xem xét">
@@ -304,7 +383,7 @@ export function DecisionCardModal({
             </p>
           </section>
         )}
-        {!isEvaluable && <p role="status">Decision Card này vẫn được hiển thị để Nhà sáng lập xem giới hạn, nhưng không thể phê duyệt một đề xuất chưa đủ cơ sở.</p>}
+        {!isEvaluable && <p role="status">Decision Card này vẫn được hiển thị để Founder xem giới hạn, nhưng không thể phê duyệt một đề xuất chưa đủ cơ sở.</p>}
         {isEvaluable && isCurrent && !exactPendingApproval && <p role="status">Chưa có yêu cầu phê duyệt hiện hành khớp chính xác với Decision Card này.</p>}
 
         <footer>

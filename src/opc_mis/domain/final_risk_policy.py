@@ -3,11 +3,13 @@
 from opc_mis.domain.artifacts import ArtifactEnvelope
 from opc_mis.domain.enums import (
     FinalRiskAssessmentStatus,
+    FinalRiskConclusion,
     FinalRiskControlCode,
     MajorExceptionStatus,
     ProtectedAction,
     ResidualRiskStatus,
     RiskAssessmentStatus,
+    RiskLevel,
     RiskSeverity,
 )
 from opc_mis.domain.final_risk_models import (
@@ -40,13 +42,20 @@ def build_final_risk_assessment(
         findings=findings,
         assessment_status=assessment_status,
     )
+    residual_risk_level = final_residual_risk_level(findings)
+    conclusion = final_risk_conclusion(
+        findings=findings,
+        unresolved_approval_gate_count=0,
+        controls=controls,
+        has_evidence_limitations=bool(initial.limitations),
+    )
     assessment_id = final_risk_assessment_id(
         internal_decision_package_artifact_id=package_artifact.artifact_id,
         internal_decision_package_artifact_version=package_artifact.version,
         internal_decision_package_input_hash=package_artifact.input_hash,
         internal_decision_package_id=package.package_id,
         assessment_status=assessment_status,
-        residual_risk_level=initial.overall_risk_level,
+        residual_risk_level=residual_risk_level,
         residual_findings=findings,
         unresolved_approval_gates=(),
         required_controls=controls,
@@ -71,7 +80,8 @@ def build_final_risk_assessment(
         assessment_status=assessment_status,
         initial_assessment_status=initial.assessment_status,
         initial_risk_level=initial.overall_risk_level,
-        residual_risk_level=initial.overall_risk_level,
+        residual_risk_level=residual_risk_level,
+        conclusion=conclusion,
         residual_findings=findings,
         unresolved_approval_gates=(),
         unresolved_approval_gate_ids=(),
@@ -84,10 +94,50 @@ def build_final_risk_assessment(
     )
 
 
+def final_residual_risk_level(
+    findings: tuple[ResidualRiskFinding, ...],
+) -> RiskLevel:
+    """Aggregate only findings that are still open at the final checkpoint."""
+
+    if not findings:
+        return RiskLevel.NO_CASE_SIGNAL
+    severity_order = {
+        RiskSeverity.LOW: 1,
+        RiskSeverity.MEDIUM: 2,
+        RiskSeverity.HIGH: 3,
+        RiskSeverity.CRITICAL: 4,
+    }
+    highest = max(findings, key=lambda item: severity_order[item.severity])
+    return RiskLevel(highest.severity)
+
+
+def final_risk_conclusion(
+    *,
+    findings: tuple[ResidualRiskFinding, ...],
+    unresolved_approval_gate_count: int,
+    controls: tuple[RequiredControl, ...],
+    has_evidence_limitations: bool,
+) -> FinalRiskConclusion:
+    """Conclude SAFE only when no risk or human/evidence uncertainty remains."""
+
+    has_unresolved_confirmation = any(
+        item.code is FinalRiskControlCode.HUMAN_CONFIRMATION_REQUIRED
+        for item in controls
+    )
+    if (
+        findings
+        or unresolved_approval_gate_count
+        or has_unresolved_confirmation
+        or has_evidence_limitations
+    ):
+        return FinalRiskConclusion.ATTENTION_REQUIRED
+    return FinalRiskConclusion.SAFE
+
+
 def final_risk_residual_findings(
     package: InternalDecisionPackage,
 ) -> tuple[ResidualRiskFinding, ...]:
-    """Carry exact case findings forward without claiming mitigation."""
+    """Carry exact findings that have no explicit resolution in the package."""
     return tuple(
         ResidualRiskFinding(
             residual_finding_id=deterministic_id(
