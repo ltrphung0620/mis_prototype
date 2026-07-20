@@ -104,12 +104,11 @@ Before validation, model-selected reason/condition codes are hydrated back to th
 deterministic candidates. For `NEGOTIATE_CONDITIONS_TO_ACCEPT`, every mandatory `OPEN` or
 `NOT_EVALUABLE` condition is attached by policy rather than relying on the model to reproduce it.
 
-If the OpenAI path is unavailable, the deterministic fallback may return
-`NEGOTIATE_CONDITIONS_TO_ACCEPT` only when that recommendation is already eligible and every
-strategy-backed condition has at most one possible strategy. If a subjective choice remains,
-fallback stays `NOT_EVALUABLE` and records a stable, non-sensitive diagnostic reason code.
-Fallback is not permitted to synthesize `ACCEPT`, `NEGOTIATE_CONDITIONS_TO_ACCEPT`, or
-`DO_NOT_ACCEPT`.
+Only an `OPENAI` composition may produce the three approvable business recommendations: `ACCEPT`,
+`NEGOTIATE_CONDITIONS_TO_ACCEPT` (displayed as `ACCEPT_WITH_CONDITIONS`), or `DO_NOT_ACCEPT`
+(displayed as `REJECT`). If OpenAI is unavailable, times out, or returns an invalid proposal, the
+deterministic fallback returns only `NOT_EVALUABLE` with a stable, non-sensitive diagnostic code.
+It cannot impersonate an AI recommendation.
 
 ### Gross-margin negotiation strategies
 

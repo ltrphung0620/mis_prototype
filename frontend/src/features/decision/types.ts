@@ -113,6 +113,14 @@ export interface DecisionDocumentPackage {
 export interface DecisionCardPayload {
   decision_card_id: string;
   contract_id: string;
+  ai_analysis_id?: string;
+  ai_analysis_artifact?: {
+    artifact_id: string;
+    version: number;
+    input_hash?: string;
+  };
+  /** Enriched from the exact AI_DECISION_ANALYSIS artifact, never trusted from the card itself. */
+  analysis_source?: "OPENAI" | "DETERMINISTIC_FALLBACK";
   recommendation: DecisionRecommendation;
   executive_summary: string;
   confidence: DecisionConfidence;

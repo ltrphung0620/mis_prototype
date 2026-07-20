@@ -185,10 +185,29 @@ export function decisionCardArtifact(
       candidate.validation_status === "VALID",
   );
   if (!item) return null;
+  const cardPayload = item.payload as unknown as DecisionCardPayload;
+  const analysisReference = record(cardPayload.ai_analysis_artifact);
+  const analysisArtifact = artifacts.find((candidate) => {
+    const analysisPayload = record(candidate.payload);
+    return (
+      candidate.artifact_type === "AI_DECISION_ANALYSIS" &&
+      candidate.validation_status === "VALID" &&
+      candidate.artifact_id === analysisReference.artifact_id &&
+      candidate.version === analysisReference.version &&
+      analysisPayload.analysis_id === cardPayload.ai_analysis_id
+    );
+  });
+  const source = record(analysisArtifact?.payload).source;
   return {
     artifact_id: item.artifact_id,
     version: item.version,
-    payload: item.payload as unknown as DecisionCardPayload,
+    payload: {
+      ...cardPayload,
+      analysis_source:
+        source === "OPENAI" || source === "DETERMINISTIC_FALLBACK"
+          ? source
+          : undefined,
+    },
   };
 }
 
@@ -196,6 +215,9 @@ export function decisionDashboardData(
   dashboard: NormalizedWorkflowDashboard,
   card: DecisionCardArtifact | null,
 ): DecisionDashboardData {
+  const hasUnverifiedRecommendation = Boolean(
+    card && card.payload.analysis_source !== "OPENAI",
+  );
   const metrics: DecisionMetric[] = dashboard.metrics.map((item) => ({
     metric: item.code,
     label_vi: item.label_vi,
@@ -217,14 +239,22 @@ export function decisionDashboardData(
       available: dashboard.decisionCard.available,
       artifact_id: dashboard.decisionCard.artifact_id,
       decision_card_id: dashboard.decisionCard.decision_card_id,
-      recommendation: (dashboard.decisionCard.recommendation ?? undefined) as
+      recommendation: (hasUnverifiedRecommendation
+        ? "NOT_EVALUABLE"
+        : dashboard.decisionCard.recommendation ?? undefined) as
         | DecisionCardPayload["recommendation"]
         | undefined,
-      recommendation_label_vi: dashboard.decisionCard.recommendation_label_vi,
-      confidence: (dashboard.decisionCard.confidence ?? undefined) as
+      recommendation_label_vi: hasUnverifiedRecommendation
+        ? "AI chưa tạo được đề xuất có thể xác thực"
+        : dashboard.decisionCard.recommendation_label_vi,
+      confidence: (hasUnverifiedRecommendation
+        ? "NOT_EVALUABLE"
+        : dashboard.decisionCard.confidence ?? undefined) as
         | DecisionCardPayload["confidence"]
         | undefined,
-      executive_summary: dashboard.decisionCard.executive_summary,
+      executive_summary: hasUnverifiedRecommendation
+        ? "Nguồn phân tích AI của Decision Card không phải OpenAI hoặc không thể đối chiếu chính xác."
+        : dashboard.decisionCard.executive_summary,
     },
     condition_titles: card?.payload.conditions?.map((item) => item.title) ?? [],
     residual_risk_level: card?.payload.residual_risk_level ?? null,

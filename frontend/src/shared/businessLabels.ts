@@ -1,7 +1,7 @@
 const BUSINESS_VALUE_LABELS: Readonly<Record<string, string>> = {
-  ACCEPT: "Chấp nhận hợp đồng",
-  NEGOTIATE_CONDITIONS_TO_ACCEPT: "Đàm phán điều kiện để chấp nhận",
-  DO_NOT_ACCEPT: "Không chấp nhận hợp đồng",
+  ACCEPT: "ACCEPT · Chấp nhận",
+  NEGOTIATE_CONDITIONS_TO_ACCEPT: "ACCEPT_WITH_CONDITIONS · Chấp nhận có điều kiện",
+  DO_NOT_ACCEPT: "REJECT · Từ chối",
   HIGH: "Cao",
   MEDIUM: "Trung bình",
   LOW: "Thấp",

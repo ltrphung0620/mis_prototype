@@ -1447,6 +1447,13 @@ class AIDecisionComposition(BaseModel):
             self.fallback_reason is not None
         ):
             raise ValueError("Only deterministic fallback composition carries a reason")
+        if (
+            self.source is DecisionAnalysisSource.DETERMINISTIC_FALLBACK
+            and self.proposal.recommendation is not DecisionRecommendation.NOT_EVALUABLE
+        ):
+            raise ValueError(
+                "Deterministic fallback cannot produce an AI business recommendation"
+            )
         return self
 
 
@@ -1504,6 +1511,13 @@ class AIDecisionAnalysis(BaseModel):
 
     @model_validator(mode="after")
     def validate_analysis_identity(self) -> AIDecisionAnalysis:
+        if (
+            self.source is DecisionAnalysisSource.DETERMINISTIC_FALLBACK
+            and self.recommendation is not DecisionRecommendation.NOT_EVALUABLE
+        ):
+            raise ValueError(
+                "Only an OpenAI analysis may carry an evaluable recommendation"
+            )
         if self.selected_negotiation_strategy_ids != tuple(
             item.strategy_id for item in self.selected_negotiation_strategies
         ):

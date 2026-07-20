@@ -26,6 +26,7 @@ from opc_mis.domain.enums import (
     ValidationStatus,
 )
 from opc_mis.domain.evidence import EvidenceRef
+from opc_mis.domain.final_risk_models import FinalRiskAssessment
 from opc_mis.domain.risk_models import (
     HumanConfirmationPoint,
     InitialRiskAssessment,
@@ -179,6 +180,12 @@ def test_complete_final_risk_is_stable_and_has_no_decision_side_effects() -> Non
         assert first.artifacts[0].artifact_type is ArtifactType.FINAL_RISK_ASSESSMENT
         assert first.artifacts[0].payload == first.assessment.model_dump(mode="json")
 
+        legacy_payload = first.assessment.model_dump(
+            mode="python", exclude={"conclusion"}
+        )
+        restored = FinalRiskAssessment.model_validate(legacy_payload)
+        assert restored.conclusion is FinalRiskConclusion.SAFE
+
     asyncio.run(scenario())
 
 
@@ -207,6 +214,11 @@ def test_critical_explicit_finding_emits_major_exception_but_no_approval() -> No
         assert result.assessment.major_exception_signal.evidence_ids == (
             "EVD-FINAL-RISK",
         )
+        legacy_payload = result.assessment.model_dump(
+            mode="python", exclude={"conclusion"}
+        )
+        restored = FinalRiskAssessment.model_validate(legacy_payload)
+        assert restored.conclusion is FinalRiskConclusion.ATTENTION_REQUIRED
         assert result.warnings == ("MAJOR_EXCEPTION_DETECTED",)
         assert result.approval_signals == ()
         assert result.action_commands == ()

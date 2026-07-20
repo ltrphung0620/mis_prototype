@@ -1,0 +1,32 @@
+{
+      "configuration_id": "OPC_BANKING_PRECHECK_SIMULATION",
+      "configuration_version": "banking-precheck-simulation-v2",
+      "scenarios": [
+            {
+                  "api_id": "API-002",
+                  "api_provider": "VietinBank",
+                  "approval_conditions": [
+                        "CONTRACT_SIGNED",
+                        "CASHFLOW_BUFFER_CONFIRMED"
+                  ],
+                  "currency": "VND",
+                  "eligibility_status": "ELIGIBLE",
+                  "guarantee_decision": "CONDITIONAL",
+                  "message": "Simulated, non-binding conditional precheck for workflow testing; this is not a VietinBank approval or offer.",
+                  "non_binding": true,
+                  "outcome": "CONDITIONAL_PRECHECK",
+                  "reason_codes": [
+                        "SIMULATED_CONDITIONAL_PRECHECK"
+                  ],
+                  "required_documents": [
+                        "SIGNED_CONTRACT",
+                        "COMPANY_PROFILE",
+                        "PERFORMANCE_BOND_REQUEST_FORM",
+                        "CASHFLOW_BUFFER_EVIDENCE"
+                  ],
+                  "required_follow_up_fields": [],
+                  "scenario_id": "API-002-SIMULATED-CONDITIONAL-PRECHECK",
+                  "supported_amount_strategy": "ECHO_REQUESTED_AMOUNT"
+            }
+      ]
+}

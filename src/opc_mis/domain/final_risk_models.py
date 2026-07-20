@@ -171,6 +171,41 @@ class FinalRiskAssessment(BaseModel):
     approval_requested: Literal[False] = False
     external_action_performed: Literal[False] = False
 
+    @model_validator(mode="before")
+    @classmethod
+    def populate_legacy_conclusion(cls, value: Any) -> Any:
+        """Hydrate the derived conclusion for artifacts persisted before this field."""
+
+        if not isinstance(value, dict) or value.get("conclusion") is not None:
+            return value
+        controls = value.get("required_controls") or ()
+        has_unresolved_confirmation = any(
+            (
+                item.get("code")
+                if isinstance(item, dict)
+                else getattr(item, "code", None)
+            )
+            in {
+                FinalRiskControlCode.HUMAN_CONFIRMATION_REQUIRED,
+                FinalRiskControlCode.HUMAN_CONFIRMATION_REQUIRED.value,
+            }
+            for item in controls
+        )
+        has_unresolved_items = bool(
+            value.get("residual_findings")
+            or value.get("unresolved_approval_gates")
+            or has_unresolved_confirmation
+            or value.get("limitations")
+        )
+        return {
+            **value,
+            "conclusion": (
+                FinalRiskConclusion.ATTENTION_REQUIRED
+                if has_unresolved_items
+                else FinalRiskConclusion.SAFE
+            ),
+        }
+
     @model_validator(mode="after")
     def validate_final_risk_contract(self) -> FinalRiskAssessment:
         self._validate_unique_indexes()

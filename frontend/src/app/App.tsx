@@ -170,6 +170,7 @@ export function App() {
       dashboard &&
       currentCard &&
       currentCardReference &&
+      currentCard.payload.analysis_source === "OPENAI" &&
       currentCard.payload.recommendation !== "NOT_EVALUABLE" &&
       dashboard.decisionCard.recommendation !== "NOT_EVALUABLE" &&
       activeApproval.workflow_run_id === dashboard.workflowRunId &&

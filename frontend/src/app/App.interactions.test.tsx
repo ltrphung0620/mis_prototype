@@ -137,6 +137,11 @@ function decisionCard(
     payload: {
       decision_card_id: "DCARD-1",
       contract_id: "CON-004",
+      ai_analysis_id: "AIDA-1",
+      ai_analysis_artifact: {
+        artifact_id: "ART-AI-ANALYSIS",
+        version: 2,
+      },
       recommendation,
       executive_summary: "Chỉ tiếp tục khi các điều kiện thương mại đã được đáp ứng.",
       confidence: recommendation === "NOT_EVALUABLE" ? "NOT_EVALUABLE" : "MEDIUM",
@@ -153,6 +158,27 @@ function decisionCard(
       human_attention_points: [],
     },
   };
+}
+
+function decisionArtifacts(
+  recommendation = "NEGOTIATE_CONDITIONS_TO_ACCEPT",
+): ApiArtifactEnvelope[] {
+  return [
+    decisionCard(recommendation),
+    {
+      artifact_id: "ART-AI-ANALYSIS",
+      artifact_type: "AI_DECISION_ANALYSIS",
+      evaluation_case_id: "CASE-1",
+      producer: "OPENAI_DECISION_ANALYSIS",
+      version: 2,
+      status: "CREATED",
+      validation_status: "VALID",
+      payload: {
+        analysis_id: "AIDA-1",
+        source: "OPENAI",
+      },
+    },
+  ];
 }
 
 function finalDecisionDashboard(
@@ -310,7 +336,7 @@ describe("Founder interaction popups", () => {
   it("opens the exact current final-decision control while workflow playback is still catching up", async () => {
     const currentDashboard = finalDecisionDashboard();
     dashboardHookMock.mockReturnValue(
-      hookValue(currentDashboard, [finalApproval()], [decisionCard()]),
+      hookValue(currentDashboard, [finalApproval()], decisionArtifacts()),
     );
 
     render(<App />);
@@ -331,7 +357,7 @@ describe("Founder interaction popups", () => {
       ...hookValue(
         currentDashboard,
         [finalApproval({ subject_artifact_version: 2 })],
-        [decisionCard()],
+        decisionArtifacts(),
       ),
       decideApproval,
     });
@@ -356,7 +382,7 @@ describe("Founder interaction popups", () => {
       hookValue(
         currentDashboard,
         [finalApproval()],
-        [decisionCard("NOT_EVALUABLE")],
+        decisionArtifacts("NOT_EVALUABLE"),
       ),
     );
 
@@ -374,7 +400,7 @@ describe("Founder interaction popups", () => {
       ...hookValue(
         notEvaluableReviewDashboard(),
         [],
-        [decisionCard("NOT_EVALUABLE")],
+        decisionArtifacts("NOT_EVALUABLE"),
       ),
       decideApproval,
     });
@@ -417,7 +443,7 @@ describe("Founder interaction popups", () => {
       ...hookValue(
         notEvaluableReviewDashboard(2),
         [],
-        [decisionCard("NOT_EVALUABLE")],
+        decisionArtifacts("NOT_EVALUABLE"),
       ),
       decideApproval,
     });

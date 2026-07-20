@@ -1890,15 +1890,10 @@ def guard_ai_decision_composition(
         )
     if (
         composition.source.value == "DETERMINISTIC_FALLBACK"
-        and proposal.recommendation
-        not in {
-            DecisionRecommendation.NOT_EVALUABLE,
-            DecisionRecommendation.NEGOTIATE_CONDITIONS_TO_ACCEPT,
-        }
+        and proposal.recommendation is not DecisionRecommendation.NOT_EVALUABLE
     ):
         raise DecisionAnalysisBoundaryError(
-            "Deterministic fallback may only return NOT_EVALUABLE or an already "
-            "eligible, unambiguous NEGOTIATE proposal."
+            "Deterministic fallback may only return NOT_EVALUABLE."
         )
     selected_reason_candidates: list[DecisionReasonCandidate] = []
     for draft in proposal.reasons:

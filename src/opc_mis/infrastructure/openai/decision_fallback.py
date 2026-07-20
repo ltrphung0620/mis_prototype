@@ -5,7 +5,6 @@ from opc_mis.domain.decision_models import (
     AIDecisionProposalDraft,
     AIDecisionReasonDraft,
     DecisionAnalysisSource,
-    DecisionConditionStatus,
     DecisionConfidence,
     DecisionRecommendation,
     DecisionScenarioPacket,
@@ -15,10 +14,10 @@ from opc_mis.infrastructure.openai.decision_guard import validate_decision_propo
 
 
 class DeterministicDecisionAnalysisComposer:
-    """Return the strongest proposal that requires no subjective strategy choice."""
+    """Fail closed without presenting deterministic logic as an AI recommendation."""
 
     model_name = "deterministic-template"
-    prompt_version = "decision-analysis-fallback-v3"
+    prompt_version = "decision-analysis-fallback-v4"
 
     async def compose(
         self,
@@ -32,58 +31,17 @@ class DeterministicDecisionAnalysisComposer:
             )
             for candidate in payload.reason_candidates
         )
-        unresolved = tuple(
-            item
-            for item in payload.condition_candidates
-            if item.status
-            in {DecisionConditionStatus.OPEN, DecisionConditionStatus.NOT_EVALUABLE}
-        )
-        selected_strategy_ids: list[str] = []
-        strategy_ambiguous = False
-        for condition in unresolved:
-            matching = tuple(
-                item
-                for item in payload.negotiation_strategy_candidates
-                if item.condition_code == condition.code
-            )
-            if len(matching) == 1:
-                selected_strategy_ids.append(matching[0].strategy_id)
-            elif len(matching) > 1:
-                strategy_ambiguous = True
-        can_negotiate = (
-            DecisionRecommendation.NEGOTIATE_CONDITIONS_TO_ACCEPT
-            in payload.allowed_recommendations
-            and bool(unresolved)
-            and not strategy_ambiguous
-        )
-        recommendation = (
-            DecisionRecommendation.NEGOTIATE_CONDITIONS_TO_ACCEPT
-            if can_negotiate
-            else DecisionRecommendation.NOT_EVALUABLE
-        )
         proposal = AIDecisionProposalDraft(
-            recommendation=recommendation,
+            recommendation=DecisionRecommendation.NOT_EVALUABLE,
             executive_summary=(
-                "Có cơ sở để tiếp tục theo hướng đàm phán có điều kiện; mọi điều kiện "
-                "bắt buộc vẫn phải được xác minh trước khi Founder chấp nhận."
-                if can_negotiate
-                else "Chưa thể tạo đề xuất quyết định tự động; Founder cần xem trực tiếp "
-                "các dữ kiện, giới hạn bằng chứng và lựa chọn chiến lược còn chưa xác định."
+                "Không có đề xuất từ AI vì dịch vụ AI không trả về một kết quả hợp lệ; "
+                "Founder cần xem trực tiếp các dữ kiện và giới hạn bằng chứng."
             ),
             reasons=reasons,
-            conditions=tuple(
-                item.model_dump(mode="json", exclude={"candidate_id"})
-                for item in unresolved
-            ) if can_negotiate else (),
-            selected_negotiation_strategy_ids=(
-                tuple(selected_strategy_ids) if can_negotiate else ()
-            ),
+            conditions=(),
+            selected_negotiation_strategy_ids=(),
             selected_option_ids=(),
-            confidence=(
-                DecisionConfidence.LOW
-                if can_negotiate
-                else DecisionConfidence.NOT_EVALUABLE
-            ),
+            confidence=DecisionConfidence.NOT_EVALUABLE,
             human_attention_points=(),
             calculations_performed_by_model=False,
         )

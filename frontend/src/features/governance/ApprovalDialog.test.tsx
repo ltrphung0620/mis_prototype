@@ -23,7 +23,7 @@ describe("ApprovalDialog", () => {
     render(<ApprovalDialog open request={{ request_id: "APR-OLD", status: "PENDING", subject_artifact_id: "ART-OLD", protected_action: "CONFIRM_FINAL_CONTRACT_DECISION" }} subject={{ title: "Quyết định cũ", description: "Không còn hiện hành.", recommendation: "NEGOTIATE_CONDITIONS_TO_ACCEPT" }} is_current_subject={false} onClose={vi.fn()} onDecision={vi.fn()} />);
     expect(screen.queryByRole("button", { name: "Phê duyệt" })).not.toBeInTheDocument();
     expect(screen.getByRole("alert")).toHaveTextContent(/không còn khớp/i);
-    expect(screen.getByText(/Đàm phán điều kiện để chấp nhận/)).toBeInTheDocument();
+    expect(screen.getByText(/ACCEPT_WITH_CONDITIONS · Chấp nhận có điều kiện/)).toBeInTheDocument();
     expect(screen.queryByText("NEGOTIATE_CONDITIONS_TO_ACCEPT")).not.toBeInTheDocument();
   });
 });

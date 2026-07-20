@@ -46,6 +46,7 @@ from opc_mis.domain.commands import ActionCommand
 from opc_mis.domain.decision_models import (
     AIDecisionAnalysis,
     DecisionAnalysisExecutionResult,
+    DecisionAnalysisSource,
     DecisionCard,
     DecisionCardExecutionResult,
     DecisionRecommendation,
@@ -1440,6 +1441,7 @@ class CaseWorkflowOrchestrator:
             return
         card_artifact = card_artifacts[0]
         card = DecisionCard.model_validate(card_artifact.payload)
+        analysis = analysis_result.analysis
         if (
             card != card_result.decision_card
             or card_artifact.input_artifact_ids != (analysis_artifact.artifact_id,)
@@ -1450,6 +1452,16 @@ class CaseWorkflowOrchestrator:
                 run,
                 WorkflowNode.DECISION_CARD_COMPOSITION,
                 "Decision Card differs from its exact analysis and Final Risk inputs.",
+            )
+            return
+        if (
+            analysis.source is not DecisionAnalysisSource.OPENAI
+            and card.recommendation is not DecisionRecommendation.NOT_EVALUABLE
+        ):
+            await self._fail(
+                run,
+                WorkflowNode.DECISION_CARD_COMPOSITION,
+                "Only an OpenAI analysis may produce an approvable Decision Card.",
             )
             return
         if should_finish_node:

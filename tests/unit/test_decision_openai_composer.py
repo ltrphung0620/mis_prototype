@@ -1165,22 +1165,33 @@ def test_guard_allows_a_pending_human_approval_attention_point() -> None:
     )
 
 
-def test_deterministic_fallback_uses_unambiguous_negotiation_policy() -> None:
+def test_deterministic_fallback_never_impersonates_an_ai_recommendation() -> None:
     result = asyncio.run(
         DeterministicDecisionAnalysisComposer().compose(scenario_packet())
     )
 
     assert result.source is DecisionAnalysisSource.DETERMINISTIC_FALLBACK
-    assert result.proposal.recommendation is (
-        DecisionRecommendation.NEGOTIATE_CONDITIONS_TO_ACCEPT
-    )
-    assert tuple(item.code for item in result.proposal.conditions) == (
-        _condition_candidate().code,
-    )
+    assert result.proposal.recommendation is DecisionRecommendation.NOT_EVALUABLE
+    assert result.proposal.conditions == ()
     assert result.proposal.selected_option_ids == ()
     assert result.proposal.reasons[0].code == _reason_candidate().code
     assert result.fallback_reason == "OPENAI_NOT_CONFIGURED"
     validate_decision_proposal(result.proposal, scenario_packet())
+
+
+def test_composition_rejects_evaluable_deterministic_recommendation() -> None:
+    with pytest.raises(
+        ValueError,
+        match="cannot produce an AI business recommendation",
+    ):
+        AIDecisionComposition(
+            proposal=valid_proposal(),
+            source=DecisionAnalysisSource.DETERMINISTIC_FALLBACK,
+            model="deterministic-template",
+            prompt_version="decision-analysis-fallback-v4",
+            input_hash=decision_packet_input_hash(scenario_packet()),
+            fallback_reason="OPENAI_NOT_CONFIGURED",
+        )
 
 
 class InvalidPrimaryComposer:
@@ -1203,9 +1214,7 @@ def test_expected_openai_or_guard_failure_uses_safe_fallback() -> None:
 
     result = asyncio.run(composer.compose(scenario_packet()))
 
-    assert result.proposal.recommendation is (
-        DecisionRecommendation.NEGOTIATE_CONDITIONS_TO_ACCEPT
-    )
+    assert result.proposal.recommendation is DecisionRecommendation.NOT_EVALUABLE
     assert result.fallback_reason == "DECISION_PROPOSAL_INVALID"
 
 

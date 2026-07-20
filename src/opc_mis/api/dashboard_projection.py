@@ -416,11 +416,11 @@ _NODE_STATUS_MAP = {
 }
 
 _RECOMMENDATION_LABELS = {
-    DecisionRecommendation.ACCEPT: "Chấp nhận",
+    DecisionRecommendation.ACCEPT: "ACCEPT · Chấp nhận",
     DecisionRecommendation.NEGOTIATE_CONDITIONS_TO_ACCEPT: (
-        "Đàm phán điều kiện trước khi chấp nhận"
+        "ACCEPT_WITH_CONDITIONS · Chấp nhận có điều kiện"
     ),
-    DecisionRecommendation.DO_NOT_ACCEPT: "Không chấp nhận",
+    DecisionRecommendation.DO_NOT_ACCEPT: "REJECT · Từ chối",
     DecisionRecommendation.NOT_EVALUABLE: "Chưa đủ cơ sở để đề xuất",
 }
 

@@ -418,8 +418,9 @@ Deterministic policy xác định tập recommendation được phép:
 OpenAI có thể đề xuất một recommendation trong đúng tập được phép nhưng không được mở rộng tập,
 tính toán lại facts, tạo condition/evidence mới hoặc phê duyệt kết quả. Model-selected candidate
 codes được hydrate về exact deterministic snapshots và mandatory conditions được policy tự gắn.
-Deterministic fallback chỉ được trả `NEGOTIATE_CONDITIONS_TO_ACCEPT` khi recommendation đã eligible
-và không còn lựa chọn strategy chủ quan; các trường hợp khác vẫn trả `NOT_EVALUABLE`.
+Chỉ composition có `source = OPENAI` mới được tạo ba recommendation nghiệp vụ có thể phê duyệt:
+`ACCEPT`, `NEGOTIATE_CONDITIONS_TO_ACCEPT` (UI: `ACCEPT_WITH_CONDITIONS`) và `DO_NOT_ACCEPT`
+(UI: `REJECT`). Deterministic fallback luôn trả `NOT_EVALUABLE`; nó không được giả làm đề xuất AI.
 
 Khi current linked-order gross margin thấp hơn OPC target và đủ các operand có evidence, Decision
 tạo deterministic negotiation-strategy candidates. Pure domain logic tính amount và rounding;

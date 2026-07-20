@@ -25,9 +25,9 @@ export interface DecisionCardModalProps {
 }
 
 const LABELS: Record<string, string> = {
-  ACCEPT: "Chấp nhận hợp đồng",
-  NEGOTIATE_CONDITIONS_TO_ACCEPT: "Đàm phán điều kiện để chấp nhận",
-  DO_NOT_ACCEPT: "Không chấp nhận hợp đồng",
+  ACCEPT: "ACCEPT · Chấp nhận",
+  NEGOTIATE_CONDITIONS_TO_ACCEPT: "ACCEPT_WITH_CONDITIONS · Chấp nhận có điều kiện",
+  DO_NOT_ACCEPT: "REJECT · Từ chối",
   NOT_EVALUABLE: "Chưa đủ cơ sở để đề xuất",
   HIGH: "Cao",
   MEDIUM: "Trung bình",
@@ -214,6 +214,26 @@ function Calculations({ calculations = [] }: { calculations?: DecisionCalculatio
   );
 }
 
+function Strategies({ strategies = [] }: { strategies?: DecisionCardArtifact["payload"]["selected_negotiation_strategies"] }): ReactElement | null {
+  if (!strategies?.length) return null;
+  return (
+    <section>
+      <h3>Phương án đáp ứng điều kiện</h3>
+      <ul>
+        {strategies.map((strategy, index) => (
+          <li key={strategy.strategy_id ?? index}>
+            <strong>{translateText(strategy.title)}</strong>
+            <p>{translateText(strategy.founder_instruction)}</p>
+            {strategy.required_adjustment_value != null && (
+              <p>Mức điều chỉnh tối thiểu: {formatNumber(strategy.required_adjustment_value, strategy.currency ?? "VND")}.</p>
+            )}
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
 export function DecisionCardModal({
   open,
   card,
@@ -237,7 +257,9 @@ export function DecisionCardModal({
 
   const payload = card.payload;
   const isCurrent = card.artifact_id === current_decision_card_artifact_id;
-  const isEvaluable = payload.recommendation !== "NOT_EVALUABLE";
+  const isEvaluable =
+    payload.analysis_source === "OPENAI" &&
+    payload.recommendation !== "NOT_EVALUABLE";
   const exactPendingApproval =
     pending_approval?.status === "PENDING" &&
     pending_approval.subject_artifact_id === card.artifact_id &&
@@ -256,20 +278,18 @@ export function DecisionCardModal({
 
         {!isCurrent && <p role="alert">Đây không phải Decision Card hiện hành; thao tác phê duyệt đã bị khóa.</p>}
 
-        {/* CONTAINER 1: ĐỀ XUẤT TỪ TRÍ TUỆ NHÂN TẠO (AI Recommendation) */}
-        <fieldset style={{ border: "2px solid var(--color-emerald-500)", borderRadius: "12px", padding: "16px", marginBottom: "20px", background: "rgba(16, 185, 129, 0.02)" }}>
+        {isEvaluable ? (
+        <fieldset aria-label="Đề xuất từ trí tuệ nhân tạo" style={{ border: "2px solid var(--color-emerald-500)", borderRadius: "12px", padding: "16px", marginBottom: "20px", background: "rgba(16, 185, 129, 0.02)" }}>
           <legend style={{ padding: "0 10px", color: "var(--color-emerald-600)", fontWeight: 700, fontSize: "12px", letterSpacing: "0.5px" }}>
             ✨ ĐỀ XUẤT TỪ TRÍ TUỆ NHÂN TẠO (AI RECOMMENDATION)
           </legend>
           
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "12px" }}>
-            <span style={{ fontSize: "14px", fontWeight: 700 }}>Đề xuất luồng: <span style={{ color: "var(--color-emerald-600)" }}>{label(payload.recommendation)}</span></span>
-            <span style={{ fontSize: "11px", background: "var(--color-emerald-500)", color: "white", padding: "2px 8px", borderRadius: "10px", fontWeight: 600 }}>Do AI phân tích & đề xuất</span>
-          </div>
+          <p style={{ fontSize: "15px", fontWeight: 700, color: "var(--color-emerald-700)" }}>
+            {label(payload.recommendation)} <span style={{ fontSize: "11px" }}>(Kết quả do OpenAI tạo)</span>
+          </p>
 
           <section style={{ margin: "10px 0" }}>
-            <h3 style={{ fontSize: "14px", color: "var(--color-emerald-700)", borderBottom: "1px solid rgba(16, 185, 129, 0.2)", paddingBottom: "6px" }}>Tóm tắt cho Founder</h3>
-            <p style={{ fontSize: "12px", color: "var(--color-ink-600)", lineHeight: 1.5 }}>{translateText(payload.executive_summary)}</p>
+            <h3 style={{ fontSize: "14px", color: "var(--color-emerald-700)", borderBottom: "1px solid rgba(16, 185, 129, 0.2)", paddingBottom: "6px" }}>Lý do AI đưa ra đề xuất này</h3>
             <ul style={{ paddingLeft: "1.2rem", marginTop: "8px" }}>
               {payload.reasons.map((reason, index) => (
                 <li key={reason.code ?? index} style={{ marginBottom: "6px" }}>
@@ -279,25 +299,19 @@ export function DecisionCardModal({
             </ul>
           </section>
 
-          {!!payload.selected_negotiation_strategies?.length && (
-            <section style={{ marginTop: "16px" }}>
-              <h3 style={{ fontSize: "14px", color: "var(--color-emerald-700)", borderBottom: "1px solid rgba(16, 185, 129, 0.2)", paddingBottom: "6px" }}>Phương án đàm phán thương mại đề xuất</h3>
-              <ul style={{ paddingLeft: "1.2rem", marginTop: "8px" }}>
-                {payload.selected_negotiation_strategies.map((strategy, index) => (
-                  <li key={strategy.strategy_id ?? index} style={{ marginBottom: "8px" }}>
-                    <strong>{translateText(strategy.title)}</strong>
-                    <p style={{ margin: "2px 0 0 0", color: "var(--color-ink-500)" }}>{translateText(strategy.founder_instruction)}</p>
-                    {strategy.required_adjustment_value != null && (
-                      <p style={{ margin: "2px 0 0 0", fontSize: "11px", fontWeight: 600, color: "var(--color-emerald-600)" }}>
-                        Mức điều chỉnh tối thiểu: {formatNumber(strategy.required_adjustment_value, strategy.currency ?? "VND")}.
-                      </p>
-                    )}
-                  </li>
-                ))}
-              </ul>
-            </section>
-          )}
         </fieldset>
+        ) : (
+          <section role="status">
+            <h3>AI chưa tạo được đề xuất</h3>
+            <p>
+              {payload.analysis_source === "DETERMINISTIC_FALLBACK"
+                ? "Lượt phân tích này dùng kết quả dự phòng của hệ thống, không phải quyết định do OpenAI tạo."
+                : payload.analysis_source !== "OPENAI"
+                  ? "Không thể đối chiếu Decision Card với đúng kết quả phân tích do OpenAI tạo."
+                  : translateText(payload.executive_summary)}
+            </p>
+          </section>
+        )}
 
         {/* CONTAINER 2: KẾT QUẢ TÍNH TOÁN & ĐỐI SOÁT HỆ THỐNG (Deterministic System Analysis) */}
         <fieldset style={{ border: "2px solid var(--color-blue-500)", borderRadius: "12px", padding: "16px", marginBottom: "20px", background: "rgba(37, 99, 235, 0.02)" }}>
@@ -315,43 +329,7 @@ export function DecisionCardModal({
           <Calculations calculations={payload.calculations} />
           <Options options={payload.selected_options} />
           <Conditions conditions={payload.conditions} />
-
-          <section style={{ marginTop: "16px", borderTop: "1px solid rgba(37, 99, 235, 0.2)", paddingTop: "12px" }}>
-            <h3 style={{ fontSize: "14px", color: "var(--color-blue-700)", margin: "0 0 8px 0" }}>Trạng thái kiểm soát rủi ro còn lại</h3>
-            <p>Mức rủi ro: <strong style={{ color: "var(--color-red-600)" }}>{label(payload.residual_risk_level)}</strong>.</p>
-            {payload.major_exception_status && <p>Ngoại lệ nghiêm trọng: {label(payload.major_exception_status)}.</p>}
-            {!!payload.residual_findings?.length && (
-              <ul style={{ paddingLeft: "1.2rem", marginTop: "6px" }}>
-                {payload.residual_findings.map((finding, index) => (
-                  <li key={finding.code ?? index}>
-                    <strong>{translateText(finding.title)}</strong>: {translateText(finding.detail)}
-                  </li>
-                ))}
-              </ul>
-            )}
-          </section>
-
-          {!!payload.required_controls?.length && (
-            <section style={{ marginTop: "12px", borderTop: "1px solid rgba(37, 99, 235, 0.1)", paddingTop: "8px" }}>
-              <h3 style={{ fontSize: "13px", color: "var(--color-blue-700)" }}>Kiểm soát bắt buộc</h3>
-              <ul style={{ paddingLeft: "1.2rem", margin: 0 }}>
-                {payload.required_controls.map((control, index) => (
-                  <li key={control.code ?? index}>{translateText(control.description)}</li>
-                ))}
-              </ul>
-            </section>
-          )}
-
-          {!!payload.limitations?.length && (
-            <section style={{ marginTop: "12px", borderTop: "1px solid rgba(37, 99, 235, 0.1)", paddingTop: "8px" }}>
-              <h3 style={{ fontSize: "13px", color: "var(--color-blue-700)" }}>Giới hạn cần biết</h3>
-              <ul style={{ paddingLeft: "1.2rem", margin: 0 }}>
-                {payload.limitations.map((item, index) => (
-                  <li key={item.code ?? index}>{translateText(item.detail)}</li>
-                ))}
-              </ul>
-            </section>
-          )}
+          <Strategies strategies={payload.selected_negotiation_strategies} />
 
           {!!payload.human_attention_points?.length && (
             <section style={{ marginTop: "12px", borderTop: "1px solid rgba(37, 99, 235, 0.1)", paddingTop: "8px" }}>
