@@ -3,15 +3,15 @@
 import asyncio
 import time
 from collections.abc import Iterator
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
 
 from opc_mis.api.application import create_app
-from opc_mis.domain.case_workflow_models import CaseWorkflowRun
-from opc_mis.domain.enums import EvaluationScope, WorkflowStatus
+from opc_mis.domain.case_workflow_models import CaseWorkflowRun, WorkflowNodeState
+from opc_mis.domain.enums import EvaluationScope, WorkflowNodeStatus, WorkflowStatus
 from opc_mis.domain.workflow import WorkflowNode
 from opc_mis.infrastructure.excel.dataset_adapter import ExcelDatasetIngestion
 from opc_mis.infrastructure.excel.workbook_loader import compute_sha256
@@ -22,6 +22,7 @@ from opc_mis.infrastructure.persistence.sqlite_database import SQLiteDatabase
 from opc_mis.infrastructure.persistence.sqlite_workflow_repository import (
     SQLiteCaseWorkflowRepository,
 )
+from opc_mis.runtime import PlannerRuntime
 
 TEAM_PACK = Path("data/input/MISTalent2026_OPC_AgenticAI_TeamPack_v3.xlsx").resolve()
 FULL_SCOPE = ["FINANCE", "OPERATIONS", "RISK"]
@@ -621,6 +622,268 @@ def test_event_cursor_scope_validation_and_resume_conflict(
         json={"contract_id": "CON-003", "evaluation_scope": ["FINANCE"]},
     )
     assert invalid_scope.status_code == 422
+
+
+def test_demo_pause_and_resume_keep_automatic_workflow(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("OPENAI_ENABLED", "false")
+    monkeypatch.setenv("OPC_MIS_MASKING_HMAC_KEY_BASE64", TEST_HMAC_KEY)
+
+    async def scenario() -> None:
+        runtime = PlannerRuntime(
+            workbook_path=TEAM_PACK,
+            dataset_id="DEMO_PAUSE_TEST",
+            database_path=tmp_path / "demo-pause.db",
+        )
+        await runtime.startup(start_runner=False)
+        try:
+            now = datetime.now(UTC)
+            run = CaseWorkflowRun(
+                workflow_run_id="CWF-DEMO-PAUSE-TEST",
+                dataset_id=runtime.dataset_id,
+                dataset_snapshot_hash=runtime.snapshot_hash,
+                contract_id="CON-001",
+                status=WorkflowStatus.PENDING,
+                current_stage=WorkflowNode.PLANNER_INTAKE.value,
+                requested_scope=(
+                    EvaluationScope.FINANCE,
+                    EvaluationScope.OPERATIONS,
+                    EvaluationScope.RISK,
+                ),
+                as_of_date=date(2026, 7, 16),
+                created_at=now,
+                updated_at=now,
+            )
+            await runtime._case_workflows.save_run(run)
+
+            paused = await runtime.demo_pause_case_workflow(
+                run.workflow_run_id, "LIVE_DEMO_PAUSE"
+            )
+            assert paused.status is WorkflowStatus.WAITING_FOR_DEMO
+            paused_summary = await runtime.case_workflow_summary(run.workflow_run_id)
+            assert paused_summary.status is WorkflowStatus.WAITING_FOR_DEMO
+            assert paused_summary.current_stage == WorkflowNode.PLANNER_INTAKE.value
+
+            resumed = await runtime.demo_resume_case_workflow(run.workflow_run_id)
+            assert resumed.status is WorkflowStatus.COMPLETED
+            completed_summary = await runtime.case_workflow_summary(run.workflow_run_id)
+            assert completed_summary.status is WorkflowStatus.COMPLETED
+            assert completed_summary.decision_recommendation
+        finally:
+            await runtime.shutdown()
+
+    asyncio.run(scenario())
+
+
+def test_demo_pause_interrupts_in_flight_progression(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("OPENAI_ENABLED", "false")
+    monkeypatch.setenv("OPC_MIS_MASKING_HMAC_KEY_BASE64", TEST_HMAC_KEY)
+
+    async def scenario() -> None:
+        runtime = PlannerRuntime(
+            workbook_path=TEAM_PACK,
+            dataset_id="DEMO_PAUSE_RACE_TEST",
+            database_path=tmp_path / "demo-pause-race.db",
+        )
+        await runtime.startup(start_runner=False)
+        try:
+            now = datetime.now(UTC)
+            run = CaseWorkflowRun(
+                workflow_run_id="CWF-DEMO-PAUSE-RACE-TEST",
+                dataset_id=runtime.dataset_id,
+                dataset_snapshot_hash=runtime.snapshot_hash,
+                contract_id="CON-001",
+                status=WorkflowStatus.RUNNING,
+                current_stage=WorkflowNode.PLANNER_INTAKE.value,
+                requested_scope=(
+                    EvaluationScope.FINANCE,
+                    EvaluationScope.OPERATIONS,
+                    EvaluationScope.RISK,
+                ),
+                as_of_date=date(2026, 7, 16),
+                created_at=now,
+                updated_at=now,
+            )
+            await runtime._case_workflows.save_run(run)
+            paused = await runtime._case_workflow_orchestrator.demo_pause(
+                run.workflow_run_id, "LIVE_DEMO_PAUSE"
+            )
+
+            await runtime._case_workflow_orchestrator._save_run(
+                run,
+                status=WorkflowStatus.COMPLETED,
+                current_stage=WorkflowNode.DECISION_CARD_READY.value,
+            )
+
+            persisted = await runtime._case_workflows.get_run(run.workflow_run_id)
+            assert persisted == paused
+        except Exception as exc:
+            assert type(exc).__name__ == "_DemoPauseInterrupted"
+            persisted = await runtime._case_workflows.get_run(
+                "CWF-DEMO-PAUSE-RACE-TEST"
+            )
+            assert persisted is not None
+            assert persisted.status is WorkflowStatus.WAITING_FOR_DEMO
+            assert persisted.current_stage == WorkflowNode.PLANNER_INTAKE.value
+        finally:
+            await runtime.shutdown()
+
+    asyncio.run(scenario())
+
+
+def test_demo_pause_blocks_late_wait_states_and_node_progress(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("OPENAI_ENABLED", "false")
+    monkeypatch.setenv("OPC_MIS_MASKING_HMAC_KEY_BASE64", TEST_HMAC_KEY)
+
+    async def scenario() -> None:
+        runtime = PlannerRuntime(
+            workbook_path=TEAM_PACK,
+            dataset_id="DEMO_PAUSE_NODE_RACE_TEST",
+            database_path=tmp_path / "demo-pause-node-race.db",
+        )
+        await runtime.startup(start_runner=False)
+        try:
+            now = datetime.now(UTC)
+            run = CaseWorkflowRun(
+                workflow_run_id="CWF-DEMO-PAUSE-NODE-RACE-TEST",
+                dataset_id=runtime.dataset_id,
+                dataset_snapshot_hash=runtime.snapshot_hash,
+                contract_id="CON-001",
+                status=WorkflowStatus.RUNNING,
+                current_stage=WorkflowNode.PLANNER_INTAKE.value,
+                requested_scope=(
+                    EvaluationScope.FINANCE,
+                    EvaluationScope.OPERATIONS,
+                    EvaluationScope.RISK,
+                ),
+                as_of_date=date(2026, 7, 16),
+                created_at=now,
+                updated_at=now,
+            )
+            await runtime._case_workflows.save_run(run)
+            node = WorkflowNodeState(
+                workflow_run_id=run.workflow_run_id,
+                node=WorkflowNode.PLANNER_INTAKE,
+                status=WorkflowNodeStatus.RUNNING,
+                attempt=1,
+                started_at=now,
+            )
+            await runtime._case_workflows.save_node(node)
+            paused = await runtime._case_workflow_orchestrator.demo_pause(
+                run.workflow_run_id, "LIVE_DEMO_PAUSE"
+            )
+
+            with pytest.raises(Exception) as save_exc:
+                await runtime._case_workflow_orchestrator._save_run(
+                    run,
+                    status=WorkflowStatus.WAITING_FOR_INPUT,
+                    current_stage=WorkflowNode.PLANNER_INTAKE.value,
+                    pending_request_ids=("MDR-LATE",),
+                )
+            assert type(save_exc.value).__name__ == "_DemoPauseInterrupted"
+
+            with pytest.raises(Exception) as start_exc:
+                await runtime._case_workflow_orchestrator._start_node(
+                    run, WorkflowNode.FINANCE_ASSESSMENT
+                )
+            assert type(start_exc.value).__name__ == "_DemoPauseInterrupted"
+
+            with pytest.raises(Exception) as finish_exc:
+                await runtime._case_workflow_orchestrator._finish_node(
+                    node, WorkflowNodeStatus.COMPLETED, ()
+                )
+            assert type(finish_exc.value).__name__ == "_DemoPauseInterrupted"
+
+            persisted = await runtime._case_workflows.get_run(run.workflow_run_id)
+            persisted_node = await runtime._case_workflows.get_node(
+                run.workflow_run_id, WorkflowNode.PLANNER_INTAKE.value
+            )
+            late_node = await runtime._case_workflows.get_node(
+                run.workflow_run_id, WorkflowNode.FINANCE_ASSESSMENT.value
+            )
+            assert persisted == paused
+            assert persisted_node == node
+            assert late_node is None
+        finally:
+            await runtime.shutdown()
+
+    asyncio.run(scenario())
+
+
+def test_backend_demo_pacing_waits_after_non_openai_completed_nodes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("OPENAI_ENABLED", "false")
+    monkeypatch.setenv("OPC_MIS_MASKING_HMAC_KEY_BASE64", TEST_HMAC_KEY)
+
+    async def scenario() -> None:
+        delays: list[float] = []
+
+        async def fake_sleep(seconds: float) -> None:
+            delays.append(seconds)
+
+        runtime = PlannerRuntime(
+            workbook_path=TEAM_PACK,
+            dataset_id="DEMO_BACKEND_PACING_TEST",
+            database_path=tmp_path / "demo-backend-pacing.db",
+            workflow_step_delay_seconds=5,
+        )
+        await runtime.startup(start_runner=False)
+        try:
+            runtime._case_workflow_orchestrator._sleeper = fake_sleep
+            now = datetime.now(UTC)
+            run = CaseWorkflowRun(
+                workflow_run_id="CWF-DEMO-BACKEND-PACING-TEST",
+                dataset_id=runtime.dataset_id,
+                dataset_snapshot_hash=runtime.snapshot_hash,
+                contract_id="CON-001",
+                status=WorkflowStatus.RUNNING,
+                current_stage=WorkflowNode.PLANNER_INTAKE.value,
+                requested_scope=(
+                    EvaluationScope.FINANCE,
+                    EvaluationScope.OPERATIONS,
+                    EvaluationScope.RISK,
+                ),
+                as_of_date=date(2026, 7, 16),
+                created_at=now,
+                updated_at=now,
+            )
+            await runtime._case_workflows.save_run(run)
+            planner_node = WorkflowNodeState(
+                workflow_run_id=run.workflow_run_id,
+                node=WorkflowNode.PLANNER_INTAKE,
+                status=WorkflowNodeStatus.RUNNING,
+                attempt=1,
+                started_at=now,
+            )
+            await runtime._case_workflow_orchestrator._finish_node(
+                planner_node,
+                WorkflowNodeStatus.COMPLETED,
+                (),
+            )
+            openai_node = WorkflowNodeState(
+                workflow_run_id=run.workflow_run_id,
+                node=WorkflowNode.DECISION_CARD_COMPOSITION,
+                status=WorkflowNodeStatus.RUNNING,
+                attempt=1,
+                started_at=now,
+            )
+            await runtime._case_workflow_orchestrator._finish_node(
+                openai_node,
+                WorkflowNodeStatus.COMPLETED,
+                (),
+            )
+
+            assert delays == [5]
+        finally:
+            await runtime.shutdown()
+
+    asyncio.run(scenario())
 
 
 def test_every_contract_can_complete_through_the_automatic_workflow(

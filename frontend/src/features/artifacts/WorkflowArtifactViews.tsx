@@ -381,7 +381,11 @@ export function DocumentChecklistView({ payload }: { payload: DocumentChecklistP
       <ul>{(payload.items ?? []).map((item) => {
         return (
           <li key={item.document_code}>
-            <strong>{label(item.document_code)}: {label(item.status)}</strong>
+            <strong>
+              {item.document_code === "SIGNED_CONTRACT" && item.status === "DRAFTED"
+                ? "Tạo bản nháp hợp đồng"
+                : `${label(item.document_code)}: ${label(item.status)}`}
+            </strong>
             <p>{guidance[item.document_code] ?? "Hồ sơ được xử lý theo yêu cầu đã kiểm định."}</p>
           </li>
         );

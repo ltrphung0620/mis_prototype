@@ -20,6 +20,7 @@ from opc_mis.domain.decision_analysis import (
     DecisionAnalysisBoundaryError,
     _margin_negotiation_strategies,
     _metric_candidates,
+    _risk_candidates,
     assemble_decision_card,
     build_decision_scenario_packet,
     guard_ai_decision_composition,
@@ -35,6 +36,7 @@ from opc_mis.domain.decision_models import (
     DecisionCalculationCode,
     DecisionConditionStatus,
     DecisionConfidence,
+    DecisionLimitationSnapshot,
     DecisionMetricRole,
     DecisionMetricSnapshot,
     DecisionNegotiationStrategyType,
@@ -187,6 +189,56 @@ def _finance_metric(
         role=role,
         contract_attributable=role is DecisionMetricRole.CASE_FACT,
     )
+
+
+def test_risk_limitation_reason_names_cashflow_pressure_months() -> None:
+    limitation = DecisionLimitationSnapshot(
+        limitation_id="LIM-CLOSING-CASH",
+        code="EVIDENCE_LIMITATION",
+        detail=(
+            "No exact closing_cash fact exists; projected_closing_cash is not "
+            "silently aliased."
+        ),
+        evidence_ids=("EVD-CASHFLOW",),
+    )
+    finance_metrics = (
+        _finance_metric(
+            FinanceMetric.WORST_RESERVE_GAP,
+            500_000_000,
+            "VND",
+            role=DecisionMetricRole.OPC_GLOBAL_CONTEXT,
+        ),
+        DecisionMetricSnapshot(
+            fact_id="FACT-WORST-MONTH",
+            metric=FinanceMetric.WORST_RESERVE_GAP_MONTH.value,
+            value="2026-09",
+            unit="TEXT",
+            calculation="TEST_FIXTURE",
+            quality="VERIFIED",
+            evidence_ids=("EVD-CASHFLOW",),
+            role=DecisionMetricRole.OPC_GLOBAL_CONTEXT,
+            contract_attributable=False,
+        ),
+        _finance_metric(
+            FinanceMetric.NEGATIVE_NET_CASHFLOW_MONTH_COUNT,
+            2,
+            "COUNT",
+            role=DecisionMetricRole.OPC_GLOBAL_CONTEXT,
+        ),
+    )
+
+    reasons, conditions = _risk_candidates(
+        (),
+        (),
+        (limitation,),
+        has_banking_options=False,
+        finance_metrics=finance_metrics,
+    )
+
+    assert "2026-09" in reasons[0].detail
+    assert "500,000,000 VND" in reasons[0].detail
+    assert "2 tháng có net cash âm" in reasons[0].detail
+    assert conditions[0].description == reasons[0].detail
 
 
 def test_margin_strategies_use_conservative_deterministic_vnd_rounding() -> None:

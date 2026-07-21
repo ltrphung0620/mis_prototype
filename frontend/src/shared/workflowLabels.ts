@@ -28,7 +28,6 @@ const WORKFLOW_LABELS: Readonly<Record<string, string>> = {
   POST_DECISION_UPDATE: "Cập nhật sau quyết định",
   NEGOTIATION_IN_PROGRESS: "Đang chờ kết quả đàm phán",
   NEGOTIATION_TERMS_SENT: "Gửi điều kiện đàm phán",
-  NEGOTIATION_OUTCOME_RECEIVED: "Ghi nhận phản hồi khách hàng",
   NEGOTIATION_FINAL_CONFIRMATION: "Xác nhận kết quả đàm phán cuối",
   FINAL_DECISION_ACCEPTED: "Hợp đồng đã được chấp nhận",
   FINAL_DECISION_NOT_ACCEPTED: "Hợp đồng không được chấp nhận",
@@ -88,6 +87,7 @@ export function statusTone(status: string): StatusTone {
     case "WAITING_FOR_DEPENDENCIES":
     case "WAITING_FOR_INPUT":
     case "WAITING_FOR_APPROVAL":
+    case "WAITING_FOR_DEMO":
       return "warning";
     case "BLOCKED":
     case "FAILED_SAFE":

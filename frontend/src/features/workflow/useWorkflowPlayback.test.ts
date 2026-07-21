@@ -12,7 +12,7 @@ function dashboard(resolved: number, total = 4): NormalizedWorkflowDashboard {
   const milestones = Array.from({ length: total }, (_, index) => ({
     id: `STEP-${index + 1}`,
     code: `STEP-${index + 1}`,
-    label: `BÆ°á»›c ${index + 1}`,
+    label: `Bước ${index + 1}`,
     status: index < resolved ? "COMPLETED" : "PENDING",
     resolutionStatus: index < resolved ? "COMPLETED" : undefined,
     waitingFor: [],
@@ -50,7 +50,7 @@ function dashboard(resolved: number, total = 4): NormalizedWorkflowDashboard {
       {
         id: "STAGE-1",
         code: "STAGE-1",
-        label: "Giai Ä‘oáº¡n 1",
+        label: "Giai đoạn 1",
         status: resolved === total ? "COMPLETED" : "RUNNING",
         order: 1,
         parallel: false,
@@ -74,7 +74,7 @@ afterEach(() => {
 });
 
 describe("workflow playback", () => {
-  it("uses a one-second delay between visible workflow steps", () => {
+  it("uses a short display delay while backend owns demo pacing", () => {
     expect(DEFAULT_WORKFLOW_STEP_DELAY_MS).toBe(1_000);
   });
 
@@ -104,4 +104,5 @@ describe("workflow playback", () => {
     expect(result.current.isPlaying).toBe(false);
     expect(result.current.canRevealDecisionCard).toBe(true);
   });
+
 });

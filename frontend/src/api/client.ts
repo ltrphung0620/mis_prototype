@@ -89,6 +89,25 @@ export function resumeCaseWorkflow(
   );
 }
 
+export function demoPauseCaseWorkflow(
+  workflowRunId: string,
+  reason = "LIVE_DEMO_PAUSE",
+): Promise<WorkflowStartResponse> {
+  return requestJson<WorkflowStartResponse>(
+    `/api/workflows/${encodeURIComponent(workflowRunId)}/demo-pause`,
+    { method: "POST", body: JSON.stringify({ reason }) },
+  );
+}
+
+export function demoResumeCaseWorkflow(
+  workflowRunId: string,
+): Promise<WorkflowStartResponse> {
+  return requestJson<WorkflowStartResponse>(
+    `/api/workflows/${encodeURIComponent(workflowRunId)}/demo-resume`,
+    { method: "POST" },
+  );
+}
+
 export async function getWorkflowDashboard(
   workflowRunId: string,
   signal?: AbortSignal,

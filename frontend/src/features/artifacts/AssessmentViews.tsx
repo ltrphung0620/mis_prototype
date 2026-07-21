@@ -401,7 +401,9 @@ export function DocumentPackageView({ payload, variant = "DRAFT" }: { payload: D
           <ul>
             {manifest.map((item, index) => (
               <li key={`${item.document_code ?? "document"}-${index}`}>
-                {humanize(item.document_code)}{item.status ? ` — ${humanize(item.status)}` : ""}
+                {item.document_code === "SIGNED_CONTRACT" && item.status === "DRAFTED"
+                  ? "Tạo bản nháp hợp đồng"
+                  : `${humanize(item.document_code)}${item.status ? ` — ${humanize(item.status)}` : ""}`}
               </li>
             ))}
           </ul>
