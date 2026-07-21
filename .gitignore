@@ -1,0 +1,13 @@
+.venv/
+.env
+data/runtime/
+.env.local
+.env.*.local
+.pytest_cache/
+.ruff_cache/
+__pycache__/
+*.py[cod]
+*.egg-info/
+frontend/node_modules/
+frontend/dist/
+frontend/coverage/
