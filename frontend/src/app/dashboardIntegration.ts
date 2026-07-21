@@ -411,10 +411,7 @@ export function pendingNegotiationInteraction(
 ): DashboardPendingInteractionDto | null {
   return (
     dashboard.pendingInteractions.find((item) =>
-      [
-        "NEGOTIATION_TERMS_SENT_CONFIRMATION",
-        "NEGOTIATION_OUTCOME_INPUT",
-      ].includes(item.interaction_type),
+      item.interaction_type === "NEGOTIATION_TERMS_SENT_CONFIRMATION",
     ) ?? null
   );
 }

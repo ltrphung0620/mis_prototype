@@ -295,6 +295,74 @@
   font-size: 18px;
 }
 
+.secondary-action {
+  width: 100%;
+  min-height: 42px;
+  margin-top: var(--space-2);
+  color: var(--color-forest-700);
+  background: var(--color-white);
+  cursor: pointer;
+  border: 1px solid var(--color-line-strong);
+  border-radius: 10px;
+  justify-content: center;
+  align-items: center;
+  gap: 10px;
+  font-size: 12px;
+  font-weight: 740;
+  transition:
+    transform 0.15s,
+    background 0.15s,
+    border-color 0.15s;
+  display: flex;
+}
+
+.secondary-action:not(:disabled):hover {
+  border-color: var(--color-forest-500);
+  background: var(--color-forest-100);
+  transform: translateY(-1px);
+}
+
+.demo-control-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-top: var(--space-3);
+  color: var(--color-ink-600);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.demo-icon-action {
+  display: inline-grid;
+  width: 38px;
+  height: 38px;
+  flex: none;
+  place-items: center;
+  border: 1px solid var(--color-line-strong);
+  border-radius: 10px;
+  color: var(--color-forest-700);
+  background: var(--color-white);
+  box-shadow: 0 3px 10px rgb(11 37 29 / 8%);
+  cursor: pointer;
+  transition:
+    transform 0.15s,
+    background 0.15s,
+    border-color 0.15s,
+    color 0.15s;
+}
+
+.demo-icon-action span {
+  font-size: 17px;
+  line-height: 1;
+}
+
+.demo-icon-action:not(:disabled):hover {
+  border-color: var(--color-forest-500);
+  color: var(--color-white);
+  background: var(--color-forest-700);
+  transform: translateY(-1px);
+}
+
 .dataset-facts {
   margin: var(--space-5) 0 0;
   border: 1px solid var(--color-line);

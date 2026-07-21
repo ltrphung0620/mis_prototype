@@ -16,6 +16,7 @@ from opc_mis.domain.approvals import ApprovalDecisionRecord, ApprovalRequest
 from opc_mis.domain.artifacts import ArtifactEnvelope
 from opc_mis.domain.case_workflow_models import WorkflowNodeState, WorkflowRunSummary
 from opc_mis.domain.commands import ActionCommand
+from opc_mis.domain.decision_models import DecisionRecommendation
 from opc_mis.domain.enums import (
     ApprovalDecision,
     ApprovalRequestStatus,
@@ -139,6 +140,7 @@ def _pending_approval(
     request_id: str,
     workflow_run_id: str,
     status: ApprovalRequestStatus = ApprovalRequestStatus.PENDING,
+    action_type: ProtectedAction = ProtectedAction.SUBMIT_BANKING_PRECHECK,
 ) -> ApprovalRequest:
     decision_record = (
         ApprovalDecisionRecord(
@@ -169,7 +171,7 @@ def _pending_approval(
         policy_input_hash="POLICY-HASH",
         policy_coverage_ids=("COVERAGE-1",),
         command=ActionCommand(
-            action_type=ProtectedAction.SUBMIT_BANKING_PRECHECK,
+            action_type=action_type,
             evaluation_case_id="CASE-1",
             payload_artifact_id="ART-PROPOSAL",
             requested_by="CASE_WORKFLOW_ORCHESTRATOR",
@@ -540,6 +542,75 @@ def test_projection_dispatches_typed_missing_input(
     assert interaction.request_ids == ("MDR-1",)
     assert interaction.endpoint is not None
     assert interaction.endpoint.endswith(endpoint_suffix)
+
+
+def test_negotiation_response_form_is_not_dashboard_workflow_task() -> None:
+    projection = build_dashboard_projection(
+        summary=_summary(
+            status=WorkflowStatus.WAITING_FOR_INPUT,
+            current_stage=WorkflowNode.NEGOTIATION_TERMS_SENT.value,
+            pending_missing_data_ids=("NTS-CWF-CURRENT-CARD-1",),
+        ),
+        artifacts=(),
+        approvals=(),
+    )
+
+    conditional_stage = next(
+        stage
+        for stage in projection.stages
+        if stage.stage_id == "CONDITIONAL_NEGOTIATION"
+    )
+    assert [task.task_id for task in conditional_stage.tasks] == [
+        "NEGOTIATION_TERMS_SENT"
+    ]
+    assert projection.pending_interactions[0].interaction_type is (
+        DashboardInteractionType.NEGOTIATION_TERMS_SENT_CONFIRMATION
+    )
+
+
+def test_projection_advances_from_terms_sent_to_external_release_approval() -> None:
+    projection = build_dashboard_projection(
+        summary=_summary(
+            status=WorkflowStatus.WAITING_FOR_APPROVAL,
+            current_stage=WorkflowNode.WAITING_FOR_APPROVAL.value,
+            decision_recommendation=(
+                DecisionRecommendation.NEGOTIATE_CONDITIONS_TO_ACCEPT
+            ),
+            blocked_action=ProtectedAction.SEND_DOCUMENT_TO_EXTERNAL_PARTNER,
+            pending_approval_ids=("APR-EXTERNAL-1",),
+            nodes=(
+                _node(WorkflowNode.NEGOTIATION_TERMS_SENT),
+                _node(
+                    WorkflowNode.EXTERNAL_DOCUMENT_SUBMISSION_PROPOSAL,
+                    output_artifact_ids=("ART-PROPOSAL",),
+                ),
+            ),
+        ),
+        artifacts=(),
+        approvals=(
+            _pending_approval(
+                request_id="APR-EXTERNAL-1",
+                workflow_run_id="CWF-CURRENT",
+                action_type=ProtectedAction.SEND_DOCUMENT_TO_EXTERNAL_PARTNER,
+            ),
+        ),
+    )
+
+    task_statuses = {
+        task.task_id: task.status
+        for stage in projection.stages
+        for task in stage.tasks
+    }
+    assert task_statuses["NEGOTIATION_TERMS_SENT"] is DashboardTaskStatus.COMPLETED
+    assert task_statuses["EXTERNAL_DOCUMENT_SUBMISSION_PROPOSAL"] is (
+        DashboardTaskStatus.COMPLETED
+    )
+    assert task_statuses["EXTERNAL_RELEASE_APPROVAL"] is (
+        DashboardTaskStatus.WAITING_FOR_APPROVAL
+    )
+    assert projection.pending_interactions[0].protected_action is (
+        ProtectedAction.SEND_DOCUMENT_TO_EXTERNAL_PARTNER
+    )
 
 
 def test_projection_marks_direct_banking_branch_not_applicable() -> None:

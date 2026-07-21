@@ -1,8 +1,15 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { ArtifactAssessmentView, type ArtifactEnvelope } from "../features/artifacts";
-import { DecisionCardModal, DecisionDashboard } from "../features/decision";
+import {
+  DecisionCardModal,
+  DecisionDashboard,
+  type DecisionCardArtifact,
+  type DecisionCondition,
+  type DecisionMetric,
+  type DecisionReason,
+} from "../features/decision";
 import { ApprovalDialog, type ApprovalDecision } from "../features/governance";
-import { NegotiationConfirmDialog, NegotiationOutcomeForm } from "../features/negotiation";
+import { NegotiationConfirmDialog } from "../features/negotiation";
 import { InputPanel } from "../features/input/InputPanel";
 import {
   MissingDataDialog,
@@ -15,6 +22,7 @@ import { useWorkflowPlayback } from "../features/workflow/useWorkflowPlayback";
 import { useWorkflowDashboard } from "../hooks/useWorkflowDashboard";
 import { Notice } from "../shared/components/Notice";
 import { Panel } from "../shared/components/Panel";
+import { translateText } from "../shared/translate";
 import {
   allowedDocumentTypes,
   approvalRequestView,
@@ -75,6 +83,195 @@ function AssessmentDialog({
   );
 }
 
+function recommendedActionConditions(
+  card: DecisionCardArtifact,
+  reasons: readonly DecisionReason[] = [],
+  fallbackConditions: readonly DecisionCondition[] = [],
+): DecisionCondition[] {
+  const recommendations = reasons
+    .map((reason, index) => ({
+      reason,
+      recommendationText:
+        reason.recommended_action && reason.recommended_action.trim(),
+      index,
+    }))
+    .filter((item): item is { reason: DecisionReason; recommendationText: string; index: number } =>
+      Boolean(item.recommendationText),
+    );
+  if (!recommendations.length) return [...fallbackConditions];
+  return recommendations.map(({ reason, recommendationText, index }) => ({
+    condition_id: reason.code ?? `OPENAI_RECOMMENDATION_${index + 1}`,
+    title: negotiationConditionTitle(reason),
+    description: negotiationConditionDescription(card, reason, recommendationText),
+    status: "OPEN",
+    enforcement_point: "BEFORE_ACCEPTANCE",
+    category: "AI_RECOMMENDATION",
+  }));
+}
+
+function metricValue(
+  metrics: readonly DecisionMetric[] = [],
+  code: string,
+): string | number | boolean | null | undefined {
+  return metrics.find((item) => item.metric === code)?.value;
+}
+
+function calculationValue(card: DecisionCardArtifact, code: string): number | null {
+  const value = card.payload.calculations?.find((item) => item.code === code)?.result_value;
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+function formatVnd(value: string | number | boolean | null | undefined): string | null {
+  if (typeof value !== "number" || !Number.isFinite(value)) return null;
+  return new Intl.NumberFormat("vi-VN", {
+    style: "currency",
+    currency: "VND",
+    maximumFractionDigits: 0,
+  }).format(value);
+}
+
+function formatPercent(value: string | number | boolean | null | undefined): string | null {
+  if (typeof value !== "number" || !Number.isFinite(value)) return null;
+  const normalized = Math.abs(value) <= 1 ? value * 100 : value;
+  return `${new Intl.NumberFormat("vi-VN", { maximumFractionDigits: 1 }).format(normalized)}%`;
+}
+
+function reasonText(reason: DecisionReason): string {
+  return `${reason.code ?? ""} ${reason.title} ${reason.detail}`.toLowerCase();
+}
+
+function isMarginReason(reason: DecisionReason): boolean {
+  const text = reasonText(reason);
+  return (
+    text.includes("gross margin") ||
+    text.includes("biên lợi nhuận") ||
+    text.includes("margin")
+  );
+}
+
+function isOrderCoverageReason(reason: DecisionReason): boolean {
+  const text = reasonText(reason);
+  return (
+    text.includes("contract_value_not_covered") ||
+    text.includes("order coverage") ||
+    text.includes("chưa cover") ||
+    text.includes("chưa được đơn hàng")
+  );
+}
+
+function isClosingCashReason(reason: DecisionReason): boolean {
+  return reasonText(reason).includes("closing cash");
+}
+
+function isExecutionCapacityReason(reason: DecisionReason): boolean {
+  const text = reasonText(reason);
+  return (
+    text.includes("al-003") ||
+    text.includes("contract execution risk") ||
+    text.includes("năng lực triển khai")
+  );
+}
+
+function negotiationConditionTitle(reason: DecisionReason): string {
+  if (isOrderCoverageReason(reason)) {
+    return "Tổng giá trị các đơn hàng bên trong hợp đồng chưa cover hết toàn bộ giá trị hợp đồng";
+  }
+  if (isClosingCashReason(reason)) {
+    return "Final Risk chưa có closing cash cấp hợp đồng";
+  }
+  if (isExecutionCapacityReason(reason)) {
+    return "Đề xuất của OPC về năng lực triển khai";
+  }
+  return translateText(reason.title) || "Đề xuất xử lý";
+}
+
+function marginConditionDescription(card: DecisionCardArtifact): string | null {
+  const strategy = card.payload.selected_negotiation_strategies?.[0];
+  if (!strategy) return null;
+  const adjustment =
+    formatVnd(strategy.required_adjustment_value) ??
+    formatVnd(calculationValue(card, "MINIMUM_REVENUE_INCREASE_FOR_TARGET_MARGIN")) ??
+    formatVnd(calculationValue(card, "MINIMUM_COST_REDUCTION_FOR_TARGET_MARGIN"));
+  const targetMargin = formatPercent(strategy.target_margin);
+  const type = (strategy.strategy_type ?? strategy.title ?? "").toUpperCase();
+  const isCostStrategy =
+    type.includes("COST") ||
+    (strategy.resulting_cost != null &&
+      strategy.baseline_cost != null &&
+      strategy.resulting_cost < strategy.baseline_cost);
+  if (isCostStrategy) {
+    const resultingCost = formatVnd(strategy.resulting_cost);
+    return [
+      `OpenAI đề xuất xử lý phần chênh lệch biên lợi nhuận bằng cách giảm cost${adjustment ? ` tối thiểu ${adjustment}` : ""}`,
+      resultingCost ? `để cost sau điều chỉnh còn ${resultingCost}` : null,
+      targetMargin ? `và hướng tới biên lợi nhuận mục tiêu ${targetMargin}` : null,
+    ].filter(Boolean).join(", ") + ".";
+  }
+  const resultingRevenue = formatVnd(strategy.resulting_revenue);
+  return [
+    `OpenAI đề xuất xử lý phần chênh lệch biên lợi nhuận bằng cách tăng revenue${adjustment ? ` tối thiểu ${adjustment}` : ""}`,
+    resultingRevenue ? `để doanh thu sau điều chỉnh đạt ${resultingRevenue}` : null,
+    targetMargin ? `và hướng tới biên lợi nhuận mục tiêu ${targetMargin}` : null,
+  ].filter(Boolean).join(", ") + ".";
+}
+
+function orderCoverageDescription(card: DecisionCardArtifact): string | null {
+  const metrics = card.payload.finance_metrics ?? [];
+  const orderTotal = formatVnd(metricValue(metrics, "ORDER_REVENUE_TOTAL"));
+  const contractTotal = formatVnd(metricValue(metrics, "CONTRACT_VALUE"));
+  const coverage = formatPercent(metricValue(metrics, "ORDER_COVERAGE_RATIO"));
+  const uncovered = formatVnd(metricValue(metrics, "UNCOVERED_CONTRACT_VALUE"));
+  if (!orderTotal && !contractTotal && !coverage) return null;
+  return [
+    `Tổng giá trị đơn hàng liên kết hiện là ${orderTotal ?? "chưa xác định"}`,
+    `tổng giá trị hợp đồng là ${contractTotal ?? "chưa xác định"}`,
+    `đang cover được ${coverage ?? "chưa xác định"} giá trị hợp đồng`,
+    uncovered ? `phần chưa được đơn hàng cover là ${uncovered}` : null,
+    "cần bổ sung hoặc xác minh lại các liên kết đơn hàng/phụ lục/giai đoạn trước khi chấp nhận.",
+  ].filter(Boolean).join("; ");
+}
+
+function closingCashDescription(card: DecisionCardArtifact): string {
+  const metrics = card.payload.finance_metrics ?? [];
+  const worstMonth = metricValue(metrics, "WORST_RESERVE_GAP_MONTH");
+  const worstGap = formatVnd(metricValue(metrics, "WORST_RESERVE_GAP"));
+  const pressure =
+    typeof worstMonth === "string" && worstMonth && worstGap
+      ? ` Tín hiệu áp lực dòng tiền hiện có cho thấy worst-gap ở ${worstMonth} là ${worstGap} ở phạm vi dữ liệu hiện có.`
+      : "";
+  return (
+    "Yêu cầu bổ sung thông tin về closing cash riêng cho từng hợp đồng; khi chưa có số này, Final Risk chỉ dùng được tín hiệu áp lực dòng tiền đang có và không tự thay thế bằng projected_closing_cash hoặc dữ liệu tương đương." +
+    pressure
+  );
+}
+
+function executionCapacityDescription(recommendationText: string): string {
+  return translateText(recommendationText).replace(
+    /^Cảnh báo nguồn\s+AL-003:\s*Contract execution risk\.?\s*/i,
+    "",
+  );
+}
+
+function negotiationConditionDescription(
+  card: DecisionCardArtifact,
+  reason: DecisionReason,
+  recommendationText: string,
+): string {
+  if (isMarginReason(reason)) {
+    return marginConditionDescription(card) ?? translateText(recommendationText);
+  }
+  if (isOrderCoverageReason(reason)) {
+    return orderCoverageDescription(card) ?? translateText(recommendationText);
+  }
+  if (isClosingCashReason(reason)) {
+    return closingCashDescription(card);
+  }
+  if (isExecutionCapacityReason(reason)) {
+    return executionCapacityDescription(recommendationText);
+  }
+  return translateText(recommendationText);
+}
+
 export function App() {
   const {
     state,
@@ -89,7 +286,8 @@ export function App() {
     submitPrecheckEvidence,
     submitDocument,
     confirmTermsSent,
-    submitNegotiation,
+    demoPauseWorkflow,
+    demoResumeWorkflow,
   } = useWorkflowDashboard();
   const [assessment, setAssessment] = useState<ArtifactEnvelope | null>(null);
   const [decisionCardOpen, setDecisionCardOpen] = useState(false);
@@ -106,6 +304,14 @@ export function App() {
     () => (dashboard ? decisionCardArtifact(dashboard, runArtifacts) : null),
     [dashboard, runArtifacts],
   );
+  const negotiationConditions = useMemo(() => {
+    if (!currentCard) return [];
+    const sourceConditions = currentCard.payload.conditions ?? [];
+    if (currentCard.payload.analysis_source !== "OPENAI") {
+      return sourceConditions;
+    }
+    return recommendedActionConditions(currentCard, currentCard.payload.reasons ?? [], sourceConditions);
+  }, [currentCard]);
   const presentationCard = playback.canRevealDecisionCard ? currentCard : null;
   const activeApproval = useMemo(
     () => (dashboard ? pendingApproval(dashboard, approvalRequests) : null),
@@ -341,14 +547,6 @@ export function App() {
     });
     if (succeeded) setNegotiationOpen(false);
   }, [confirmTermsSent, currentCard, dashboard]);
-  const handleNegotiationOutcome = useCallback(
-    async (payload: Parameters<typeof submitNegotiation>[0]) => {
-      const succeeded = await submitNegotiation(payload);
-      if (succeeded) setNegotiationOpen(false);
-    },
-    [submitNegotiation],
-  );
-
   const bootstrapping = state.phase === "bootstrapping";
   const starting = state.phase === "starting";
   const loadingWorkflow = state.phase === "refreshing" || starting;
@@ -475,8 +673,11 @@ export function App() {
           dashboard={dashboard}
           bootstrapping={bootstrapping}
           starting={starting}
+          demoControlBusy={submittingInteraction}
           onSelectContract={selectContract}
           onStart={() => void runSelectedContract()}
+          onDemoPause={() => void demoPauseWorkflow()}
+          onDemoResume={() => void demoResumeWorkflow()}
         />
         <WorkflowTimeline
           dashboard={dashboard}
@@ -640,8 +841,8 @@ export function App() {
         onClose={() => setApprovalOpen(false)}
         onDecision={handleApprovalDecision}
       />
-      {negotiationOpen && negotiationInteraction?.interaction_type === "NEGOTIATION_TERMS_SENT_CONFIRMATION" ? (
-        <div className="approval-dialog" role="dialog" aria-modal="true" aria-labelledby="terms-sent-title">
+        {negotiationOpen && negotiationInteraction?.interaction_type === "NEGOTIATION_TERMS_SENT_CONFIRMATION" ? (
+          <div className="approval-dialog" role="dialog" aria-modal="true" aria-labelledby="terms-sent-title">
           <article>
             <header>
               <p>Vòng đàm phán có điều kiện</p>
@@ -649,7 +850,7 @@ export function App() {
             </header>
             <p>Hãy xem lại các điều kiện trên Decision Card trước khi xác nhận. Thao tác này chỉ ghi nhận việc đã gửi; hệ thống không tự gửi email hoặc cập nhật CRM.</p>
             <ul>
-              {(currentCard?.payload.conditions ?? []).map((condition) => (
+              {negotiationConditions.map((condition) => (
                 <li key={condition.condition_id ?? condition.title}><strong>{condition.title}</strong>: {condition.description}</li>
               ))}
             </ul>
@@ -659,16 +860,6 @@ export function App() {
             </footer>
           </article>
         </div>
-      ) : null}
-      {negotiationOpen && negotiationInteraction?.interaction_type === "NEGOTIATION_OUTCOME_INPUT" && currentCard ? (
-        <NegotiationOutcomeForm
-          workflowRunId={dashboard?.workflowRunId ?? ""}
-          decisionCardArtifactId={currentCard.artifact_id}
-          conditions={currentCard.payload.conditions ?? []}
-          submitting={submittingInteraction}
-          onClose={() => setNegotiationOpen(false)}
-          onSubmit={handleNegotiationOutcome}
-        />
       ) : null}
       <NegotiationConfirmDialog
         open={negotiationConfirmOpen}

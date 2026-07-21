@@ -47,9 +47,12 @@ export interface DecisionCondition {
 
 export interface NegotiationStrategy {
   strategy_id?: string;
+  strategy_type?: string;
   title: string;
   founder_instruction: string;
   assumptions?: string[];
+  baseline_revenue?: number;
+  baseline_cost?: number;
   required_adjustment_value?: number;
   resulting_revenue?: number;
   resulting_cost?: number;

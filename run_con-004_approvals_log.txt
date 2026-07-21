@@ -1,0 +1,11 @@
+[2026-07-20T16:13:13.348] Starting CON-004 auto-run
+[2026-07-20T16:13:19.923] Server started
+[2026-07-20T16:13:20.637] Start result: status=PENDING workflow_run_id=CWF-D70F44515BFC0D75A676AE30 evaluation_case_id=CASE-8859BAA585D88655AD375BA9
+[2026-07-20T16:13:21.119] Step 1 -> status=RUNNING current_stage=DECISION_CARD_COMPOSITION blocked_action= pending_approval_ids= pending_missing_data_ids=
+[2026-07-20T16:13:23.712] Step 2 -> status=RUNNING current_stage=BANKING_INTERNAL_DISCOVERY blocked_action= pending_approval_ids= pending_missing_data_ids=
+[2026-07-20T16:13:26.519] Step 3 -> status=RUNNING current_stage=BANKING_PRECHECK_SUBMISSION_PROPOSAL blocked_action= pending_approval_ids= pending_missing_data_ids=
+[2026-07-20T16:13:28.932] Step 4 -> status=RUNNING current_stage=BANKING_PRECHECK_SUBMISSION_PROPOSAL blocked_action= pending_approval_ids= pending_missing_data_ids=
+[2026-07-20T16:13:30.820] Step 5 -> status=RUNNING current_stage=INTERNAL_DECISION_PACKAGE_ASSEMBLY blocked_action= pending_approval_ids= pending_missing_data_ids=
+[2026-07-20T16:13:32.468] Step 6 -> status=FAILED_SAFE current_stage=FINAL_RISK_CHECK blocked_action= pending_approval_ids= pending_missing_data_ids=
+[2026-07-20T16:13:32.468] Workflow finished with status=FAILED_SAFE, final_stage=FINAL_RISK_CHECK
+[2026-07-20T16:13:32.568] Server stopped.

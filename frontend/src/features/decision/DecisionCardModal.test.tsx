@@ -22,6 +22,10 @@ const card: DecisionCardArtifact = {
     conditions: [{ title: "Đạt biên mục tiêu", description: "Đàm phán lại giá.", status: "OPEN", enforcement_point: "BEFORE_ACCEPTANCE", target: { metric: "ORDER_GROSS_MARGIN", operator: "GTE", current_value: 0.12, target_value: 0.2, unit: "RATIO" } }],
     selected_negotiation_strategies: [{ title: "Điều chỉnh giá", founder_instruction: "Đàm phán lại giá bán." }],
     selected_options: [{ product_name: "Performance bond", provider: "VietinBank", requested_amount: 420_000_000, supported_amount: 420_000_000, currency: "VND", non_binding: true }],
+    calculations: [
+      { code: "MULTIPLY", result_value: 84_000_000, result_unit: "VND" },
+      { code: "MINIMUM_REVENUE_INCREASE_FOR_TARGET_MARGIN", result_value: 172_222_223, result_unit: "VND" },
+    ],
     residual_risk_level: "MEDIUM",
     residual_findings: [],
   },
@@ -37,10 +41,15 @@ describe("DecisionCardModal", () => {
     expect(screen.queryByText(/500\.000\.000/)).not.toBeInTheDocument();
     expect(screen.getByText(/mô phỏng, không ràng buộc/i)).toBeInTheDocument();
     const aiRecommendation = screen.getByRole("group", { name: "Đề xuất từ trí tuệ nhân tạo" });
-    expect(within(aiRecommendation).getByText(/ACCEPT_WITH_CONDITIONS/)).toBeInTheDocument();
+    expect(within(aiRecommendation).getByText(/Chấp nhận có điều kiện/)).toBeInTheDocument();
     expect(within(aiRecommendation).getByText(/Biên hiện tại chưa đạt mục tiêu/)).toBeInTheDocument();
     expect(within(aiRecommendation).getByText(/Đàm phán lại giá bán hoặc giảm chi phí/)).toBeInTheDocument();
-    expect(within(aiRecommendation).queryByText(/Đạt biên mục tiêu|Điều chỉnh giá|Chỉ chấp nhận sau/)).not.toBeInTheDocument();
+    expect(within(aiRecommendation).getByText(/Viễn cảnh nếu Founder chấp nhận điều kiện này/)).toBeInTheDocument();
+    expect(within(aiRecommendation).getByText(/Chỉ chấp nhận sau khi hoàn tất điều kiện thương mại/)).toBeInTheDocument();
+    expect(within(aiRecommendation).queryByText(/Đạt biên mục tiêu|Điều chỉnh giá/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/84\.000\.000/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Giá trị tài sản bảo đảm/)).not.toBeInTheDocument();
+    expect(screen.getByText(/172\.222\.223/)).toBeInTheDocument();
     expect(screen.queryByText("Đạt biên mục tiêu")).not.toBeInTheDocument();
     expect(screen.queryByText("Điều chỉnh giá")).not.toBeInTheDocument();
     expect(screen.queryByText("Điều kiện cần đáp ứng")).not.toBeInTheDocument();

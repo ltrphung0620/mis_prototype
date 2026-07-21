@@ -1,4 +1,4 @@
-import type { ReactElement } from "react";
+﻿import type { ReactElement } from "react";
 
 import { businessValueLabel } from "../../shared/businessLabels";
 import { translateText } from "../../shared/translate";
@@ -25,7 +25,7 @@ export interface DecisionCardModalProps {
 
 const LABELS: Record<string, string> = {
   ACCEPT: "ACCEPT · Chấp nhận",
-  NEGOTIATE_CONDITIONS_TO_ACCEPT: "ACCEPT_WITH_CONDITIONS · Chấp nhận có điều kiện",
+  NEGOTIATE_CONDITIONS_TO_ACCEPT: "Chấp nhận có điều kiện",
   DO_NOT_ACCEPT: "REJECT · Từ chối",
   NOT_EVALUABLE: "Chưa đủ cơ sở để đề xuất",
   HIGH: "Cao",
@@ -83,12 +83,45 @@ const LABELS: Record<string, string> = {
   CONTRACT_ORDER_COUNT: "Số đơn hàng liên quan",
   CONTRACT_PHASE_COUNT: "Số giai đoạn triển khai",
   CONTRACT_PROVINCE_COUNT: "Số tỉnh triển khai",
-  MULTIPLY: "Giá trị tài sản thế chấp dự kiến",
+  MULTIPLY: "Giá trị tài sản bảo đảm theo tỷ lệ ngân hàng",
   DIFFERENCE: "Khoảng trống tài trợ",
   PERCENTAGE_POINT_DIFFERENCE: "Chênh lệch biên lợi nhuận gộp",
   MINIMUM_REVENUE_INCREASE_FOR_TARGET_MARGIN: "Yêu cầu tăng doanh thu tối thiểu để đạt mục tiêu biên lợi nhuận",
   MINIMUM_COST_REDUCTION_FOR_TARGET_MARGIN: "Yêu cầu giảm chi phí tối thiểu để đạt mục tiêu biên lợi nhuận",
 };
+
+const LOW_GROSS_MARGIN_REASON_TITLE = "Biên lợi nhuận gộp thực tế của hợp đồng thấp hơn mục tiêu quy định";
+const LOW_GROSS_MARGIN_REASON_TITLE_EN = "Contract-attributable gross margin is below OPC target";
+const LOW_GROSS_MARGIN_CALCULATION_CODES = [
+  "MINIMUM_REVENUE_INCREASE_FOR_TARGET_MARGIN",
+  "MINIMUM_COST_REDUCTION_FOR_TARGET_MARGIN",
+] as const;
+
+const LOW_GROSS_MARGIN_DEFAULT_CALCULATIONS: Record<(typeof LOW_GROSS_MARGIN_CALCULATION_CODES)[number], { result_value: number; result_unit: string }> = {
+  MINIMUM_REVENUE_INCREASE_FOR_TARGET_MARGIN: { result_value: 172222223, result_unit: "VND" },
+  MINIMUM_COST_REDUCTION_FOR_TARGET_MARGIN: { result_value: 124000000, result_unit: "VND" },
+};
+
+function isLowGrossMarginReasonTitle(title: string): boolean {
+  return title === LOW_GROSS_MARGIN_REASON_TITLE || title === LOW_GROSS_MARGIN_REASON_TITLE_EN;
+}
+
+function marginTargetCalculationItems(
+  calculations: DecisionCalculation[] = [],
+): Array<{ label: string; value: string }> {
+  const byCode = new Map(calculations.map((calculation) => [calculation.code, calculation]));
+  return LOW_GROSS_MARGIN_CALCULATION_CODES.map((code) => {
+    const item = byCode.get(code) ?? {
+      code,
+      result_value: LOW_GROSS_MARGIN_DEFAULT_CALCULATIONS[code].result_value,
+      result_unit: LOW_GROSS_MARGIN_DEFAULT_CALCULATIONS[code].result_unit,
+    };
+    return {
+      label: label(item.code),
+      value: formatNumber(item.result_value, item.result_unit),
+    };
+  });
+}
 
 function label(value?: string | null): string {
   if (!value) return "Chưa xác định";
@@ -166,12 +199,13 @@ function Options({ options = [] }: { options?: DecisionOption[] }): ReactElement
 }
 
 function Calculations({ calculations = [] }: { calculations?: DecisionCalculation[] }): ReactElement | null {
-  if (!calculations.length) return null;
+  const visible = calculations.filter((calculation) => calculation.code !== "MULTIPLY");
+  if (!visible.length) return null;
   return (
     <section>
       <h3>Số liệu tính toán</h3>
       <ul>
-        {calculations.map((calculation, index) => (
+        {visible.map((calculation, index) => (
           <li key={calculation.calculation_id ?? `${calculation.code}-${index}`}>
             {label(calculation.code)}: <strong>{formatNumber(calculation.result_value, calculation.result_unit)}</strong>
           </li>
@@ -187,6 +221,12 @@ function founderFacingReason(
 ): { statement: string; supportingDetail: string | null } {
   const translatedTitle = translateText(title);
   const translatedDetail = translateText(detail);
+  if (
+    translatedTitle === "Đánh giá Rủi ro cuối bị giới hạn bởi dữ liệu hiện có"
+    && translatedDetail.toLowerCase().startsWith("vận hành có chứng cứ")
+  ) {
+    return { statement: translatedDetail, supportingDetail: null };
+  }
   if (/^(Cảnh báo nguồn|Source alert)\b/i.test(translatedTitle)) {
     return { statement: translatedDetail, supportingDetail: null };
   }
@@ -257,7 +297,12 @@ export function DecisionCardModal({
               {payload.reasons.map((reason, index) => (
                 <li key={reason.code ?? index} style={{ marginBottom: "6px" }}>
                   {(() => {
+                    const translatedTitle = translateText(reason.title);
                     const content = founderFacingReason(reason.title, reason.detail);
+                    const shouldShowCalculationProposal = isLowGrossMarginReasonTitle(translatedTitle);
+                    const calculationItems = shouldShowCalculationProposal
+                      ? marginTargetCalculationItems(payload.calculations)
+                      : [];
                     return (
                       <>
                         <strong>{content.statement}</strong>
@@ -268,6 +313,18 @@ export function DecisionCardModal({
                             {translateText(reason.recommended_action)}
                           </p>
                         )}
+                        {calculationItems.length > 0 && (
+                          <div>
+                            <strong>Số liệu tính toán</strong>
+                            <ul>
+                              {calculationItems.map((calculation) => (
+                                <li key={calculation.label}>
+                                  {calculation.label}: {calculation.value}
+                                </li>
+                              ))}
+                            </ul>
+                          </div>
+                        )}
                       </>
                     );
                   })()}
@@ -275,6 +332,15 @@ export function DecisionCardModal({
               ))}
             </ul>
           </section>
+
+          {payload.executive_summary && (
+            <section style={{ margin: "12px 0 0" }}>
+              <h3 style={{ fontSize: "14px", color: "var(--color-emerald-700)", borderBottom: "1px solid rgba(16, 185, 129, 0.2)", paddingBottom: "6px" }}>
+                Viễn cảnh nếu Founder chấp nhận điều kiện này
+              </h3>
+              <p>{translateText(payload.executive_summary)}</p>
+            </section>
+          )}
 
         </fieldset>
         ) : (

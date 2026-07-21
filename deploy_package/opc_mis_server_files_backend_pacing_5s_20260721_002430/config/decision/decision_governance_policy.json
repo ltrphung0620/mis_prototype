@@ -1,0 +1,6 @@
+{
+  "policy_id": "OPC_FINAL_DECISION_GOVERNANCE",
+  "policy_version": "decision-governance-v1",
+  "final_decision_requires_founder": true,
+  "approver_role": "FOUNDER"
+}
