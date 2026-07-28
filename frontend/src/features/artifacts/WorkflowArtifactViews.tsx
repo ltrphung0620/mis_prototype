@@ -32,7 +32,7 @@ const LABELS: Record<string, string> = {
   SIGNED_CONTRACT: "Hợp đồng đã ký",
   COMPANY_PROFILE: "Hồ sơ doanh nghiệp",
   PERFORMANCE_BOND_REQUEST_FORM: "Đơn đề nghị bảo lãnh thực hiện",
-  CASHFLOW_BUFFER_EVIDENCE: "Tài liệu chứng minh nguồn bù dòng tiền",
+  CASHFLOW_BUFFER_EVIDENCE: "Tài liệu chứng minh áp lực dòng tiền",
   AVAILABLE: "Có sẵn",
   DRAFTED: "Đã tạo bản nháp",
   MISSING: "Còn thiếu",
@@ -373,7 +373,7 @@ export function DocumentChecklistView({ payload }: { payload: DocumentChecklistP
     SIGNED_CONTRACT: "Hệ thống tạo bản nháp từ dữ liệu TeamPack và chỉ hoàn tất sau khi Founder chấp nhận hợp đồng.",
     COMPANY_PROFILE: "Hệ thống lấy từ hồ sơ OPC trong TeamPack và áp dụng masking trước khi phát hành.",
     PERFORMANCE_BOND_REQUEST_FORM: "Founder cần tải lên tệp PDF hoặc DOCX của đơn đề nghị bảo lãnh thực hiện.",
-    CASHFLOW_BUFFER_EVIDENCE: "Founder cần tải lên tệp PDF hoặc DOCX chứng minh nguồn bù dòng tiền.",
+    CASHFLOW_BUFFER_EVIDENCE: "Founder cần tải lên tệp PDF hoặc DOCX chứng minh áp lực dòng tiền.",
   };
   return (
     <article className="assessment-view" aria-label="Danh mục hồ sơ">

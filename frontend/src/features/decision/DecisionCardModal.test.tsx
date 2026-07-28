@@ -38,6 +38,7 @@ describe("DecisionCardModal", () => {
 
     expect(screen.getAllByText("12%").length).toBeGreaterThan(0);
     expect(screen.getByRole("heading", { name: /Decision Card/ })).toBeInTheDocument();
+    expect(screen.queryByText(/Độ tin cậy/)).not.toBeInTheDocument();
     expect(screen.queryByText(/500\.000\.000/)).not.toBeInTheDocument();
     expect(screen.getByText(/mô phỏng, không ràng buộc/i)).toBeInTheDocument();
     const aiRecommendation = screen.getByRole("group", { name: "Đề xuất từ trí tuệ nhân tạo" });
@@ -146,6 +147,31 @@ describe("DecisionCardModal", () => {
     expect(within(aiRecommendation).queryByText(/AL-003|Contract execution risk/i)).not.toBeInTheDocument();
     expect(within(aiRecommendation).getByText(/triển khai tại 20 tỉnh có thể vượt quá năng lực/i)).toBeInTheDocument();
     expect(within(aiRecommendation).getByText(/Chia kế hoạch triển khai thành các giai đoạn phù hợp/i)).toBeInTheDocument();
+  });
+
+  it("renders the founder scenario without technical field names", () => {
+    render(
+      <DecisionCardModal
+        open
+        card={{
+          ...card,
+          payload: {
+            ...card.payload,
+            executive_summary:
+              "Neu Founder chap nhan, projected_closing_cash van cho thay ap luc trong OPC_GLOBAL; can bo sung delivery_delay_days va ORDER_REVENUE_TOTAL truoc buoc tiep theo.",
+          },
+        }}
+        current_decision_card_artifact_id="ART-CURRENT"
+        onClose={vi.fn()}
+        onApprove={vi.fn()}
+        onReject={vi.fn()}
+      />,
+    );
+
+    expect(screen.queryByText(/projected_closing_cash|delivery_delay_days|ORDER_REVENUE_TOTAL|OPC_GLOBAL/)).not.toBeInTheDocument();
+    expect(screen.getByText(/dòng tiền hiện có/i)).toBeInTheDocument();
+    expect(screen.getByText(/số ngày chậm giao thực tế/i)).toBeInTheDocument();
+    expect(screen.getByText(/tổng giá trị đơn hàng liên kết/i)).toBeInTheDocument();
   });
 
   it("does not render evidence or model provenance carried by an oversized API object", () => {

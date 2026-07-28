@@ -2,6 +2,7 @@
 
 import { businessValueLabel } from "../../shared/businessLabels";
 import { translateText } from "../../shared/translate";
+import { founderScenarioText } from "./founderScenarioText";
 
 import type {
   DecisionCalculation,
@@ -276,7 +277,6 @@ export function DecisionCardModal({
         <header>
           <p>Hợp đồng {payload.contract_id}</p>
           <h2 id="decision-card-title">Decision Card · {label(payload.recommendation)}</h2>
-          <p>Độ tin cậy: {label(payload.confidence)}</p>
         </header>
 
         {!isCurrent && <p role="alert">Đây không phải Decision Card hiện hành; thao tác phê duyệt đã bị khóa.</p>}
@@ -338,7 +338,7 @@ export function DecisionCardModal({
               <h3 style={{ fontSize: "14px", color: "var(--color-emerald-700)", borderBottom: "1px solid rgba(16, 185, 129, 0.2)", paddingBottom: "6px" }}>
                 Viễn cảnh nếu Founder chấp nhận điều kiện này
               </h3>
-              <p>{translateText(payload.executive_summary)}</p>
+              <p>{founderScenarioText(payload.executive_summary)}</p>
             </section>
           )}
 
