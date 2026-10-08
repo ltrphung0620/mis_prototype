@@ -512,6 +512,16 @@
 .evidence-table td:last-child {
   text-align: right;
 }
+/* Read-only tables inside artifact details: text columns, no trailing action column. */
+.evidence-table--detail td {
+  vertical-align: top;
+}
+.evidence-table--detail td:last-child {
+  text-align: left;
+}
+.evidence-table--detail small {
+  font: 11px var(--font-sans);
+}
 .app-footer {
   margin-top: 32px;
   padding: 20px 0 0;
@@ -1032,9 +1042,11 @@
   border-top: 1px solid var(--color-line);
 }
 .missing-data-dialog button[type="submit"] {
+  justify-self: start;
   background: var(--color-primary-strong);
   color: #fff;
   border: 0;
+  font-weight: 500;
 }
 .review-artifact-identity {
   font: 11px var(--font-mono);

@@ -38,7 +38,21 @@ import {
   BankingPrecheckSubmissionProposalView,
   DocumentEvidenceSupplementView,
 } from "./SupplementViews";
+import {
+  AIDecisionAnalysisView,
+  ApprovalCheckpointsView,
+  DecisionPostBankingReviewView,
+  DecisionRoutePlanView,
+  DocumentPreparationRequestView,
+  RiskRuleEvaluationView,
+} from "./DecisionTraceViews";
 import type {
+  AIDecisionAnalysisPayload,
+  ApprovalCheckpointSetPayload,
+  DecisionPostBankingReviewPayload,
+  DecisionRoutePlanPayload,
+  DocumentPreparationRequestPayload,
+  RiskRuleEvaluationSetPayload,
   BankingAdvicePayload,
   BankingDiscoveryPayload,
   BankingReadinessPayload,
@@ -629,6 +643,18 @@ export function ArtifactAssessmentView({
       return <NegotiationOutcomeView payload={artifact.payload as NegotiationOutcomePayload} />;
     case "EXTERNAL_DOCUMENT_SUBMISSION_PROPOSAL":
       return <ExternalDocumentSubmissionProposalView payload={artifact.payload as ExternalDocumentSubmissionProposalPayload} />;
+    case "APPROVAL_CHECKPOINTS":
+      return <ApprovalCheckpointsView payload={artifact.payload as ApprovalCheckpointSetPayload} />;
+    case "RISK_RULE_EVALUATION":
+      return <RiskRuleEvaluationView payload={artifact.payload as RiskRuleEvaluationSetPayload} />;
+    case "DECISION_ROUTE_PLAN":
+      return <DecisionRoutePlanView payload={artifact.payload as DecisionRoutePlanPayload} />;
+    case "DECISION_POST_BANKING_REVIEW":
+      return <DecisionPostBankingReviewView payload={artifact.payload as DecisionPostBankingReviewPayload} />;
+    case "DOCUMENT_PREPARATION_REQUEST":
+      return <DocumentPreparationRequestView payload={artifact.payload as DocumentPreparationRequestPayload} />;
+    case "AI_DECISION_ANALYSIS":
+      return <AIDecisionAnalysisView payload={artifact.payload as AIDecisionAnalysisPayload} />;
     default:
       return <p>Chưa có màn hình đánh giá dành cho loại kết quả này.</p>;
   }

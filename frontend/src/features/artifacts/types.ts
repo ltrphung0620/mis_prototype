@@ -416,3 +416,122 @@ export interface DocumentEvidenceSupplementPayload {
   provided_by?: string;
   evidence_note?: string;
 }
+
+export interface ApprovalConditionPayload {
+  source_field?: string;
+  operator?: string;
+  threshold?: string | number | boolean | null;
+}
+
+export interface ApprovalCheckpointSetPayload {
+  contract_id?: string;
+  checkpoints?: Array<{
+    checkpoint_id?: string;
+    source_rule_id?: string;
+    approval_type?: string;
+    trigger_event?: string;
+    protected_action?: string;
+    condition?: ApprovalConditionPayload;
+    status?: string;
+    approver_role?: string;
+    policy_coverage_ids?: string[];
+  }>;
+  policy_coverages?: Array<{
+    coverage_id?: string;
+    protected_action?: string;
+    subject_artifact_id?: string;
+    source_policy_ids?: string[];
+    requires_human_approval?: boolean;
+    approver_role?: string;
+  }>;
+}
+
+export interface RiskRuleEvaluationSetPayload {
+  contract_id?: string;
+  evaluations?: Array<{
+    evaluation_id?: string;
+    rule_id?: string;
+    risk_type?: string;
+    declared_condition?: string;
+    applicability_scope?: string;
+    status?: string;
+    severity?: string | null;
+    source_field?: string | null;
+    operator?: string | null;
+    threshold?: string | number | boolean | null;
+    actual_value?: string | number | boolean | null;
+    explanation?: string;
+  }>;
+}
+
+export interface DecisionRoutePlanPayload {
+  route_plan_id?: string;
+  route_outcome?: string;
+  required_capabilities?: string[];
+  banking_need_types?: string[];
+  routing_reasons?: Array<{
+    reason_id?: string;
+    code?: string;
+    banking_need_type?: string;
+    requirement_id?: string;
+    requirement_certainty?: string;
+    requested_amount?: number;
+    requested_amount_currency?: string;
+  }>;
+  conditional_approval_checkpoint_ids?: string[];
+}
+
+export interface DecisionPostBankingReviewPayload {
+  review_id?: string;
+  outcome?: string;
+  candidate_option_ids?: string[];
+  precheck_ready_option_ids?: string[];
+  pending_option_ids?: string[];
+  required_input_fields?: string[];
+  missing_data_requests?: Array<{
+    request_id?: string;
+    field?: string;
+    reason?: string;
+    severity?: string;
+    status?: string;
+  }>;
+  precheck_executed?: boolean;
+}
+
+export interface DocumentPreparationRequestPayload {
+  request_id?: string;
+  option_id?: string;
+  bank_product_id?: string;
+  provider?: string;
+  provider_reference?: string;
+  requested_amount?: number;
+  supported_amount?: number;
+  currency?: string;
+  required_document_codes?: string[];
+  approval_condition_codes?: string[];
+  provider_result_authority?: string;
+  non_binding?: boolean;
+  selection_performed?: boolean;
+  bank_approval_obtained?: boolean;
+  documents_prepared?: boolean;
+  external_release_performed?: boolean;
+}
+
+export interface AIDecisionAnalysisPayload {
+  analysis_id?: string;
+  recommendation?: string;
+  confidence?: string;
+  executive_summary?: string;
+  reasons?: Array<{ reason_id?: string; code?: string; title?: string; detail?: string }>;
+  conditions?: Array<{ condition_id?: string; code?: string; title?: string }>;
+  human_attention_points?: Array<{ attention_point_id?: string; code?: string; text?: string }>;
+  source?: string;
+  model?: string;
+  prompt_version?: string;
+  fallback_reason?: string | null;
+  internal_decision_package_artifact?: ExactArtifactRefPayload;
+  final_risk_artifact?: ExactArtifactRefPayload;
+  approval_requested?: boolean;
+  external_action_performed?: boolean;
+  calculations_performed_by_model?: boolean;
+}

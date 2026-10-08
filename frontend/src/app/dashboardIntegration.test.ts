@@ -85,7 +85,36 @@ describe("dashboard integration", () => {
   });
 
   it("still refuses artifact types without a typed renderer", () => {
-    expect(hasAssessmentArtifact(["ART-AI"], [artifact("ART-AI", "AI_DECISION_ANALYSIS", {})])).toBe(false);
+    // Decision Card keeps its own guarded review; evidence bundles and unknown codes have no view.
+    for (const type of ["DECISION_CARD", "EVIDENCE_BUNDLE", "SOMETHING_NEW"]) {
+      expect(hasAssessmentArtifact(["ART-X"], [artifact("ART-X", type, {})])).toBe(false);
+    }
+  });
+
+  it("opens audit and handoff records without displacing existing milestone choices", () => {
+    const artifacts = [
+      artifact("ART-RULES", "RISK_RULE_EVALUATION", { evaluations: [] }),
+      artifact("ART-CHECKPOINTS", "APPROVAL_CHECKPOINTS", { checkpoints: [] }),
+      artifact("ART-INITIAL", "INITIAL_RISK_ASSESSMENT", { findings: [] }),
+      artifact("ART-AI", "AI_DECISION_ANALYSIS", { source: "OPENAI" }),
+      artifact("ART-ROUTE", "DECISION_ROUTE_PLAN", { route_outcome: "DIRECT_INTERNAL_DECISION" }),
+    ];
+
+    expect(
+      selectAssessmentArtifact(["ART-RULES", "ART-CHECKPOINTS", "ART-INITIAL"], artifacts)?.artifact_id,
+    ).toBe("ART-INITIAL");
+    expect(selectAssessmentArtifact(["ART-AI"], artifacts)?.artifact_type).toBe("AI_DECISION_ANALYSIS");
+    expect(selectAssessmentArtifact(["ART-ROUTE"], artifacts)?.artifact_type).toBe("DECISION_ROUTE_PLAN");
+    expect(
+      [
+        "APPROVAL_CHECKPOINTS",
+        "RISK_RULE_EVALUATION",
+        "DECISION_ROUTE_PLAN",
+        "DECISION_POST_BANKING_REVIEW",
+        "DOCUMENT_PREPARATION_REQUEST",
+        "AI_DECISION_ANALYSIS",
+      ].every((type) => hasAssessmentArtifact(["ART-X"], [artifact("ART-X", type, {})])),
+    ).toBe(true);
   });
 
   it("selects only the pending approval named by the current projection", () => {
