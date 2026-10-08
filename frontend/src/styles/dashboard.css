@@ -939,6 +939,10 @@
   font-weight: 600;
   overflow-wrap: anywhere;
 }
+/* Dialog containers receive programmatic focus so their name is announced first. */
+[role="dialog"][tabindex="-1"]:focus {
+  outline: none;
+}
 .artifact-id {
   font-family: var(--font-mono);
   font-size: 11px;

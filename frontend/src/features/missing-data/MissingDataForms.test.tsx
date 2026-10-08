@@ -57,7 +57,23 @@ describe("typed missing-data forms", () => {
     fireEvent.change(screen.getByLabelText("Số tiền cần hỗ trợ (VND)"), { target: { value: "420.5" } });
     fireEvent.change(screen.getByLabelText("Căn cứ nhập liệu"), { target: { value: "Founder cung cấp cho yêu cầu legacy." } });
     fireEvent.submit(screen.getByRole("form", { name: "Bổ sung số tiền ngân hàng" }));
-    expect(screen.getByRole("alert")).toHaveTextContent(/số nguyên VND dương/i);
+    const alert = screen.getByRole("alert");
+    expect(alert).toHaveTextContent(/số nguyên VND dương/i);
+    expect(screen.getByLabelText("Số tiền cần hỗ trợ (VND)")).toHaveAttribute("aria-invalid", "true");
+    expect(screen.getByLabelText("Số tiền cần hỗ trợ (VND)")).toHaveAttribute("aria-describedby", alert.id);
+    expect(screen.getByLabelText("Căn cứ nhập liệu")).not.toHaveAttribute("aria-invalid");
+    expect(submit).not.toHaveBeenCalled();
+  });
+
+  it("marks only the missing precheck evidence field as invalid", () => {
+    const submit = vi.fn();
+    render(<PrecheckEvidenceForm workflow_run_id="RUN-2" missing_request_id="MDR-2" onSubmit={submit} />);
+    fireEvent.change(screen.getByLabelText("Mã tham chiếu tài liệu bổ sung"), { target: { value: "DOC-REF-22" } });
+    fireEvent.submit(screen.getByRole("form", { name: "Bổ sung căn cứ cho kiểm tra sơ bộ với ngân hàng" }));
+    const alert = screen.getByRole("alert");
+    expect(screen.getByLabelText("Nội dung bổ sung")).toHaveAttribute("aria-invalid", "true");
+    expect(screen.getByLabelText("Nội dung bổ sung")).toHaveAttribute("aria-describedby", alert.id);
+    expect(screen.getByLabelText("Mã tham chiếu tài liệu bổ sung")).not.toHaveAttribute("aria-invalid");
     expect(submit).not.toHaveBeenCalled();
   });
 

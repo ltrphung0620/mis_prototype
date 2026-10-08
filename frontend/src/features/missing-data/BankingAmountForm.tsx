@@ -1,4 +1,4 @@
-import { useState, type FormEvent, type ReactElement } from "react";
+import { useId, useState, type FormEvent, type ReactElement } from "react";
 
 import type { BankingAmountSubmission } from "./types";
 
@@ -12,19 +12,20 @@ export interface BankingAmountFormProps {
 export function BankingAmountForm({ workflow_run_id, missing_request_id, submitting = false, onSubmit }: BankingAmountFormProps): ReactElement {
   const [amount, setAmount] = useState("");
   const [note, setNote] = useState("");
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<{ field: "amount" | "note"; message: string } | null>(null);
+  const errorId = useId();
 
   function submit(event: FormEvent<HTMLFormElement>): void {
     event.preventDefault();
     const normalizedAmount = amount.trim();
     const requestedAmount = Number(normalizedAmount);
     if (!/^\d+$/.test(normalizedAmount) || !Number.isSafeInteger(requestedAmount) || requestedAmount <= 0) {
-      setError("Số tiền phải là số nguyên VND dương và nằm trong giới hạn an toàn.");
+      setError({ field: "amount", message: "Số tiền phải là số nguyên VND dương và nằm trong giới hạn an toàn." });
       return;
     }
     const normalizedNote = note.trim();
     if (!normalizedNote) {
-      setError("Cần ghi rõ căn cứ cho số tiền được bổ sung.");
+      setError({ field: "note", message: "Cần ghi rõ căn cứ cho số tiền được bổ sung." });
       return;
     }
     setError(null);
@@ -34,9 +35,9 @@ export function BankingAmountForm({ workflow_run_id, missing_request_id, submitt
   return (
     <form onSubmit={submit} aria-label="Bổ sung số tiền ngân hàng">
       <p>Chỉ dùng cho yêu cầu số tiền kiểu cũ do quy trình tạo. Không dùng biểu mẫu này để ghi đè nhu cầu đã được bộ phận Lập kế hoạch liên kết từ hợp đồng hoặc hồ sơ tín dụng.</p>
-      <label>Số tiền cần hỗ trợ (VND)<input required inputMode="numeric" min="1" step="1" value={amount} onChange={(event) => setAmount(event.target.value)} /></label>
-      <label>Căn cứ nhập liệu<textarea required maxLength={500} value={note} onChange={(event) => setNote(event.target.value)} /></label>
-      {error && <p role="alert">{error}</p>}
+      <label>Số tiền cần hỗ trợ (VND)<input required inputMode="numeric" min="1" step="1" value={amount} aria-invalid={error?.field === "amount" || undefined} aria-describedby={error?.field === "amount" ? errorId : undefined} onChange={(event) => setAmount(event.target.value)} /></label>
+      <label>Căn cứ nhập liệu<textarea required maxLength={500} value={note} aria-invalid={error?.field === "note" || undefined} aria-describedby={error?.field === "note" ? errorId : undefined} onChange={(event) => setNote(event.target.value)} /></label>
+      {error && <p id={errorId} role="alert" className="form-error">{error.message}</p>}
       <button type="submit" disabled={submitting}>Gửi số tiền bổ sung</button>
     </form>
   );

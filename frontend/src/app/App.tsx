@@ -359,6 +359,7 @@ export function App() {
       negotiationConfirmOpen,
     ),
     closeDialogs,
+    { escapeDisabled: submittingInteraction, fallbackFocusId: "workspace-content" },
   );
 
   return (
