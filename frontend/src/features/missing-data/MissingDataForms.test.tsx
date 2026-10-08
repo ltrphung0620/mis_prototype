@@ -26,6 +26,22 @@ describe("typed missing-data forms", () => {
     expect(submit).not.toHaveBeenCalled();
   });
 
+  it("refuses to fabricate a reference or hash when browser hashing is unavailable", async () => {
+    const submit = vi.fn();
+    vi.stubGlobal("crypto", { randomUUID: () => "11111111-1111-4111-8111-111111111111" });
+    try {
+      render(<DocumentSupplementForm workflow_run_id="RUN-1" missing_request_id="MDR-1" allowed_document_types={["PERFORMANCE_BOND_REQUEST_FORM"]} onSubmit={submit} />);
+      const file = new File(["bank form"], "don-de-nghi.pdf", { type: "application/pdf" });
+      fireEvent.change(screen.getByLabelText(/Chọn tệp/i), { target: { files: [file] } });
+      expect(await screen.findByRole("alert")).toHaveTextContent(/không hỗ trợ tính mã băm SHA-256/i);
+      expect(screen.getByLabelText(/Chọn tệp/i)).toHaveAttribute("aria-invalid", "true");
+      expect(screen.getByRole("button", { name: "Bổ sung tệp và tiếp tục quy trình" })).toBeDisabled();
+      expect(submit).not.toHaveBeenCalled();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
   it("binds precheck evidence to the exact workflow request", () => {
     const submit = vi.fn();
     render(<PrecheckEvidenceForm workflow_run_id="RUN-2" missing_request_id="MDR-2" onSubmit={submit} />);

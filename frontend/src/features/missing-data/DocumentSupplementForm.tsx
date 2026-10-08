@@ -19,11 +19,9 @@ const TYPE_LABELS: Record<DocumentRequirementCode, string> = {
   CASHFLOW_BUFFER_EVIDENCE: "Tài liệu chứng minh nguồn bù dòng tiền",
 };
 
-function generateSampleUuidV4(): string {
-  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
-    return crypto.randomUUID();
-  }
-  return "12345678-1234-4abc-8def-1234567890ab";
+// Reference IDs and hashes must come from the selected file; never fall back to fixed values.
+function hasBrowserCrypto(): boolean {
+  return typeof crypto !== "undefined" && typeof crypto.randomUUID === "function" && Boolean(crypto.subtle);
 }
 
 export function DocumentSupplementForm({ workflow_run_id, missing_request_id, allowed_document_types = DEFAULT_TYPES, submitting = false, onSubmit }: DocumentSupplementFormProps): ReactElement {
@@ -45,20 +43,21 @@ export function DocumentSupplementForm({ workflow_run_id, missing_request_id, al
       event.target.value = "";
       return;
     }
+    if (!hasBrowserCrypto()) {
+      setFileName(null);
+      setDocumentReference("");
+      setContentHash("");
+      setError("Trình duyệt không hỗ trợ tính mã băm SHA-256. Hãy mở ứng dụng qua localhost hoặc HTTPS rồi thử lại.");
+      event.target.value = "";
+      return;
+    }
     try {
-      const uuid = generateSampleUuidV4();
-      const refId = `DOCREF-${uuid}`;
-      setDocumentReference(refId);
-
-      let hashHex = "";
-      if (typeof crypto !== "undefined" && crypto.subtle) {
-        const buffer = await file.arrayBuffer();
-        const hashBuffer = await crypto.subtle.digest("SHA-256", buffer);
-        const hashArray = Array.from(new Uint8Array(hashBuffer));
-        hashHex = hashArray.map((b) => b.toString(16).padStart(2, "0")).join("");
-      } else {
-        hashHex = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
-      }
+      const buffer = await file.arrayBuffer();
+      const hashBuffer = await crypto.subtle.digest("SHA-256", buffer);
+      const hashHex = Array.from(new Uint8Array(hashBuffer))
+        .map((b) => b.toString(16).padStart(2, "0"))
+        .join("");
+      setDocumentReference(`DOCREF-${crypto.randomUUID()}`);
       setContentHash(hashHex);
       setFileName(file.name);
       setError(null);
@@ -66,7 +65,7 @@ export function DocumentSupplementForm({ workflow_run_id, missing_request_id, al
       setFileName(null);
       setDocumentReference("");
       setContentHash("");
-      setError("Không thể đọc và mã hóa tập tin. Vui lòng thử lại.");
+      setError("Không thể đọc tệp để tính mã băm. Vui lòng thử lại.");
     }
   }
 
@@ -87,25 +86,29 @@ export function DocumentSupplementForm({ workflow_run_id, missing_request_id, al
       <p><strong>Hồ sơ đang yêu cầu:</strong> {TYPE_LABELS[documentType]}</p>
       <p>Quy trình không thể tiếp tục cho đến khi tệp này được bổ sung.</p>
 
-      <div style={{ marginBottom: "1rem", padding: "0.75rem", border: "2px dashed var(--color-border, #ccc)", borderRadius: "8px", background: "var(--color-surface-subtle, #f9fbf9)" }}>
-        <label htmlFor="document-upload" style={{ display: "block", marginBottom: "0.5rem", fontWeight: 600 }}>
+      <div className="upload-field">
+        <label htmlFor="document-upload">
           Chọn tệp {TYPE_LABELS[documentType]} (.pdf hoặc .docx)
         </label>
         <input
           id="document-upload"
           type="file"
           accept=".docx,.pdf,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+          aria-describedby={error ? "document-upload-hint document-upload-error" : "document-upload-hint"}
+          aria-invalid={error ? true : undefined}
           onChange={(e) => void handleFileSelect(e)}
-          style={{ width: "100%", padding: "0.25rem" }}
         />
+        <p id="document-upload-hint">
+          Tệp chỉ được tính mã băm SHA-256 trên trình duyệt; nội dung tệp không được gửi lên máy chủ và hệ thống không xác minh chữ ký hay giá trị pháp lý.
+        </p>
         {fileName && (
-          <p style={{ marginTop: "0.5rem", color: "#2e7d32", fontSize: "0.85rem" }}>
+          <p>
             Đã chọn: <strong>{fileName}</strong>
           </p>
         )}
       </div>
 
-      {error && <p role="alert">{error}</p>}
+      {error && <p id="document-upload-error" role="alert" className="form-error">{error}</p>}
       <button type="submit" disabled={submitting || !fileName}>Bổ sung tệp và tiếp tục quy trình</button>
     </form>
   );

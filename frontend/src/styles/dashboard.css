@@ -855,6 +855,117 @@
   margin: 4px 0;
   font-variant-numeric: tabular-nums;
 }
+.assessment-view__title {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--space-2);
+}
+.assessment-view__title h3 {
+  margin: 0;
+}
+.assessment-view__meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-top: var(--space-2);
+  font-size: 11px;
+  color: var(--color-ink-450);
+}
+.assessment-view section {
+  margin-top: var(--space-4);
+}
+.assessment-view h4 {
+  margin-bottom: var(--space-2);
+}
+.assessment-view h5 {
+  margin: var(--space-3) 0 var(--space-1);
+  font-size: 12px;
+  color: var(--color-ink-800);
+}
+.assessment-view .assessment-view__divided {
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--color-line);
+}
+.assessment-list {
+  margin: 0;
+  padding-left: var(--space-5);
+}
+.assessment-list > li + li {
+  margin-top: var(--space-2);
+}
+.assessment-view .assessment-list p {
+  margin: 2px 0 0;
+}
+.assessment-view .assessment-list p.assessment-item__plain {
+  margin: 0;
+}
+.assessment-view .assessment-item__secondary {
+  font-size: 12px;
+  color: var(--color-ink-600);
+}
+.assessment-view .assessment-item__meta {
+  font-size: 11px;
+  color: var(--color-ink-450);
+  overflow-wrap: anywhere;
+}
+.assessment-view .assessment-item__meta--danger {
+  color: var(--color-red-700);
+}
+.assessment-view .assessment-item__meta--warning {
+  color: var(--color-amber-700);
+}
+.assessment-view .assessment-view__footnote {
+  margin-top: var(--space-4);
+  font-size: 12px;
+  color: var(--color-ink-450);
+}
+.assessment-view .sanitized-fields {
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: var(--space-2);
+}
+.sanitized-fields > div {
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-muted);
+}
+.assessment-view .sanitized-fields dt {
+  font-size: 11px;
+}
+.assessment-view .sanitized-fields dd {
+  margin: 2px 0 0;
+  font-size: 13px;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+.upload-field {
+  display: grid;
+  gap: var(--space-2);
+  margin: var(--space-4) 0;
+  padding: var(--space-4);
+  border: 1px dashed var(--color-line-strong);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-muted);
+}
+.missing-data-dialog .upload-field label {
+  margin: 0;
+  font-weight: 600;
+}
+.upload-field input[type="file"] {
+  width: 100%;
+  max-width: 100%;
+}
+.upload-field p {
+  margin: 0;
+  font-size: 12px;
+  color: var(--color-ink-600);
+  overflow-wrap: anywhere;
+}
+.form-error {
+  color: var(--color-red-700);
+  font-size: 12px;
+}
 .decision-card-modal fieldset {
   border: 1px solid var(--color-line);
   padding: 20px;
