@@ -237,25 +237,26 @@ export function DecisionCardModal({
           <p>Hợp đồng {payload.contract_id}</p>
           <h2 id="decision-card-title">Decision Card · {label(payload.recommendation)}</h2>
           <p>Độ tin cậy: {label(payload.confidence)}</p>
+          <small className="review-artifact-identity">{card.artifact_id} · v{card.version}</small>
         </header>
 
         {!isCurrent && <p role="alert">Đây không phải Decision Card hiện hành; thao tác phê duyệt đã bị khóa.</p>}
 
         {isEvaluable ? (
-        <fieldset aria-label="Đề xuất từ trí tuệ nhân tạo" style={{ border: "2px solid var(--color-emerald-500)", borderRadius: "12px", padding: "16px", marginBottom: "20px", background: "rgba(16, 185, 129, 0.02)" }}>
-          <legend style={{ padding: "0 10px", color: "var(--color-emerald-600)", fontWeight: 700, fontSize: "12px", letterSpacing: "0.5px" }}>
-            ✨ ĐỀ XUẤT TỪ TRÍ TUỆ NHÂN TẠO (AI RECOMMENDATION)
+        <fieldset aria-label="Đề xuất từ trí tuệ nhân tạo">
+          <legend>
+            ĐỀ XUẤT TỪ TRÍ TUỆ NHÂN TẠO (AI RECOMMENDATION)
           </legend>
           
-          <p style={{ fontSize: "15px", fontWeight: 700, color: "var(--color-emerald-700)" }}>
-            {label(payload.recommendation)} <span style={{ fontSize: "11px" }}>(Kết quả do OpenAI tạo)</span>
+          <p>
+            {label(payload.recommendation)} <span>(Kết quả do OpenAI tạo)</span>
           </p>
 
-          <section style={{ margin: "10px 0" }}>
-            <h3 style={{ fontSize: "14px", color: "var(--color-emerald-700)", borderBottom: "1px solid rgba(16, 185, 129, 0.2)", paddingBottom: "6px" }}>Lý do AI đưa ra đề xuất này</h3>
-            <ul style={{ paddingLeft: "1.2rem", marginTop: "8px" }}>
+          <section>
+            <h3>Lý do AI đưa ra đề xuất này</h3>
+            <ul>
               {payload.reasons.map((reason, index) => (
-                <li key={reason.code ?? index} style={{ marginBottom: "6px" }}>
+                <li key={reason.code ?? index}>
                   {(() => {
                     const content = founderFacingReason(reason.title, reason.detail);
                     return (
@@ -291,15 +292,12 @@ export function DecisionCardModal({
         )}
 
         {/* CONTAINER 2: KẾT QUẢ TÍNH TOÁN & ĐỐI SOÁT HỆ THỐNG (Deterministic System Analysis) */}
-        <fieldset style={{ border: "2px solid var(--color-blue-500)", borderRadius: "12px", padding: "16px", marginBottom: "20px", background: "rgba(37, 99, 235, 0.02)" }}>
-          <legend style={{ padding: "0 10px", color: "var(--color-blue-600)", fontWeight: 700, fontSize: "12px", letterSpacing: "0.5px" }}>
-            🔒 KẾT QUẢ TÍNH TOÁN & ĐỐI SOÁT HỆ THỐNG (DETERMINISTIC SYSTEM ANALYSIS)
+        <fieldset>
+          <legend>
+            KẾT QUẢ TÍNH TOÁN & ĐỐI SOÁT HỆ THỐNG (DETERMINISTIC SYSTEM ANALYSIS)
           </legend>
 
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "12px" }}>
-            <span style={{ fontSize: "12px", color: "var(--color-blue-700)", fontWeight: 700 }}>Tính toán và kiểm soát logic nghiệp vụ</span>
-            <span style={{ fontSize: "11px", background: "var(--color-blue-500)", color: "white", padding: "2px 8px", borderRadius: "10px", fontWeight: 600 }}>Hệ thống tính toán & xác thực khách quan</span>
-          </div>
+          <p>Số liệu và đối soát nghiệp vụ của hợp đồng trong lượt xử lý hiện hành.</p>
 
           <Metrics title="Tài chính của hợp đồng" metrics={payload.finance_metrics} />
           <Metrics title="Vận hành của hợp đồng" metrics={payload.operations_metrics} />
@@ -307,13 +305,17 @@ export function DecisionCardModal({
           <Options options={payload.selected_options} />
 
           {payload.document_release_package && (
-            <section style={{ marginTop: "12px", borderTop: "1px solid rgba(37, 99, 235, 0.1)", paddingTop: "8px" }}>
-              <h3 style={{ fontSize: "13px", color: "var(--color-blue-700)" }}>Hồ sơ dự kiến gửi bên ngoài</h3>
+            <section>
+              <h3>Hồ sơ dự kiến gửi bên ngoài</h3>
               <p>{payload.document_release_package.recipient} · {label(payload.document_release_package.purpose)}</p>
-              <p style={{ fontStyle: "italic", fontSize: "11px" }}>Hồ sơ này đang ở gói quyết định nội bộ; chưa được phép và chưa được gửi ra ngoài.</p>
+              <p>Hồ sơ này đang ở gói quyết định nội bộ; chưa được phép và chưa được gửi ra ngoài.</p>
             </section>
           )}
         </fieldset>
+
+        {isEvaluable && <section aria-label="Tóm tắt quyết định"><h3>Tóm tắt đề xuất</h3><p>{translateText(payload.executive_summary)}</p></section>}
+        {!!payload.limitations?.length && <section aria-label="Giới hạn bằng chứng"><h3>Giới hạn bằng chứng</h3><ul>{payload.limitations.map((item, index) => <li key={item.code ?? index}>{translateText(item.detail)}</li>)}</ul></section>}
+        <p className="review-boundary">Phê duyệt quyết định không đồng nghĩa cho phép gửi hồ sơ. Prototype không gửi hồ sơ ra ngoài.</p>
 
         {review_instruction && (
           <section aria-label="Phạm vi xem xét">
@@ -332,7 +334,7 @@ export function DecisionCardModal({
           {isCurrent && isEvaluable && approvalRequestId !== null && (
             <>
               <button type="button" disabled={submitting} onClick={() => void onReject(approvalRequestId)}>Từ chối</button>
-              <button type="button" disabled={submitting} onClick={() => void onApprove(approvalRequestId)}>Phê duyệt</button>
+              <button type="button" className="primary-action" disabled={submitting} onClick={() => void onApprove(approvalRequestId)}>Phê duyệt</button>
             </>
           )}
           <button type="button" onClick={onClose}>Đóng</button>

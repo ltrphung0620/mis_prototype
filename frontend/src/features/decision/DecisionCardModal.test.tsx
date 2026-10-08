@@ -28,6 +28,13 @@ const card: DecisionCardArtifact = {
 };
 
 describe("DecisionCardModal", () => {
+  it("shows exact artifact identity, summary, evidence limits and the external release boundary", () => {
+    render(<DecisionCardModal open card={{ ...card, payload: { ...card.payload, limitations: [{ detail: "Quan hệ giao dịch còn giới hạn." }] } }} current_decision_card_artifact_id={card.artifact_id} onClose={vi.fn()} onApprove={vi.fn()} onReject={vi.fn()} />);
+    expect(screen.getByText("ART-CURRENT · v1")).toBeInTheDocument();
+    expect(screen.getByText(card.payload.executive_summary)).toBeInTheDocument();
+    expect(screen.getByText("Quan hệ giao dịch còn giới hạn.")).toBeInTheDocument();
+    expect(screen.getByText(/Prototype không gửi hồ sơ ra ngoài/)).toBeInTheDocument();
+  });
   it("shows only contract-attributable metrics and allows only exact current approval", () => {
     const approve = vi.fn();
     render(<DecisionCardModal open card={card} current_decision_card_artifact_id="ART-CURRENT" pending_approval={{ request_id: "APR-1", status: "PENDING", subject_artifact_id: "ART-CURRENT", subject_artifact_version: 1, protected_action: "CONFIRM_FINAL_CONTRACT_DECISION" }} onClose={vi.fn()} onApprove={approve} onReject={vi.fn()} />);

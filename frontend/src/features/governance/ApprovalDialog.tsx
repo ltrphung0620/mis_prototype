@@ -110,7 +110,7 @@ export function ApprovalDialog({
           {canDecide && (
             <>
               <button type="button" disabled={submitting} onClick={() => void onDecision(request.request_id, "REJECT")}>Từ chối</button>
-              <button type="button" disabled={submitting} onClick={() => void onDecision(request.request_id, "APPROVE")}>Phê duyệt</button>
+              <button type="button" className="primary-action" disabled={submitting} onClick={() => void onDecision(request.request_id, "APPROVE")}>Phê duyệt</button>
             </>
           )}
           <button type="button" onClick={onClose}>Đóng</button>

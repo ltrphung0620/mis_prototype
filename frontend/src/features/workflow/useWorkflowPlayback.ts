@@ -67,10 +67,10 @@ export function useWorkflowPlayback(
     revealedMilestoneIds: [],
   });
 
-  const revealedMilestoneIds =
+  const revealedMilestoneIds = useMemo(() =>
     cursor.workflowRunId === workflowRunId
       ? cursor.revealedMilestoneIds.filter((id) => targetIdSet.has(id))
-      : [];
+      : [], [cursor, workflowRunId, targetIdSet]);
   const revealedIdSet = useMemo(
     () => new Set(revealedMilestoneIds),
     [revealedMilestoneIds],
@@ -79,7 +79,7 @@ export function useWorkflowPlayback(
 
   useEffect(() => {
     if (!workflowRunId) {
-      setCursor({ workflowRunId: "", revealedMilestoneIds: [] });
+      if (cursor.workflowRunId) setCursor({ workflowRunId: "", revealedMilestoneIds: [] });
       return undefined;
     }
     if (cursor.workflowRunId !== workflowRunId) {

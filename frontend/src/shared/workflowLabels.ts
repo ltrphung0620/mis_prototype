@@ -80,18 +80,31 @@ export type StatusTone = "neutral" | "active" | "success" | "warning" | "danger"
 export function statusTone(status: string): StatusTone {
   switch (status.toUpperCase()) {
     case "RUNNING":
+    case "ASSESSMENT_IN_PROGRESS":
+    case "PREPARING_DECISION":
+    case "NEGOTIATION_IN_PROGRESS":
+    case "NEGOTIATION_TERMS_SENT":
+    case "NEGOTIATION_OUTCOME_RECEIVED":
       return "active";
     case "COMPLETED":
+    case "ACCEPTED":
+    case "READY_FOR_EXTERNAL_SUBMISSION":
       return "success";
     case "COMPLETED_WITH_WARNINGS":
     case "EXPIRED":
     case "WAITING_FOR_DEPENDENCIES":
     case "WAITING_FOR_INPUT":
     case "WAITING_FOR_APPROVAL":
+    case "WAITING_FOR_BANKING_APPROVAL":
+    case "WAITING_FOR_FINAL_DECISION":
+    case "WAITING_FOR_EXTERNAL_RELEASE_APPROVAL":
+    case "NEGOTIATION_AWAITING_FINAL_CONFIRMATION":
+    case "NOT_EVALUABLE":
       return "warning";
     case "BLOCKED":
     case "FAILED_SAFE":
     case "REJECTED":
+    case "NOT_ACCEPTED":
       return "danger";
     default:
       return "neutral";

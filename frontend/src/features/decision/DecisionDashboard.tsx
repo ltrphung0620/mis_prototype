@@ -22,20 +22,19 @@ export function DecisionDashboard({ data }: DecisionDashboardProps): ReactElemen
   const externalStatus = externalState(data);
   return (
     <section aria-labelledby="decision-dashboard-title" className="decision-dashboard">
-      <header>
-        <p>Hợp đồng {data.contract_id}</p>
-        <h2 id="decision-dashboard-title">Decision Dashboard</h2>
-        <p>{data.business_status_label_vi}</p>
+      <header className="decision-dashboard__status">
+        <h2 id="decision-dashboard-title" className="sr-only">Decision Dashboard</h2>
+        <span>{data.business_status_label_vi}</span>
+        <span>{data.execution_status_label_vi}</span>
       </header>
-      <p>Giai đoạn hiện tại: <strong>{data.current_stage_label_vi}</strong></p>
-      <p>Tiến độ: {data.progress_percent}% · {data.execution_status_label_vi}</p>
 
       {data.decision_card.available ? (
         <article>
+          <p className="decision-proposal-label">Khuyến nghị từ hệ thống</p>
           <h3>{data.decision_card.recommendation_label_vi}</h3>
           {data.decision_card.executive_summary && <p>{translateText(data.decision_card.executive_summary)}</p>}
-          {data.decision_card.confidence && <p>Độ tin cậy: {businessValueLabel(data.decision_card.confidence)}</p>}
-          {data.residual_risk_level && <p>Rủi ro còn lại: {businessValueLabel(data.residual_risk_level)}</p>}
+          <div className="decision-properties">{data.decision_card.confidence && <p><span>Độ tin cậy</span><strong>{businessValueLabel(data.decision_card.confidence)}</strong></p>}
+          {data.residual_risk_level && <p><span>Rủi ro còn lại</span><strong>{businessValueLabel(data.residual_risk_level)}</strong></p>}</div>
         </article>
       ) : <p>Decision Card của lượt chạy hiện tại chưa sẵn sàng.</p>}
 

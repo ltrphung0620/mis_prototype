@@ -74,6 +74,19 @@ afterEach(() => {
 });
 
 describe("workflow playback", () => {
+  it("stays stable before a workflow starts and clears the cursor after leaving a run", () => {
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    const { result, rerender } = renderHook(
+      ({ value }: { value: NormalizedWorkflowDashboard | null }) => useWorkflowPlayback(value),
+      { initialProps: { value: null as NormalizedWorkflowDashboard | null } },
+    );
+    expect(result.current.total).toBe(0);
+    rerender({ value: dashboard(0) });
+    rerender({ value: null });
+    expect(result.current.revealedMilestoneIds).toEqual([]);
+    expect(error).not.toHaveBeenCalled();
+    error.mockRestore();
+  });
   it("uses a one-second delay between visible workflow steps", () => {
     expect(DEFAULT_WORKFLOW_STEP_DELAY_MS).toBe(1_000);
   });

@@ -1,5 +1,14 @@
 # OPC MIS Agentic AI — Repository Instructions
 
+## Frontend continuation
+
+Before changing `frontend/`, read [style.md](style.md) and
+[the frontend handoff](docs/ui-design/06_frontend_handoff.md).
+Keep the current Mercury-inspired Contract Decision Workspace and its exact
+artifact/approval guards. The archived forest-theme plan is not the current UI specification.
+Frontend changes require `npm test` and `npm run build` from `frontend/`, in addition to
+the repository checks below. Do not edit generated assets by hand.
+
 ## Architecture
 
 This project is a Python modular monolith with:

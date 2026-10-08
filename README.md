@@ -1,5 +1,26 @@
 # OPC MIS Agentic AI
 
+## Founder UI — current handoff
+
+The React frontend is now a Mercury-inspired **Contract Decision Workspace** for one selected
+contract, with Decision, Assessments, Evidence, Workflow and Input views. FastAPI and the persisted
+workflow already exist; this redesign changes frontend presentation, not backend contracts.
+
+- [Frontend handoff and remaining work](docs/ui-design/06_frontend_handoff.md): prioritized tasks,
+  local development, real API versus UI fixtures, and known backend test failures.
+- [Style guide for contributors and agents](style.md): tokens, components, accessibility and
+  business boundaries to preserve.
+- [Current design system](docs/ui-design/03_design_system.md) and
+  [implementation review/screenshots](docs/ui-design/05_mercury_redesign_review.md).
+
+Development UI: `http://127.0.0.1:5173/dashboard-assets/` (`npm run dev` in `frontend/`, proxy to
+FastAPI port 8000). Optional **synthetic, read-only UI preview**: run `node tools/ui-demo-preview.mjs`
+from the repo root after starting Vite, then open `http://127.0.0.1:5174/dashboard-assets/`.
+That preview never forwards API requests to FastAPI and blocks approval mutations.
+
+Latest handoff checks: frontend **77 tests pass**, production build passes; backend **481 pass /
+4 fail**, Ruff **2 existing I001 findings**. See the handoff for exact tests and reproduction.
+
 This repository is a Python 3.12 modular monolith for the OPC decision-support system.
 The implemented vertical slices cover Dataset Ingestion, Planner Intake, Finance Assessment, and
 Operations Assessment using the shared async business-component contract and workflow-owned

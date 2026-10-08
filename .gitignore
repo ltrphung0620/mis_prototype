@@ -11,3 +11,5 @@ __pycache__/
 frontend/node_modules/
 frontend/dist/
 frontend/coverage/
+.playwright-cli/
+output/playwright/founder-desktop-initial.png
