@@ -1,6 +1,6 @@
 # Bàn giao frontend — OPC MIS Contract Decision Workspace
 
-Ngày rà soát: 08/10/2026. Đây là bản UI đã triển khai để tiếp tục phát triển, chưa phải bản sản phẩm production hoàn chỉnh. Không đổi business logic/API/backend trong lần redesign này.
+Ngày rà soát: 08/10/2026 (cập nhật cùng ngày sau 2 task P1 trên nhánh `feat/ui-polish`). Đây là bản UI đã triển khai để tiếp tục phát triển, chưa phải bản sản phẩm production hoàn chỉnh. Không đổi business logic/API/backend trong lần redesign này.
 
 ## Backend đã có chưa?
 
@@ -26,6 +26,8 @@ API đầy đủ và setup cấu hình nằm ở [README](../../README.md). Xem 
 - Decision Card review; approval, banking/document supplements, negotiation và external-release review giữ handlers/contracts hiện hữu.
 - New Mercury-inspired tokens, typography, flat surfaces, responsive; focus hook, skip link, reduced motion; test coverage cho binding/interaction guards.
 - FastAPI `/dashboard` dùng bundle đã build. Development Vite proxy sang backend ở port 8000.
+- Detail views (Finance/Operations/Risk, Banking, Document, precheck) và form bổ sung hồ sơ dùng class/tokens, không còn inline styles. Badge mức rủi ro/precheck theo ngữ nghĩa, không dùng success.
+- Dialog chi tiết ([ArtifactDetailDialog.tsx](../../frontend/src/features/artifacts/ArtifactDetailDialog.tsx)) hiện loại artifact, `ID · vN · validation` và **Nguồn đầu vào** từ `input_artifact_ids`. Nhãn đủ 33 artifact types ở `shared/artifactLabels.ts`.
 
 Review và screenshots: [05_mercury_redesign_review.md](05_mercury_redesign_review.md). Quy tắc bắt buộc khi tiếp tục UI: [style.md](../../style.md). Các tài liệu 01/02/04 có phần kế hoạch lịch sử; **03, 05, 06 và style.md** mô tả bản hiện hành. Không dùng prompt forest cũ để redesign lần tiếp theo.
 
@@ -35,8 +37,8 @@ Review và screenshots: [05_mercury_redesign_review.md](05_mercury_redesign_revi
 
 | Ưu tiên / việc | Evidence và file bắt đầu | Tiêu chí hoàn thành |
 |---|---|---|
-| P1 — Đồng bộ các detail/form sâu với style mới | `features/artifacts/AssessmentViews.tsx`, `WorkflowArtifactViews.tsx` còn nhiều inline styles; các forms được giữ từ implementation trước | Reuse tokens/section/table/form patterns; rà label precheck luôn là mô phỏng; không thêm business controls hoặc đổi payload |
-| P1 — Artifact detail coverage và lineage | Allowlist trong `app/dashboardIntegration.ts`; `EvidenceIndex` disable detail chưa có renderer. Decision Card có panel riêng, không đi qua generic assessment renderer | Lập inventory theo enum/DTO; ưu tiên proposals, post-decision/negotiation và supplements có trong run thực. Thêm typed read-only renderer + tests, đúng ID/version/upstream; không mở nút chỉ để hiện một màn trống |
+| ~~P1 — Đồng bộ các detail/form sâu với style mới~~ **Đã xong** | Inline styles đã bỏ ở `AssessmentViews.tsx`, `WorkflowArtifactViews.tsx`, `DocumentSupplementForm.tsx` (chỉ còn CSS custom property animation ở workflow). Precheck luôn ghi mô phỏng; form tài liệu không còn fallback hash/UUID cố định khi thiếu Web Crypto | Còn lại: `BankingAmountForm`, `PrecheckEvidenceForm` chưa audit riêng về style |
+| P1 — Artifact detail coverage và lineage — **phần lớn đã xong** | Đã thêm renderer + tests cho `BANKING_PRECHECK_SUBMISSION_PROPOSAL`, `EXTERNAL_DOCUMENT_SUBMISSION_PROPOSAL`, `POST_DECISION_UPDATE`, `NEGOTIATION_OUTCOME`, `BANKING_INPUT_SUPPLEMENT`, `BANKING_PRECHECK_EVIDENCE_SUPPLEMENT`, `DOCUMENT_EVIDENCE_SUPPLEMENT`; dialog hiện ID/version/upstream | Còn 6 types disable detail: `APPROVAL_CHECKPOINTS`, `RISK_RULE_EVALUATION`, `DECISION_ROUTE_PLAN`, `DECISION_POST_BANKING_REVIEW`, `DOCUMENT_PREPARATION_REQUEST`, `AI_DECISION_ANALYSIS` (Decision Card có panel riêng). `RiskPreScanView` chọn `APPROVAL_CHECKPOINTS` v1 theo heuristic vì backend không ghi upstream giữa pre-scan và checkpoint. Demo fixture chưa có các types mới, mới verify bằng unit tests |
 | P1 — Accessibility của tất cả dialogs/forms | `shared/useDialogFocus.ts` dùng dialog đầu tiên và chưa inert background; đã test trap/Escape/restore cơ bản | Audit screen reader, active dialog scope, hidden/disabled focus targets, form error associations, contrast mọi trạng thái. Keyboard hoàn chỉnh trên desktop/mobile; không công bố WCAG certification khi chưa audit |
 | P1 — Browser E2E của toàn workflow và edge cases | Unit/regression tests đã có; screenshot fixture chỉ là một thời điểm final approval pending, live smoke chưa đi hết mọi branch | Cover banking/document waits, pause/resume, NOT_EVALUABLE, stale/replaced/resolved approval, duplicate submit, negotiation outcome và separate release gate bằng isolated fixtures/test backend; không dùng DB thật hoặc gọi external adapter |
 | P2 — Workflow history dễ đọc và tải hiệu quả hơn | `features/workspace/WorkflowEvents.tsx` hiện show raw `event_type`, poll toàn list 1,5s; backend có `after_sequence` | Map event labels, xử lý unknown codes trung thực; incremental fetch/merge/dedupe theo sequence, dừng timer đúng lifecycle, test đổi run/error/recovery; không lấy log làm source state |
@@ -44,7 +46,7 @@ Review và screenshots: [05_mercury_redesign_review.md](05_mercury_redesign_revi
 | P2 — Navigation và component organization | Sidebar local views, không URL state; `App.tsx` vẫn chứa nhiều interaction wiring; brand link `/dashboard` cần kiểm tra cả Vite base và FastAPI | Kiểm tra reload/back/brand trên cả hai server; chỉ thêm URL/view state khi có scope. Tách shell/interaction presentation với tests giữ handlers/guards, không đổi API để phục vụ layout |
 | P2 — Responsive/state polish | Đã kiểm tra 390/768/1440/1920px ở views chính; chưa audit mọi dialog/form và chuỗi text dài | Kiểm tra zoom 200%, long IDs/text, loading/empty/error/warning/failed-safe/stale và pending/resolved; không tràn trang hoặc mất hành động |
 
-Gợi ý task đầu cho người tiếp nhận: **đồng bộ Finance/Operations/Risk detail và missing-data forms theo style.md**, giữ nguyên schema, rồi thêm tests cho artifact/version và visual screenshots. Mỗi task nhỏ nên có before/after và nêu rõ ảnh dùng dữ liệu thật hay fixture.
+Gợi ý task tiếp theo: **P1 — accessibility của dialogs/forms** (`useDialogFocus` chỉ lấy dialog đầu tiên, background chưa inert), hoặc bổ sung các artifact types mới vào demo fixture để xem renderer trên UI. Mỗi task nhỏ nên có before/after và nêu rõ ảnh dùng dữ liệu thật hay fixture.
 
 Các mở rộng cần backend/product scope riêng: multi-contract overview/search được persist, quản lý người dùng/RBAC, policy settings, historical analytics, document repository verification, live banking/external connector. Không tạo UI trông như đã hoạt động cho các phần này.
 
@@ -102,7 +104,7 @@ Các browser scripts `mercury-review.js`, `workspace-validation.js`, `live-smoke
 
 ## Checks và lỗi cần người phụ trách backend review
 
-Frontend tại thời điểm bàn giao: **20 test files, 77 tests pass**; TypeScript/Vite build pass. Responsive, keyboard review và live smoke đã kiểm tra, không có screen-reader audit đầy đủ.
+Frontend tại thời điểm bàn giao: **21 test files, 93 tests pass** (bản redesign ban đầu: 20 files, 77 tests); TypeScript/Vite build pass. Responsive, keyboard review và live smoke đã kiểm tra, không có screen-reader audit đầy đủ.
 
 Backend: **481 passed, 4 failed / 485 tests**; Ruff **2 I001**. Python source/tests không thay đổi trong redesign; các failures đã quan sát trước lần bàn giao này. Không xem chúng là kiểm tra xanh hay tự sửa business semantics trong task UI.
 
