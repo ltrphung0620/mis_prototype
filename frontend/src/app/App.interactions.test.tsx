@@ -350,6 +350,114 @@ describe("Founder interaction popups", () => {
     ).toBeEnabled();
   });
 
+  it("renders founder-facing negotiation condition wording with decision-card numbers", async () => {
+    const currentDashboard = {
+      ...finalDecisionDashboard(),
+      status: "WAITING_FOR_INPUT",
+      currentStage: "NEGOTIATION_TERMS_SENT",
+      pendingApprovalCount: 0,
+      pendingMissingDataCount: 1,
+      pendingInteractions: [
+        {
+          interaction_type: "NEGOTIATION_TERMS_SENT_CONFIRMATION",
+          title_vi: "X\u00e1c nh\u1eadn \u0111\u00e3 g\u1eedi \u0111i\u1ec1u ki\u1ec7n \u0111\u00e0m ph\u00e1n",
+          instruction_vi: "Xem l\u1ea1i \u0111i\u1ec1u ki\u1ec7n tr\u01b0\u1edbc khi x\u00e1c nh\u1eadn.",
+          request_ids: ["NTS-1"],
+          approval_request_ids: [],
+          required_fields: ["workflow_run_id", "decision_card_artifact_id"],
+        },
+      ],
+    } satisfies NormalizedWorkflowDashboard;
+    const card = decisionCard();
+    card.payload = {
+      ...card.payload,
+      analysis_source: "OPENAI",
+      reasons: [
+        {
+          code: "LOW_GROSS_MARGIN",
+          title: "Contract-attributable gross margin is below OPC target",
+          detail: "Gross margin is below target.",
+          recommended_action: "Negotiate the selected margin strategy.",
+        },
+        {
+          code: "CONTRACT_VALUE_NOT_COVERED_BY_EXPLICIT_ORDERS",
+          title: "Part of the contract value lacks explicit order coverage",
+          detail: "Linked orders do not cover the full contract value.",
+          recommended_action: "Verify explicit order links.",
+        },
+        {
+          code: "FINAL_RISK_CLOSING_CASH_LIMITATION",
+          title: "\u0110\u00e1nh gi\u00e1 R\u1ee7i ro cu\u1ed1i b\u1ecb gi\u1edbi h\u1ea1n b\u1edfi d\u1eef li\u1ec7u hi\u1ec7n c\u00f3",
+          detail: "Missing closing cash at contract level.",
+          recommended_action: "Request closing cash evidence.",
+        },
+        {
+          code: "AL-003",
+          title: "Source alert AL-003: Contract execution risk",
+          detail: "Contract execution risk.",
+          recommended_action: "C\u1ea3nh b\u00e1o ngu\u1ed3n AL-003: Contract execution risk. L\u1eadp k\u1ebf ho\u1ea1ch n\u0103ng l\u1ef1c tri\u1ec3n khai theo t\u1eebng khu v\u1ef1c.",
+        },
+      ],
+      selected_negotiation_strategies: [
+        {
+          strategy_id: "STR-1",
+          strategy_type: "INCREASE_CUSTOMER_PRICE",
+          title: "T\u0103ng revenue",
+          founder_instruction: "T\u0103ng revenue.",
+          required_adjustment_value: 172_222_223,
+          resulting_revenue: 3_272_222_223,
+          target_margin: 0.28,
+          currency: "VND",
+        },
+      ],
+      finance_metrics: [
+        { metric: "ORDER_REVENUE_TOTAL", value: 3_100_000_000, unit: "VND" },
+        { metric: "CONTRACT_VALUE", value: 4_200_000_000, unit: "VND" },
+        { metric: "ORDER_COVERAGE_RATIO", value: 0.738095238, unit: "RATIO" },
+        { metric: "UNCOVERED_CONTRACT_VALUE", value: 1_100_000_000, unit: "VND" },
+        { metric: "WORST_RESERVE_GAP_MONTH", value: "2026-09", unit: "TEXT" },
+        { metric: "WORST_RESERVE_GAP", value: 500_000_000, unit: "VND" },
+      ],
+      calculations: [
+        {
+          code: "MINIMUM_REVENUE_INCREASE_FOR_TARGET_MARGIN",
+          result_value: 172_222_223,
+          result_unit: "VND",
+        },
+      ],
+    };
+    dashboardHookMock.mockReturnValue(
+      hookValue(currentDashboard, [], [
+        card,
+        {
+          artifact_id: "ART-AI-ANALYSIS",
+          artifact_type: "AI_DECISION_ANALYSIS",
+          evaluation_case_id: "CASE-1",
+          producer: "OPENAI_DECISION_ANALYSIS",
+          version: 2,
+          status: "CREATED",
+          validation_status: "VALID",
+          payload: {
+            analysis_id: "AIDA-1",
+            source: "OPENAI",
+          },
+        },
+      ]),
+    );
+
+    render(<App />);
+
+    const dialog = await screen.findByRole("dialog", {
+      name: /X\u00e1c nh\u1eadn \u0111\u00e3 g\u1eedi \u0111i\u1ec1u ki\u1ec7n \u0111\u00e0m ph\u00e1n/,
+    });
+    expect(within(dialog).getByText(/t\u0103ng revenue.*172\.222\.223.*3\.272\.222\.223/)).toBeInTheDocument();
+    expect(within(dialog).getByText(/T\u1ed5ng gi\u00e1 tr\u1ecb \u0111\u01a1n h\u00e0ng li\u00ean k\u1ebft.*3\.100\.000\.000/)).toBeInTheDocument();
+    expect(within(dialog).getByText(/4\.200\.000\.000.*73,8%/)).toBeInTheDocument();
+    expect(within(dialog).getByText(/closing cash ri\u00eang cho t\u1eebng h\u1ee3p \u0111\u1ed3ng/)).toBeInTheDocument();
+    expect(within(dialog).getByText("Đề xuất của OPC về năng lực triển khai")).toBeInTheDocument();
+    expect(within(dialog).queryByText(/AL-003: Contract execution risk/)).not.toBeInTheDocument();
+  });
+
   it("keeps a stale final-decision request non-actionable", async () => {
     const currentDashboard = finalDecisionDashboard();
     const decideApproval = vi.fn();
@@ -366,7 +474,7 @@ describe("Founder interaction popups", () => {
 
     expect(screen.queryByRole("dialog", { name: /Decision Card/ })).not.toBeInTheDocument();
     const lockedControls = screen.getAllByRole("button", {
-      name: /Decision Card/,
+      name: /\u0110ang ho\u00e0n thi\u1ec7n Decision Card|kh\u00f4ng kh\u1edbp/,
     });
     expect(lockedControls.length).toBeGreaterThan(0);
     for (const control of lockedControls) {
@@ -389,7 +497,9 @@ describe("Founder interaction popups", () => {
     render(<App />);
 
     expect(screen.queryByRole("dialog", { name: /Decision Card/ })).not.toBeInTheDocument();
-    for (const control of screen.getAllByRole("button", { name: /Decision Card/ })) {
+    for (const control of screen.getAllByRole("button", {
+      name: /\u0110ang ho\u00e0n thi\u1ec7n Decision Card|kh\u00f4ng kh\u1edbp/,
+    })) {
       expect(control).toBeDisabled();
     }
   });

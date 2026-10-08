@@ -1,7 +1,7 @@
 import type { ReactElement } from "react";
 
 import { businessValueLabel } from "../../shared/businessLabels";
-import { translateText } from "../../shared/translate";
+import { founderScenarioText } from "./founderScenarioText";
 import type { DecisionDashboardData } from "./types";
 
 export interface DecisionDashboardProps {
@@ -33,8 +33,7 @@ export function DecisionDashboard({ data }: DecisionDashboardProps): ReactElemen
       {data.decision_card.available ? (
         <article>
           <h3>{data.decision_card.recommendation_label_vi}</h3>
-          {data.decision_card.executive_summary && <p>{translateText(data.decision_card.executive_summary)}</p>}
-          {data.decision_card.confidence && <p>Độ tin cậy: {businessValueLabel(data.decision_card.confidence)}</p>}
+          {data.decision_card.executive_summary && <p>{founderScenarioText(data.decision_card.executive_summary)}</p>}
           {data.residual_risk_level && <p>Rủi ro còn lại: {businessValueLabel(data.residual_risk_level)}</p>}
         </article>
       ) : <p>Decision Card của lượt chạy hiện tại chưa sẵn sàng.</p>}

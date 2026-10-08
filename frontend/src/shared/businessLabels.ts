@@ -1,6 +1,6 @@
-const BUSINESS_VALUE_LABELS: Readonly<Record<string, string>> = {
-  ACCEPT: "ACCEPT · Chấp nhận",
-  NEGOTIATE_CONDITIONS_TO_ACCEPT: "ACCEPT_WITH_CONDITIONS · Chấp nhận có điều kiện",
+﻿const BUSINESS_VALUE_LABELS: Readonly<Record<string, string>> = {
+  ACCEPT: "ACCEPT Â· Cháº¥p nháº­n",
+  NEGOTIATE_CONDITIONS_TO_ACCEPT: "Chấp nhận có điều kiện",
   DO_NOT_ACCEPT: "REJECT · Từ chối",
   HIGH: "Cao",
   MEDIUM: "Trung bình",
@@ -68,3 +68,4 @@ export function businessValueLabel(
   }
   return fallback;
 }
+

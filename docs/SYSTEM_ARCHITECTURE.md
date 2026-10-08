@@ -11,9 +11,7 @@ Nguyên tắc quan trọng:
 - Workflow Orchestrator sở hữu thứ tự thực thi, dependency, persistence, pause/resume và
   invalidation.
 - Governance kiểm soát evidence, approval và protected action.
-- OpenAI chỉ được compose nội dung và chọn trong tập candidate deterministic đã được allowlist;
-  không sở hữu phép tính, không tạo business fact/condition mới, không phê duyệt và không thực hiện
-  protected action.
+- OpenAI chỉ diễn đạt dữ liệu đã được xác minh; không sở hữu phép tính hoặc quyết định nghiệp vụ.
 - TeamPack gốc luôn là nguồn read-only, không bị ghi ngược.
 
 ## 2. Architecture pattern
@@ -46,7 +44,7 @@ Business Components       Governance Components
   ├── Planner Skill         ├── Approval Policy Registry
   ├── Finance Agent         ├── Approval Gate Coordinator
   ├── Operations Skill      ├── Evidence Validator
-  ├── Risk Agent            └── Audit Logger
+  ├── Risk Agent            └── Audit Loggeri
   ├── Decision Agent
   ├── Banking Skill
   └── Document Skill
@@ -270,8 +268,6 @@ TeamPack snapshot
   → locate explicitly related orders
   → locate invoices through orders
   → locate only explicit service/reference relationships
-  → classify typed contract requirements from exact configured source phrases
-  → resolve an exact Credit Profile amount only through company + request type + contract-ID rules
   → assess readiness
   → EvaluationCase
   → Initial RunPlan
@@ -281,7 +277,6 @@ Output:
 
 - `PlannerResult`
 - `EvaluationCase`
-- `EvaluationCase.contract_requirements` với type, certainty, Credit Profile amount semantics và evidence
 - `MissingDataRequest` cho blocking base-data gaps
 - Warnings cho non-blocking evidence gaps
 
@@ -294,12 +289,6 @@ Planner không làm:
 - Document preparation.
 - OpenAI narrative.
 - Decision Card.
-
-Với `PERFORMANCE_BOND + REQUIRED`, Planner yêu cầu đúng một Credit Profile liên kết và một positive
-integral `requested_amount`. Thiếu hoặc mơ hồ là blocking ngay tại Planner; hệ thống không chờ
-Founder nhập số tiền ở Decision/Banking. Amount này mang semantics
-`CREDIT_PROFILE_REQUESTED_AMOUNT`: số tiền được yêu cầu/tham chiếu, chưa phải supported/approved
-amount của ngân hàng.
 
 ### 6.2 Finance Agent
 
@@ -376,11 +365,10 @@ Risk Agent chỉ phát signal; nó không tạo `ApprovalRequest`.
 
 Final Risk Check:
 
-- Đọc đúng một validated `INTERNAL_DECISION_PACKAGE`, không đọc lại TeamPack trực tiếp.
-- Carry forward Initial Risk findings và evidence limitations; không tự suy diễn mitigation.
-- Phân biệt checkpoint dormant với approval gate thật sự đang unresolved.
-- Xác định residual risk, major-exception status và required controls theo rule deterministic.
-- Trả một artifact draft; Workflow validate và persist trước `FINAL_RISK_READY`.
+- Đọc final evidence.
+- Đọc approval status.
+- Kiểm tra unresolved evidence và gates.
+- Xác định residual risk và major exceptions.
 
 Output mục tiêu:
 
@@ -397,45 +385,21 @@ Decision Agent có bốn phase:
 
 1. Route Planning.
 2. Internal Decision Package.
-3. Deterministic scenario assembly plus guarded AI analysis.
-4. Decision Card composition and deterministic post-decision routing.
+3. Deterministic Decision Policy.
+4. Decision Card composition.
 
-Các phase này đã được implement. Phase 2 chỉ hội tụ các artifact đã validate thành một evidence
+Phase 1 và Phase 2 đã được implement. Phase 2 chỉ hội tụ các artifact đã validate thành một evidence
 dossier deterministic theo đúng route đã đi qua. Nó không tạo recommendation, không chọn Banking
-option, không request approval và không thực hiện external action. Sau Final Risk, Phase 3 tạo
-`DecisionScenarioPacket` deterministic từ exact Internal Decision Package và Final Risk artifact.
-OpenAI chỉ compose một structured proposal trong allowlist; deterministic guard và Evidence
-Validator kiểm tra trước khi persist `AI_DECISION_ANALYSIS`. Phase 4 rebuild packet, replay guard,
-persist `DECISION_CARD`, rồi Workflow mới kích hoạt final Founder gate cho Card approvable.
+option, không request approval và không thực hiện external action. Phase 3 và Phase 4 vẫn chưa
+implement.
 
-Deterministic policy xác định tập recommendation được phép:
+Recommendation chỉ do deterministic policy tạo:
 
 - `ACCEPT`
 - `NEGOTIATE_CONDITIONS_TO_ACCEPT`
 - `DO_NOT_ACCEPT`
-- `NOT_EVALUABLE`
 
-OpenAI có thể đề xuất một recommendation trong đúng tập được phép nhưng không được mở rộng tập,
-tính toán lại facts, tạo condition/evidence mới hoặc phê duyệt kết quả. Model-selected candidate
-codes được hydrate về exact deterministic snapshots và mandatory conditions được policy tự gắn.
-Chỉ composition có `source = OPENAI` mới được tạo ba recommendation nghiệp vụ có thể phê duyệt:
-`ACCEPT`, `NEGOTIATE_CONDITIONS_TO_ACCEPT` (UI: `ACCEPT_WITH_CONDITIONS`) và `DO_NOT_ACCEPT`
-(UI: `REJECT`). Deterministic fallback luôn trả `NOT_EVALUABLE`; nó không được giả làm đề xuất AI.
-
-Khi current linked-order gross margin thấp hơn OPC target và đủ các operand có evidence, Decision
-tạo deterministic negotiation-strategy candidates. Pure domain logic tính amount và rounding;
-OpenAI chỉ được chọn đúng một supplied `strategy_id` cho condition
-`MEET_OPC_GROSS_MARGIN_TARGET`. Sau lựa chọn, canonical guard bỏ phần diễn đạt margin/status tự do
-của model và render hướng đàm phán cho Founder trực tiếp từ exact strategy snapshot. Guard từ chối
-candidate bị sửa số liệu, candidate tự tạo hoặc lựa chọn đồng thời nhiều phương án; model không thể
-đưa target-achieved claim vào Decision Card trước customer agreement và Finance reassessment.
-
-Nếu thiếu hoặc sai role/unit/range của current linked-order margin hay OPC target, Decision tạo
-`OBTAIN_GROSS_MARGIN_BENCHMARKS` ở trạng thái `NOT_EVALUABLE`. Nếu hai benchmark hợp lệ nhưng thiếu
-revenue/cost có thể quy trực tiếp cho linked orders để tính strategy, Decision tạo
-`OBTAIN_MARGIN_STRATEGY_INPUTS`, cũng `NOT_EVALUABLE`. Hai evidence-repair path này loại cả `ACCEPT`
-và `NEGOTIATE_CONDITIONS_TO_ACCEPT` khỏi eligibility set; OpenAI không được đề xuất điều kiện thương
-lượng định lượng cho tới khi Finance chạy lại trên bằng chứng đã sửa.
+OpenAI không được thay đổi recommendation.
 
 Banking Integration Skill và Document Skill là hai capability chuyên môn dưới sự điều phối nghiệp
 vụ của Decision Agent. Decision quyết định khi nào cần capability, tạo typed request và đọc artifact
@@ -465,19 +429,19 @@ Precheck-readiness slice hiện tại bổ sung:
 - `BANKING_PRECHECK_READINESS`, luôn được tạo từ matrix đã validate và luôn giữ
   `precheck_executed: false`;
 - `DECISION_POST_BANKING_REVIEW`, dùng readiness deterministic để phân loại route;
-- exact amount binding từ `BANKING_DISCOVERY_REQUEST` về Planner requirement và raw Credit Profile
-  evidence.
+- durable `MissingDataRequest` khi amount explicit chưa có; và
+- `BANKING_INPUT_SUPPLEMENT` bất biến với `USER_INPUT` evidence để auto-resume đúng Master run.
 
-Normal required performance-bond request mang positive `requested_amount` và VND ngay từ handoff,
-nên matrix đầu tiên đánh giá deterministic `MINIMUM_AMOUNT`. Mapping field là server-owned:
-`contract_id -> EVALUATION_CASE`, `amount -> BANKING_DISCOVERY_REQUEST`, và
-`company_profile -> 02_OPC_PROFILE`. Credit Profile chỉ cung cấp Planner-bound requested amount;
-không được dùng thay company profile. Request/requirement/credit/evidence không khớp thì fail safe.
+Request ban đầu và matrix version 1 giữ `requested_amount: null`. Sau supplement VND hợp lệ,
+Workflow tạo matrix/result/advice version 2 thay vì sửa artifact cũ. Mapping field là server-owned:
+`contract_id -> EVALUATION_CASE`, `amount -> BANKING_INPUT_SUPPLEMENT`, và
+`company_profile -> 02_OPC_PROFILE`. Credit profile không được dùng thay company profile và không
+là blocker của precheck readiness nếu không có explicit relationship.
 
 TeamPack API catalog chỉ là mock metadata. Discovery/readiness không chạy endpoint và không tự
-liên kết Credit Profile từ similar name hoặc mô tả tự do. Sau readiness, proposal artifact chỉ giữ
-reference manifest; Governance tạo proposal-scoped policy rồi mới quyết định có cần
-`ApprovalRequest` hay có thể persist `AUTHORIZED_WITHOUT_HUMAN`.
+liên kết credit profile bằng mô tả tự nhiên. Sau readiness, proposal artifact chỉ giữ reference
+manifest; Governance tạo proposal-scoped policy rồi mới quyết định có cần `ApprovalRequest` hay có
+thể persist `AUTHORIZED_WITHOUT_HUMAN`.
 
 Quy ước monetary của OPC là `VND`. Khi sheet không có cột currency riêng, ingestion/domain phải
 chuẩn hóa currency thành VND thay vì tạo missing-currency gap.
@@ -546,21 +510,18 @@ coverage và multi-option selection được hoãn; Workflow không tự chọn 
 Document Skill không tự gửi payload. Khi release package ready, Workflow persist package làm input
 cho phase Decision tiếp theo; nó không tạo protected action hoặc Founder approval. Checkpoint
 `SEND_DOCUMENT_TO_EXTERNAL_PARTNER` vẫn registered nhưng dormant và tách biệt hoàn toàn với
-approval `SUBMIT_BANKING_PRECHECK`. Downstream Decision chỉ kích hoạt checkpoint này sau khi exact
-`ACCEPT` Card được Founder approve và `EXTERNAL_DOCUMENT_SUBMISSION_PROPOSAL` đã qua Evidence
-Validator. External connector vẫn chưa được implement; workflow dừng ở
-`READY_FOR_EXTERNAL_SUBMISSION` mà không gửi hay tạo receipt.
+approval `SUBMIT_BANKING_PRECHECK`. Một Decision recommendation/proposal có evidence đầy đủ trong
+tương lai mới được kích hoạt checkpoint này; phase đó và external connector chưa được implement.
 
 ## 7. Governance components
 
 ### 7.1 Approval Policy Registry
 
-Registry hiện hỗ trợ bốn protected actions:
+Registry hiện hỗ trợ ba protected actions:
 
 - `SEND_DOCUMENT_TO_EXTERNAL_PARTNER`;
 - `COMMIT_LARGE_FINANCIAL_DECISION`; và
-- `SUBMIT_BANKING_PRECHECK`; và
-- `CONFIRM_FINAL_CONTRACT_DECISION`.
+- `SUBMIT_BANKING_PRECHECK`.
 
 Initial Risk đăng ký các typed future checkpoints từ `13_RISK_RULES`, gồm
 `document_sent_to_partner` và `requested_amount`. Riêng Banking precheck, policy chỉ được tạo sau
@@ -568,13 +529,9 @@ khi exact proposal đã persist. Registry đọc:
 
 - `12_API_CATALOG.extension_rule` của từng API trong proposal;
 - các field `rule_id`, `applies_to` và `requires_human_approval` từ record
-`22_API_HANDLING_RULES` được map tường minh; và
+  `22_API_HANDLING_RULES` được map tường minh; và
 - unique Risk `requested_amount` checkpoint, hiện là `RR-005`, đồng thời giữ nguyên rule ID,
   operator, threshold và evidence.
-
-Riêng final Decision, server-owned Decision governance policy yêu cầu role `FOUNDER` và Governance
-thêm một checkpoint `CONFIRM_FINAL_CONTRACT_DECISION` bound vào exact `DECISION_CARD` artifact ID,
-version và input hash. Checkpoint này khác với checkpoint gửi Document.
 
 Mỗi API có một `ApprovalPolicyCoverage`. Registry chuyển amount rule thành checkpoint scoped cho
 `SUBMIT_BANKING_PRECHECK` và hợp nhất các checkpoint trong cùng proposal-scoped
@@ -647,12 +604,7 @@ Trạng thái implementation hiện tại:
   status hợp lệ; chưa chạy một validation checkpoint độc lập và chưa persist ValidationReport riêng.
 - OpenAI Finance output được validate khi Finance artifact đi qua persistence pipeline, nhưng chưa
   có audit checkpoint riêng cho Structured Output.
-- Decision dùng transport/content guard và deterministic domain guard trước khi tạo
-  `AI_DECISION_ANALYSIS`; Evidence Validator sau đó kiểm tra exact identity/evidence/boundary trước
-  persistence. `DECISION_CARD`, `POST_DECISION_UPDATE` và
-  `EXTERNAL_DOCUMENT_SUBMISSION_PROPOSAL` cũng có artifact-specific validation trước persistence.
-- Data classification/masking và Decision Card validation đã được implement cho vertical slice;
-  authentication/RBAC, real connector và audit hardening đầy đủ vẫn chưa có.
+- Data classification, masking và Decision Card finalization chưa được implement đầy đủ.
 
 ### 7.4 Audit Logger
 
@@ -753,7 +705,7 @@ Terminal success state: `COMPLETED`.
 ```text
 DATASET_INGESTION
   → PLANNER_INTAKE
-      ├── thiếu base data hoặc required bond amount/lineage → WAITING_FOR_INPUT
+      ├── thiếu base data → WAITING_FOR_INPUT
       └── đủ dữ liệu
             ↓
 INITIAL_ASSESSMENT
@@ -771,6 +723,11 @@ REGISTER_APPROVAL_REQUIREMENTS
             → BANKING_OPTION_MATRIX
             → BANKING_PRECHECK_READINESS
             → DECISION_POST_BANKING_REVIEW
+                ├── thiếu amount explicit
+                │     → persist MissingDataRequest
+                │     → WAITING_FOR_INPUT
+                │     → BANKING_INPUT_SUPPLEMENT
+                │     → auto-resume và tạo matrix/readiness version mới
                 ├── không có precheck path/viable option → typed non-ready outcome
                 │     → INTERNAL_DECISION_PACKAGE_ASSEMBLY
                 └── có option ready → BANKING_PRECHECK_READY
@@ -790,7 +747,7 @@ REGISTER_APPROVAL_REQUIREMENTS
                       → DECISION_POST_PRECHECK_REVIEW
                           ├── conditional full coverage → DECISION_DOCUMENT_HANDOFF
                           │     → exactly one request → DOCUMENT_PREPARATION
-                          │     → missing performance-bond request form → WAITING_FOR_INPUT
+                          │     → missing signed contract → WAITING_FOR_INPUT
                           │     → DOCUMENT_EVIDENCE_SUPPLEMENT → rebuild package
                           │     → DOCUMENT_RELEASE_PACKAGE_READY
                           │     → INTERNAL_DECISION_PACKAGE_ASSEMBLY
@@ -802,32 +759,13 @@ REGISTER_APPROVAL_REQUIREMENTS
                                 → BANKING_PRECHECK_RETRY_REQUIRED / WAITING_FOR_DEPENDENCIES
                       → eligible nonblocked branch → INTERNAL_DECISION_PACKAGE_READY
   → FINAL_RISK_CHECK
-  → FINAL_RISK_ASSESSMENT
-  → FINAL_RISK_READY                         [Risk boundary]
-  → DECISION_CARD_COMPOSITION
-      → deterministic DecisionScenarioPacket
-          → precompute bounded gross-margin negotiation strategies when evidenced
-      → bounded OPENAI_DECISION_COMPOSER selects an exact allowlisted strategy, or safe fallback
-      → deterministic guard
-      → EVIDENCE_VALIDATOR
-      → AI_DECISION_ANALYSIS
-      → rebuild packet and replay guard
-      → DECISION_CARD
-      → EVIDENCE_VALIDATOR
-  → DECISION_CARD_READY
-      ├── NOT_EVALUABLE → complete without approval
-      └── approvable → CHECK CONFIRM_FINAL_CONTRACT_DECISION
-          ├── reject → FINAL_DECISION_REJECTED
-          └── approve → POST_DECISION_UPDATE
-              ├── negotiate → NEGOTIATION_IN_PROGRESS
-              ├── do not accept → FINAL_DECISION_NOT_ACCEPTED
-              └── accept
-                  ├── no package → FINAL_DECISION_ACCEPTED
-                  └── exact package → EXTERNAL_DOCUMENT_SUBMISSION_PROPOSAL
-                      → separate CHECK SEND_DOCUMENT_TO_EXTERNAL_PARTNER
-                      ├── reject → EXTERNAL_DOCUMENT_SUBMISSION_DECLINED
-                      └── approve → READY_FOR_EXTERNAL_SUBMISSION
-                          [no adapter, send, or receipt]
+      └── major exception → CHECK MAJOR_EXCEPTION GATE
+  → DECISION_POLICY
+  → OPENAI_DECISION_COMPOSER
+  → EVIDENCE_VALIDATOR
+  → DECISION_READY
+  → CHECK FINAL_DECISION GATE
+  → POST_DECISION_UPDATE
 ```
 
 Approval matrix:
@@ -835,25 +773,20 @@ Approval matrix:
 | Protected action | Approval type | Nguồn requirement |
 |---|---|---|
 | `SUBMIT_BANKING_PRECHECK` | `BANKING_PRECHECK_API_POLICY` plus applicable amount approval | Proposal-scoped TeamPack sheets 12/22 + applicable Risk amount rule |
-| `CONFIRM_FINAL_CONTRACT_DECISION` | `FINAL_CONTRACT_DECISION_CONFIRMATION` (`FOUNDER`) | Server-owned Decision governance policy plus checkpoint bound to the exact validated Decision Card ID/version/input hash |
-| `SEND_DOCUMENT_TO_EXTERNAL_PARTNER` | `HUMAN_APPROVAL` | Exact validated `EXTERNAL_DOCUMENT_SUBMISSION_PROPOSAL` plus the separately registered document-release checkpoint |
+| `SEND_DOCUMENT_TO_EXTERNAL_PARTNER` | `HUMAN_APPROVAL` | Future exact Decision recommendation/proposal bound to a validated Document release package + registered document-release checkpoint |
 | `COMMIT_LARGE_FINANCIAL_DECISION` | `HUMAN_APPROVAL` | Applicable evidence-backed financial checkpoint |
 
 Implementation hiện tại chạy Decision Phase 1 Initial Route, tạo
 `BANKING_DISCOVERY_REQUEST` khi route yêu cầu Banking, chạy Banking internal discovery/readiness và
-Decision post-Banking review. Required performance-bond amount được Planner resolve từ exact Credit
-Profile và carry qua Decision request; nếu thiếu/mơ hồ thì pause ở Planner chứ không yêu cầu Founder
-nhập amount. Ready route tạo governed submission proposal và đánh giá proposal-scoped policy.
-Current `API-002` yêu cầu Founder nên pause tại
+Decision post-Banking review. Khi amount chưa có, Master Workflow pause tại
+`DECISION_POST_BANKING_REVIEW`; supplement hợp lệ tự resume, tạo governed submission proposal và
+đánh giá proposal-scoped policy. Current `API-002` yêu cầu Founder nên pause tại
 `WAITING_FOR_APPROVAL`; policy no-human hợp lệ có thể tạo machine authorization khi không có trigger
 khác. Valid authorization chạy precheck mô phỏng deterministic; Founder reject đóng Banking route
 tại `BANKING_PRECHECK_DECLINED`. Current `API-002` mock conditional result có thể tiếp tục qua
 Decision-to-Document handoff, input pause, masking, package draft và internal Decision handoff.
 External/real-bank precheck, actual bank response, option selection/ranking, partial coverage,
-actual document send vẫn là kiến trúc mục tiêu. Post-Final-Risk Decision analysis/Card, final
-Founder approval, deterministic routing, external submission proposal và no-send readiness boundary
-đã được implement; xem
-[Decision, Final Approval, and External-Release Readiness](DECISION_FINAL_APPROVAL_AND_RELEASE.md).
+actual document send và các Decision phase sau vẫn là kiến trúc mục tiêu.
 
 ## 10. Domain artifacts mục tiêu
 
@@ -1021,16 +954,17 @@ GET  /api/cases/{case_id}/missing-data
 POST /api/cases/{case_id}/missing-data/{request_id}/resolve
 ```
 
-Prototype hiện tại dùng route chuyên biệt cho post-precheck evidence:
+Prototype hiện tại dùng route chuyên biệt, typed và tự resume cho amount Banking:
 
 ```text
+POST /api/cases/{evaluation_case_id}/banking/input-supplements
 POST /api/cases/{evaluation_case_id}/banking/precheck-evidence-supplements
 ```
 
-Client gửi `workflow_run_id`, exact `missing_request_id`, `evidence_reference_id` và
-`evidence_note`. Server tự resolve case/dataset/contract/Banking request và gán principal
-`AUTHORIZED_STAFF`; client không được truyền `provided_by` hoặc các authoritative identity khác.
-Required performance-bond amount không được nhập qua endpoint này.
+Client chỉ gửi `workflow_run_id`, exact `missing_request_id`, positive-integer VND amount,
+và `evidence_note`; với post-precheck evidence thì gửi thêm exact `evidence_reference_id`. Server tự
+resolve case/dataset/contract/Banking request và gán principal `AUTHORIZED_STAFF`; client không được
+truyền `provided_by` hoặc các authoritative identity khác.
 
 Events và artifacts:
 
@@ -1133,22 +1067,22 @@ tests/
 | FinanceFacts và FinanceAssessment | Đã implement |
 | OpenAI Finance Composer | Đã implement, có fallback |
 | Finance evidence limitations | Đã implement |
-| Evidence validation trước persistence | Đã implement cho Planner/Finance/Operations/Risk/checkpoint/Decision/Banking, Document, Internal Decision Package và Final Risk artifacts |
-| Artifact versioning và idempotency | Đã implement reuse/versioning; Planner-bound Banking amount participates in exact upstream identity; generic STALE chưa implement |
+| Evidence validation trước persistence | Đã implement cho Planner/Finance/Operations/Risk/checkpoint/Decision/Banking, Document và Internal Decision Package artifacts |
+| Artifact versioning và idempotency | Đã implement reuse/versioning và narrow supplement-driven Banking invalidation; generic STALE chưa implement |
 | Swagger Planner/Finance/Operations/Risk/Decision/Governance/Workflow | Đã implement |
 | API contract mục tiêu theo case/dataset | Chưa implement; hiện dùng prototype routes |
 | Persistent SQLite repositories | Đã implement partial cho artifacts, Master/legacy component state, Risk, approvals và events |
 | Unified Master + Approval state machine | Đã implement; cùng CaseWorkflowRun và APPROVAL_GATE node |
-| Durable Master Workflow | Đã implement Banking/Document convergence, Final Risk, guarded Decision Card, final Founder gate, post-decision routing, separate external proposal gate và `READY_FOR_EXTERNAL_SUBMISSION`; real-bank execution/actual send chưa có |
+| Durable Master Workflow | Nhánh Banking/Document đã implement amount pause, governed simulated precheck, conditional handoff, signed-contract pause/resume, masking, release candidate và Internal Decision Package convergence; real-bank execution/actual send chưa có |
 | Parallel Initial Assessment | Finance và Operations chạy song song; Risk pre-scan/finalize tự động |
 | Operations Skill | Đã implement |
-| Risk Agent | Đã implement Initial Risk Scan và deterministic Final Risk Check; major-exception gate execution riêng chưa implement |
-| Approval Policy Registry / Gate | Đã implement proposal-scoped Banking precheck, exact Founder final-decision checkpoint và separate external-Document proposal approval; full action matrix cho protected actions tương lai chưa có |
+| Risk Agent | Đã implement Initial Risk Scan; Final Risk Check chưa implement |
+| Approval Policy Registry / Gate | Đã implement proposal-scoped Banking precheck và separate Document external-release action; full action matrix cho các protected action tương lai chưa có |
 | Approval expiration khi subject artifact đổi | Đã implement tại gate/decision revalidation |
 | Downstream invalidation / DataPatch resume | Đã có narrow Banking supplement invalidation; generic transitive STALE/DataPatch chưa implement |
-| Decision Agent | Đã implement Initial Route, Banking/Document handoffs, Internal Decision Package, deterministic scenario, precomputed gross-margin negotiation strategies, guarded OpenAI strategy selection, Decision Card và post-decision routing |
+| Decision Agent | Đã implement Initial Route, Banking handoff/readiness/post-precheck review, conditional Decision-to-Document handoff và deterministic Internal Decision Package assembly; Decision Policy/Card chưa có |
 | Banking Integration Skill | Đã implement internal discovery, readiness, submission proposal, deterministic simulated precheck result và evidence-supplement handoff; real-bank precheck/retry chưa có |
-| Document Skill | Đã implement internal checklist/package, blocking signed-contract intake, deterministic masking và release candidate; Decision có thể reference exact package nhưng actual send chưa có |
+| Document Skill | Đã implement internal checklist/package, blocking signed-contract intake, deterministic masking và release candidate; actual send chưa có |
 | Append-only Audit Logger | Chưa implement |
 
 Prototype hiện tại hoàn thành vertical slice:
@@ -1169,6 +1103,8 @@ Dataset Ingestion
   → BANKING_INTERNAL_OPTIONS_READY
   → BANKING_PRECHECK_READINESS
   → DECISION_POST_BANKING_REVIEW
+      → thiếu amount: WAITING_FOR_INPUT
+      → supplement VND: auto-resume
       → có option ready: BANKING_PRECHECK_READY
           → BANKING_PRECHECK_SUBMISSION_PROPOSAL
           → proposal-scoped APPROVAL_CHECKPOINTS
@@ -1184,7 +1120,7 @@ Dataset Ingestion
               → conditional full coverage: DECISION_DOCUMENT_HANDOFF
                   → exactly one DOCUMENT_PREPARATION_REQUEST
                   → DOCUMENT_CHECKLIST + DOCUMENT_PACKAGE_DRAFT
-                  → thiếu PERFORMANCE_BOND_REQUEST_FORM: WAITING_FOR_INPUT
+                  → thiếu SIGNED_CONTRACT: WAITING_FOR_INPUT
                   → DOCUMENT_EVIDENCE_SUPPLEMENT: auto-resume
                   → DOCUMENT_RELEASE_PACKAGE_READY
                   → INTERNAL_DECISION_PACKAGE_ASSEMBLY
@@ -1197,9 +1133,6 @@ Dataset Ingestion
       → không có option ready: typed non-ready outcome
           → INTERNAL_DECISION_PACKAGE_ASSEMBLY
   → INTERNAL_DECISION_PACKAGE_READY
-  → FINAL_RISK_CHECK
-  → FINAL_RISK_ASSESSMENT
-  → FINAL_RISK_READY
 ```
 
 Việc tiếp tục build phải giữ nguyên responsibility boundaries trong tài liệu này.
@@ -1227,14 +1160,11 @@ The prototype now implements the first case-scoped Approval Control Plane slice:
   transaction-to-case relationship.
 
 This slice now executes internal Document preparation through `DOCUMENT_RELEASE_PACKAGE_READY` and
-then deterministic `INTERNAL_DECISION_PACKAGE` assembly. The current workflow subsequently runs
-Final Risk, guarded Decision analysis/Card, the exact final Founder gate, post-decision routing,
-and—only for approved `ACCEPT` with a package—the separate external-release proposal gate. It does
-not execute a real external Banking precheck or protected Document adapter. The authorized Phase B1
-path invokes only the server-configured deterministic simulation; its output is
-`SIMULATED_NON_BINDING`. Package readiness alone creates no document authorization, and even the
-separately authorized proposal stops at `READY_FOR_EXTERNAL_SUBMISSION` without sending.
-Authentication/RBAC and the full
+then deterministic `INTERNAL_DECISION_PACKAGE` assembly. It does not execute the future Decision
+recommendation/proposal, Document release gate, real external Banking precheck, or protected
+external adapter. The authorized Phase B1 path invokes only the server-configured deterministic
+simulation; its output is `SIMULATED_NON_BINDING`. Readiness of either package creates no document
+authorization and never sends. Authentication/RBAC and the full
 append-only Audit Logger remain future work. A protected-action request that supplies
 the Master `workflow_run_id` now persists pause/resume/block on the same `CaseWorkflowRun` and
 `APPROVAL_GATE` node. Approval subject revalidation expires a pending request after supersession.
@@ -1248,12 +1178,11 @@ artifact, Risk, approval, and event repositories. One `POST /api/cases/run` requ
 Intake, registers the Risk pre-scan checkpoints, runs Finance and Operations concurrently, resumes
 Risk finalization deterministically, runs Decision Initial Route, conditionally creates an internal
 `BANKING_DISCOVERY_REQUEST`, runs Banking discovery/readiness, and runs Decision post-Banking
-review. Planner resolves a required performance-bond amount from one exact linked Credit Profile;
-missing, ambiguous, or invalid amount evidence pauses at Planner intake. Decision carries the
-validated requested/reference amount and evidence into Banking, so a ready route can persist a
-submission proposal and proposal-scoped Governance policy without a human amount-input cycle. The
-current TeamPack `API-002` policy requires Founder approval; an explicit no-human policy could
-instead create a machine authorization when no amount checkpoint triggers. Authorization resumes deterministic
+review. A Banking route with missing amount pauses at `DECISION_POST_BANKING_REVIEW`. The validated
+`BANKING_INPUT_SUPPLEMENT` resolves the durable request and auto-resumes the same run; a ready route
+persists a submission proposal and proposal-scoped Governance policy. The current TeamPack
+`API-002` policy requires Founder approval; an explicit no-human policy could instead create a
+machine authorization when no amount checkpoint triggers. Authorization resumes deterministic
 simulated precheck execution. The workflow
 validates and persists `BANKING_PRECHECK_RESULT_SET`, records the
 `BANKING_PRECHECK_RESULTS_READY` milestone, then runs deterministic
@@ -1267,9 +1196,7 @@ explicit follow-up evidence field pauses them.
 Authorized staff can persist a typed evidence reference without altering the old result; Workflow
 then stops at `BANKING_PRECHECK_RETRY_REQUIRED` until a future fresh governed retry exists. Direct
 routes, no-viable/no-precheck paths, rejected precheck proposals, non-actionable precheck results,
-and ready conditional Document paths converge on `INTERNAL_DECISION_PACKAGE_READY`. Workflow then
-runs deterministic Final Risk Check, validates and persists one `FINAL_RISK_ASSESSMENT`, and ends
-the current vertical slice at `FINAL_RISK_READY`.
+and ready conditional Document paths converge on `INTERNAL_DECISION_PACKAGE_READY`.
 
 The in-process runner recovers matching `PENDING` and interrupted `RUNNING` records on startup.
 Runtime dependency waits are persisted on Master Workflow nodes. The current path exposes genuine
@@ -1278,13 +1205,11 @@ proposal to `SUBMIT_BANKING_PRECHECK`; Governance evaluates the proposal-specifi
 and pauses only when human approval is required. It does not itself execute the action. After a
 valid human or machine authorization, the worker issues an ephemeral exact-subject permit and
 invokes only `SimulatedBankingPrecheckAdapter`. The worker executes Decision routing,
-internal handoff, Banking readiness, Planner-bound amount validation, pre-execution post-Banking
+internal handoff, Banking readiness, supplement-driven versioning, pre-execution post-Banking
 review, Phase B1 simulated result persistence, and post-precheck classification; it still executes
-no real bank adapter, selection/ranking, partial-coverage logic, external document send, or Decision
-policy/Card. Its Document branch performs only internal preparation; Internal Decision Package
-assembly records the exact validated evidence without adding a recommendation. Final Risk carries
-the Initial Risk findings and limitations forward, records required controls, and likewise creates
-no recommendation, approval request, action command, or external send.
+no real bank adapter, selection/ranking, partial-coverage logic, external document send, or final
+Decision policy/Card. Its Document branch performs only internal preparation; Internal Decision
+Package assembly then records the exact validated evidence without adding a recommendation.
 
 The Master Workflow now creates the Banking submission `ActionCommand` only after its proposal
 artifact is validated and persisted. The Governance API remains the human decision interface for
@@ -1321,7 +1246,8 @@ Completed consolidation:
 5. Risk Pre-scan and Risk Finalization are separate nodes. The Risk business component completes
    each explicit mode; `INITIAL_RISK_FINALIZATION` owns dependency waiting in the Master Workflow.
 
-Before implementing real external Banking/Document execution, the following consolidation remains:
+Before implementing external Banking execution and Decision Phase 3, the following consolidation
+remains:
 
 1. Extend the protected-action enum and Approval Policy Registry only when future protected
    actions receive explicit policy sources; Banking precheck policy-source loading is complete.
@@ -1360,15 +1286,14 @@ The Banking precheck control now follows these enforced rules:
 8. A validated `DOCUMENT_RELEASE_PACKAGE` is only an internal input for the conditional Internal
    Decision Package path; neither artifact can by itself propose
    `SEND_DOCUMENT_TO_EXTERNAL_PARTNER`. The generic protected-action endpoint cannot inject this
-   action. The registered checkpoint remains dormant until an exact approved `ACCEPT` Decision
-   Card binds the package and Workflow persists `EXTERNAL_DOCUMENT_SUBMISSION_PROPOSAL`. Governance
-   then creates a separate proposal-bound approval request; authorization still performs no send.
+   action. The registered checkpoint remains dormant until a later exact Decision
+   recommendation/proposal binds the proposed option and package; that proposal and its Founder
+   approval flow are not implemented.
 
-Missing-data intake is separate from approval. Required performance-bond amount gaps are handled by
-Planner against TeamPack/Credit Profile evidence, not by a Founder amount form. The current HTTP
-boundary records post-precheck evidence submissions as `AUTHORIZED_STAFF`; clients cannot submit a
-Founder identity for these endpoints. A post-precheck evidence supplement preserves the original
-provider result, creates no approval or bank claim, and moves Workflow to
+Missing-data intake is separate from approval. The current HTTP boundary records amount and
+post-precheck evidence submissions as `AUTHORIZED_STAFF`; clients cannot submit a Founder identity
+for these endpoints. A post-precheck evidence supplement preserves the original provider result,
+creates no approval or bank claim, and moves Workflow to
 `BANKING_PRECHECK_RETRY_REQUIRED`/`WAITING_FOR_DEPENDENCIES`. The fresh retry and real provider
 mapping remain deliberately unimplemented until an explicit contract is available.
 
@@ -1395,11 +1320,10 @@ anonymization, and Sheet `21_MASKING_EXAMPLES` never acts as executable policy.
 
 A complete Document package is persisted and consumed by the `CONDITIONAL_DOCUMENT_READY` Internal
 Decision Package path. Assembly does not trigger `SEND_DOCUMENT_TO_EXTERNAL_PARTNER`; the
-registered checkpoint remains dormant. The implemented downstream Decision phase must first show
-an exact Card to the Founder. Only an approved `ACCEPT` Card with the package can create the exact
-external proposal and separate Governance request. The original Document package keeps
-`release_authorized = false` and `external_release_performed = false`; even proposal authorization
-has no connector invocation, provider receipt or send.
+registered checkpoint remains dormant. A later exact Decision recommendation/proposal must be
+shown to the Founder before that action can be requested; that phase has no implementation yet.
+The current boundary keeps `release_authorized = false` and `external_release_performed = false`
+and has no connector invocation, provider receipt or send.
 
 ## 22. Internal Decision Package update (2026-07-19)
 
@@ -1417,70 +1341,7 @@ substance when applicable. Audit-only workflow/request IDs and timestamps remain
 are excluded from identity. Evidence Validator runs before persistence; Workflow owns versioning
 and the `INTERNAL_DECISION_PACKAGE_READY` milestone.
 
-This artifact is a neutral evidence dossier consumed by Final Risk Check and the downstream
-Decision flow. It does not calculate new Finance/Risk values, select or rank options, recommend
-accept/negotiate/reject, create a Decision Card, request approval, authorize release, or call an
-external adapter. See
+This artifact is a neutral evidence dossier for future Decision policy. It does not calculate new
+Finance/Risk values, select or rank options, recommend accept/negotiate/reject, create a Decision
+Card, request approval, authorize release, or call an external adapter. See
 [Internal Decision Package](INTERNAL_DECISION_PACKAGE.md).
-
-## 23. Final Risk Check update (2026-07-19)
-
-The implemented `FINAL_RISK_CHECK` consumes exactly one validated
-`INTERNAL_DECISION_PACKAGE`. The Risk business component reads only that typed snapshot; it does
-not read Excel, call OpenAI, query an external provider, or persist its own output. Workflow owns
-dependency selection, Evidence Validator execution, artifact versioning/persistence and the
-`FINAL_RISK_READY` Risk boundary before Decision composition.
-
-Final Risk keeps the initial level as historical audit context and derives `residual_risk_level`
-only from findings that remain `OPEN_UNCHANGED`. `SAFE` requires no residual finding, unresolved
-approval/confirmation, or evidence limitation. A CRITICAL residual finding produces an evidence-bound major-exception
-signal; without a CRITICAL finding, limited evidence yields `NOT_EVALUABLE`, not a false
-`NOT_DETECTED` conclusion.
-
-The assessment records required controls derived from exact human-confirmation points,
-limitations, registered checkpoints, resolved rejection references, simulated Banking authority,
-and Document release boundaries present in the package. A registered checkpoint is dormant until
-a protected action is proposed; it is not an unresolved approval gate. Eligible package assembly
-cannot occur while an ApprovalRequest remains pending, so the current v1 unresolved-gate index is
-empty by construction.
-
-The component returns one `FINAL_RISK_ASSESSMENT` draft with exact upstream artifact ID, version,
-input hash and evidence lineage. It cannot return missing-data requests, approval signals, action
-commands, recommendations or external effects. Invalid source identity or contract mismatch fails
-safe instead of creating a late Founder-input pause.
-
-`GET /api/workflows/{workflow_run_id}` exposes the assessment ID, assessment status, residual risk
-level, major-exception status, unresolved gate IDs and required control codes. The full artifact is
-available through the existing case-artifact endpoint. No separate Final Risk mutation endpoint is
-required because the Master Workflow runs it automatically after Internal Decision Package
-readiness.
-
-The workflow now continues from this Risk boundary into deterministic scenario construction,
-bounded OpenAI composition, deterministic guard/Evidence Validator, `DECISION_CARD`, exact Founder
-approval, and post-decision routing. `NOT_EVALUABLE` stops before approval. An approved `ACCEPT`
-with a package can reach a separately approved `EXTERNAL_DOCUMENT_SUBMISSION_PROPOSAL`, but only as
-far as `READY_FOR_EXTERNAL_SUBMISSION`; any real external send remains future work. See
-[Final Risk Check](FINAL_RISK_CHECK.md) and
-[Decision, Final Approval, and External-Release Readiness](DECISION_FINAL_APPROVAL_AND_RELEASE.md).
-
-## 24. Gross-margin negotiation strategy update (2026-07-19)
-
-Finance vẫn đo margin và cung cấp verified facts; Finance không chọn hướng đàm phán. Khi đủ revenue,
-estimated cost, current margin và target margin có evidence, Decision tính trước hai phương án độc
-lập:
-
-- mức tăng linked-order revenue tối thiểu khi giữ evidenced cost cố định;
-- mức giảm evidenced cost tối thiểu khi giữ linked-order revenue cố định.
-
-OpenAI chỉ chọn đúng một phương án bằng exact `strategy_id`. Hệ thống render phần diễn giải cho
-Founder từ exact selected snapshot; model không tự tính amount, sửa candidate, gộp cả hai phương án
-hoặc đưa target-achieved claim vào Card. Decision Card, exact Founder approval payload và
-`POST_DECISION_UPDATE` giữ nguyên strategy lineage.
-
-Founder approval chỉ chấp thuận hướng đem đi đàm phán; đó không phải bằng chứng customer đã đồng ý.
-Sau khi có kết quả đàm phán, hệ thống phải cập nhật commercial/cost evidence và chạy lại Finance và
-Final Risk trước khi condition được coi là đạt.
-
-Mọi phép tính chỉ áp dụng cho explicit linked-order scope. Với CON-004, scope này là VND
-3,100,000,000; phần VND 1,100,000,000 contract value chưa được order cover không được gộp vào phép
-tính hoặc dùng để tuyên bố whole-contract gross margin đạt 28%.

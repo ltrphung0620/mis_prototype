@@ -85,6 +85,35 @@ describe("artifact payload compatibility", () => {
     ).not.toBeInTheDocument();
   });
 
+  it("renders conditional bank precheck feedback as a business response", () => {
+    render(
+      <ArtifactAssessmentView
+        artifact={artifact("DECISION_POST_PRECHECK_REVIEW", {
+          outcome: "CONDITIONAL_OPTIONS_AVAILABLE",
+          option_reviews: [
+            {
+              option_id: "OPT-001",
+              api_provider: "VietinBank",
+              bank_product_id: "Trạng thái đã được hệ thống ghi nhận",
+              source_outcome: "CONDITIONAL_PRECHECK",
+              disposition: "Trạng thái đã được hệ thống ghi nhận",
+              reason_codes: ["Trạng thái đã được hệ thống ghi nhận"],
+            },
+          ],
+        })}
+      />,
+    );
+
+    expect(screen.getByText(/VietinBank/)).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        /Chấp nhận sơ bộ yêu cầu bảo lãnh của OPC, yêu cầu OPC soạn hồ sơ chính thức để ngân hàng phê duyệt yêu cầu bảo lãnh/,
+      ),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/Trạng thái xử lý nội bộ/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Mã lý do/)).not.toBeInTheDocument();
+  });
+
   it("renders package path and major-exception statuses in Vietnamese", () => {
     const { rerender } = render(
       <ArtifactAssessmentView

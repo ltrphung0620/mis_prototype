@@ -75,7 +75,7 @@ const LABELS: Record<string, string> = {
   SIGNED_CONTRACT: "Hợp đồng đã ký",
   COMPANY_PROFILE: "Hồ sơ doanh nghiệp",
   PERFORMANCE_BOND_REQUEST_FORM: "Đơn đề nghị bảo lãnh thực hiện",
-  CASHFLOW_BUFFER_EVIDENCE: "Tài liệu chứng minh nguồn bù dòng tiền",
+  CASHFLOW_BUFFER_EVIDENCE: "Tài liệu chứng minh áp lực dòng tiền",
   BANKING_PRECHECK: "Khảo sát điều kiện ngân hàng",
   RELATED_ORDER_REVENUE: "Doanh thu từ đơn hàng đã liên kết",
   RELATED_ORDER_ESTIMATED_COST: "Chi phí ước tính từ đơn hàng đã liên kết",
@@ -401,7 +401,9 @@ export function DocumentPackageView({ payload, variant = "DRAFT" }: { payload: D
           <ul>
             {manifest.map((item, index) => (
               <li key={`${item.document_code ?? "document"}-${index}`}>
-                {humanize(item.document_code)}{item.status ? ` — ${humanize(item.status)}` : ""}
+                {item.document_code === "SIGNED_CONTRACT" && item.status === "DRAFTED"
+                  ? "Tạo bản nháp hợp đồng"
+                  : `${humanize(item.document_code)}${item.status ? ` — ${humanize(item.status)}` : ""}`}
               </li>
             ))}
           </ul>
@@ -458,6 +460,13 @@ const POST_PRECHECK_LABELS: Record<string, string> = {
   NOT_ELIGIBLE: "Không đủ điều kiện",
 };
 
+function bankPrecheckResponseText(sourceOutcome: string): string {
+  if (sourceOutcome === "CONDITIONAL_PRECHECK") {
+    return "Chấp nhận sơ bộ yêu cầu bảo lãnh của OPC, yêu cầu OPC soạn hồ sơ chính thức để ngân hàng phê duyệt yêu cầu bảo lãnh";
+  }
+  return translateText(POST_PRECHECK_LABELS[sourceOutcome] ?? humanize(sourceOutcome));
+}
+
 export function DecisionPostPrecheckReviewView({ payload }: { payload: DecisionPostPrecheckReviewPayload }): ReactElement {
   const reviews = payload.option_reviews ?? [];
   const outcomeText = payload.outcome ? (POST_PRECHECK_LABELS[payload.outcome] ?? humanize(payload.outcome)) : "Chưa xác định";
@@ -478,19 +487,13 @@ export function DecisionPostPrecheckReviewView({ payload }: { payload: DecisionP
           <h4 style={{ marginBottom: "8px" }}>Chi tiết kết quả phản hồi từ Ngân hàng</h4>
           <ul style={{ paddingLeft: "1.2rem", margin: 0 }}>
             {reviews.map((item, index: number) => {
-              const disp = item.disposition ? (POST_PRECHECK_LABELS[item.disposition] ?? humanize(item.disposition)) : "Chưa rõ";
-              const srcOutcome = item.source_outcome ? (POST_PRECHECK_LABELS[item.source_outcome] ?? humanize(item.source_outcome)) : "Chưa rõ";
+              const srcOutcome = item.source_outcome ?? "";
+              const responseText = srcOutcome ? bankPrecheckResponseText(srcOutcome) : "Chưa rõ";
               return (
                 <li key={`${item.option_id ?? "option"}-${index}`} style={{ marginBottom: "12px" }}>
                   <strong>{item.api_provider ?? "Ngân hàng"} — {humanize(item.bank_product_id)}</strong>
                   <div style={{ fontSize: "12px", color: "var(--color-ink-600)", marginTop: "4px" }}>
-                    <p style={{ margin: "2px 0" }}>Phản hồi từ ngân hàng: <strong>{translateText(srcOutcome)}</strong></p>
-                    <p style={{ margin: "2px 0" }}>Trạng thái xử lý nội bộ: <strong>{translateText(disp)}</strong></p>
-                    {!!item.reason_codes?.length && (
-                      <p style={{ margin: "2px 0", color: "var(--color-red-650)" }}>
-                        Mã lý do: {item.reason_codes.map((code: string) => translateText(humanize(code))).join(", ")}
-                      </p>
-                    )}
+                    <p style={{ margin: "2px 0" }}>Phản hồi từ ngân hàng: {responseText}</p>
                     {!!item.required_follow_up_fields?.length && (
                       <p style={{ margin: "2px 0", color: "var(--color-amber-700)" }}>
                         Trường thông tin cần bổ sung: {item.required_follow_up_fields.map((f: string) => translateText(humanize(f))).join(", ")}

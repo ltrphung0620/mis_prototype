@@ -34,7 +34,7 @@ describe("DecisionDashboard", () => {
       />,
     );
 
-    expect(screen.getByText("Độ tin cậy: Trung bình")).toBeInTheDocument();
+    expect(screen.queryByText(/Độ tin cậy/)).not.toBeInTheDocument();
     expect(screen.getByText("Rủi ro còn lại: Cao")).toBeInTheDocument();
     expect(
       screen.getByText("Kết quả sau quyết định: Đã cho phép tiến hành đàm phán."),

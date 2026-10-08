@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useReducer, useRef, useState } from "react";
 import {
   decideApprovalRequest,
+  demoPauseCaseWorkflow,
+  demoResumeCaseWorkflow,
   getApprovalRequests,
   getCaseArtifacts,
   getContractCatalog,
@@ -275,6 +277,18 @@ export function useWorkflowDashboard() {
     [runMutation, state.dashboard?.evaluationCaseId],
   );
 
+  const demoPauseWorkflow = useCallback(() => {
+    const workflowRunId = state.dashboard?.workflowRunId;
+    if (!workflowRunId) return Promise.resolve(false);
+    return runMutation(() => demoPauseCaseWorkflow(workflowRunId));
+  }, [runMutation, state.dashboard?.workflowRunId]);
+
+  const demoResumeWorkflow = useCallback(() => {
+    const workflowRunId = state.dashboard?.workflowRunId;
+    if (!workflowRunId) return Promise.resolve(false);
+    return runMutation(() => demoResumeCaseWorkflow(workflowRunId));
+  }, [runMutation, state.dashboard?.workflowRunId]);
+
   return {
     state,
     selectContract,
@@ -289,5 +303,7 @@ export function useWorkflowDashboard() {
     submitDocument,
     confirmTermsSent,
     submitNegotiation,
+    demoPauseWorkflow,
+    demoResumeWorkflow,
   };
 }

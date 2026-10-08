@@ -12,6 +12,10 @@ interface Props {
   onSubmit: (payload: NegotiationOutcomePayload) => void | Promise<void>;
 }
 
+function conditionId(condition: DecisionCondition, index: number): string {
+  return condition.condition_id?.trim() || `condition-${index + 1}`;
+}
+
 export function NegotiationOutcomeForm({
   workflowRunId,
   decisionCardArtifactId,
@@ -22,29 +26,32 @@ export function NegotiationOutcomeForm({
 }: Props): ReactElement {
   const [responses, setResponses] = useState<Record<string, boolean>>(() =>
     Object.fromEntries(
-      conditions.map((condition) => [condition.condition_id ?? "", true]),
+      conditions.map((condition, index) => [conditionId(condition, index), true]),
     ),
   );
   const [notes, setNotes] = useState<Record<string, string>>({});
   const [summary, setSummary] = useState("");
   const accepted = useMemo(
-    () => conditions.filter((item) => responses[item.condition_id ?? ""]).length,
+    () =>
+      conditions.filter((_item, index) => responses[conditionId(_item, index)] === true)
+        .length,
     [conditions, responses],
   );
 
   const submit = (event: FormEvent) => {
     event.preventDefault();
-    if (conditions.some((item) => !item.condition_id)) return;
+    if (!conditions.length) return;
     void onSubmit({
       workflow_run_id: workflowRunId,
       decision_card_artifact_id: decisionCardArtifactId,
-      condition_outcomes: conditions.map((condition) => ({
-        condition_id: condition.condition_id!,
-        customer_accepted: responses[condition.condition_id!] ?? false,
-        ...(notes[condition.condition_id!]?.trim()
-          ? { founder_note: notes[condition.condition_id!].trim() }
-          : {}),
-      })),
+      condition_outcomes: conditions.map((condition, index) => {
+        const id = conditionId(condition, index);
+        return {
+          condition_id: id,
+          customer_accepted: responses[id] ?? false,
+          ...(notes[id]?.trim() ? { founder_note: notes[id].trim() } : {}),
+        };
+      }),
       ...(summary.trim() ? { founder_summary: summary.trim() } : {}),
     });
   };
@@ -57,8 +64,8 @@ export function NegotiationOutcomeForm({
           <h2 id="negotiation-outcome-title">Ghi nhận phản hồi của khách hàng</h2>
         </header>
         <form onSubmit={submit}>
-          {conditions.map((condition) => {
-            const id = condition.condition_id ?? "";
+          {conditions.map((condition, index) => {
+            const id = conditionId(condition, index);
             return (
               <fieldset key={id || condition.title} disabled={submitting || !id}>
                 <legend>{condition.title}</legend>

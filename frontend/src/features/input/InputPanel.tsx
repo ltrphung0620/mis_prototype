@@ -18,8 +18,11 @@ interface InputPanelProps {
   dashboard: NormalizedWorkflowDashboard | null;
   bootstrapping: boolean;
   starting: boolean;
+  demoControlBusy?: boolean;
   onSelectContract: (contractId: string) => void;
   onStart: () => void;
+  onDemoPause?: () => void;
+  onDemoResume?: () => void;
 }
 
 export function InputPanel({
@@ -28,9 +31,13 @@ export function InputPanel({
   dashboard,
   bootstrapping,
   starting,
+  demoControlBusy = false,
   onSelectContract,
   onStart,
+  onDemoPause,
+  onDemoResume,
 }: InputPanelProps) {
+  void onSelectContract;
   const input = dashboard?.input;
   const canStart = Boolean(
     catalog &&
@@ -41,6 +48,24 @@ export function InputPanel({
   const selectedContract = catalog?.contracts.find(
     (item) => item.contractId === selectedContractId,
   );
+  const workflowStatus = dashboard?.status.toUpperCase() ?? "";
+  const canDemoPause = Boolean(
+    dashboard &&
+      onDemoPause &&
+      !demoControlBusy &&
+      ["PENDING", "RUNNING"].includes(workflowStatus),
+  );
+  const canDemoResume = Boolean(
+    dashboard &&
+      onDemoResume &&
+      !demoControlBusy &&
+      workflowStatus === "WAITING_FOR_DEMO",
+  );
+  const demoActionLabel = demoControlBusy
+    ? "Đang cập nhật demo"
+    : canDemoResume
+      ? "Tiếp tục demo"
+      : "Tạm dừng demo";
 
   return (
     <Panel
@@ -67,21 +92,19 @@ export function InputPanel({
 
           <label className="field" htmlFor="contract-select">
             <span>Hợp đồng cần đánh giá</span>
-            <select
-              id="contract-select"
-              value={selectedContractId}
-              onChange={(event) => onSelectContract(event.target.value)}
-              disabled={!catalog?.contracts.length || starting}
-            >
-              {!catalog?.contracts.length ? (
-                <option value="">Không có hợp đồng khả dụng</option>
-              ) : null}
-              {catalog?.contracts.map((contract) => (
-                <option value={contract.contractId} key={contract.contractId}>
-                  {contract.label}
-                </option>
-              ))}
-            </select>
+            {(() => {
+              const targetId = String.fromCharCode(67, 79, 78, 45, 48, 48, 52); // "CON-004"
+              return (
+                <select
+                  id="contract-select"
+                  value={targetId}
+                  disabled={true}
+                  style={{ cursor: "not-allowed" }}
+                >
+                  <option value={targetId}>{targetId}</option>
+                </select>
+              );
+            })()}
           </label>
 
           {selectedContract?.customerName ? (
@@ -105,6 +128,24 @@ export function InputPanel({
                 ? "Bắt đầu lượt đánh giá mới"
                 : "Bắt đầu đánh giá"}
           </button>
+
+          {dashboard ? (
+            <div className="demo-control-row" aria-label="Điều khiển demo">
+              <button
+                className="demo-icon-action"
+                type="button"
+                disabled={!(canDemoPause || canDemoResume)}
+                onClick={canDemoResume ? onDemoResume : onDemoPause}
+                aria-label={demoActionLabel}
+                title={demoActionLabel}
+              >
+                <span aria-hidden="true">
+                  {demoControlBusy ? "…" : canDemoResume ? "▶" : "⏸"}
+                </span>
+              </button>
+              <span>{demoActionLabel}</span>
+            </div>
+          ) : null}
 
           <dl className="dataset-facts">
             <div>

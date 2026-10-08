@@ -1,0 +1,129 @@
+@startuml
+left to right direction
+skinparam linetype ortho
+skinparam packageStyle rectangle
+skinparam shadowing false
+skinparam rectangle {
+  BorderColor #2D4A80
+}
+
+title OPC MIS Agentic AI - Sơ đồ luồng dữ liệu (DFD)
+
+actor "Founder / Reviewer" as Founder
+actor "Staff / Authorized User" as Staff
+
+rectangle "Founder Dashboard\n(React/Vite)" as Dashboard
+rectangle "FastAPI API Layer\n(HTTP + CLI)\napi: opc_mis.app:app" as API
+rectangle "Workflow Orchestrator\nCaseWorkflowRun + Events" as Workflow
+
+database "TeamPack (read-only)\nExcel workbook" as TeamPack
+database "Policy/Config files\nmasking, catalog, prompts,\nrules JSON" as PolicyCfg
+database "Runtime SQLite\n(data/runtime/opc_mis.db)" as RuntimeDB
+cloud "OpenAI API (bounded composition only)" as OpenAI
+rectangle "Banking Adapter (SIMULATION)" as BankingAdapter
+rectangle "Document Intake\nDOCREF + content_sha256" as DocUpload
+
+package "Business Components" {
+  rectangle "Planner Skill\n- intake\n- EvaluationCase\n- PlannerResult" as Planner
+  rectangle "Finance Agent\n- FINANCE_FACTS\n- FinanceAssessment" as Finance
+  rectangle "Operations Skill\n- OPERATIONS_FACTS\n- OperationsAssessment" as Operations
+  rectangle "Risk Agent\n- Initial/FItal Risk" as Risk
+  rectangle "Decision Agent\n- route\n- post-banking\n- post-precheck\n- decision card" as Decision
+  rectangle "Banking Skill\n- discovery\n- readiness\n- proposals\n- simulated precheck results" as Banking
+  rectangle "Document Skill\n- checklist\n- masking\n- release package" as Document
+}
+
+rectangle "Governance\napproval checkpoints & gate" as Governance
+rectangle "Evidence Validator" as EvidenceVal
+
+' ===== Core input flow =====
+Founder --> Dashboard : dùng dashboard\nxem tiến độ + duyệt
+Staff --> Dashboard : bổ sung bằng chứng\ntài liệu
+Dashboard --> API : gọi API endpoints
+API --> Workflow : khởi động/chạy workflow
+
+Workflow --> TeamPack : đọc TeamPack theo ENV
+Workflow --> PolicyCfg : đọc policy / mapping / prompt
+
+TeamPack --> Planner : dữ liệu đầu vào thô
+Planner --> EvidenceVal : validate output
+EvidenceVal --> Workflow : draft đủ bằng chứng
+Workflow --> RuntimeDB : lưu Planner artifacts\n+events + workflow state
+
+' ===== Initial assessment =====
+Workflow --> Finance : trigger Finance Assessment
+Finance --> EvidenceVal
+EvidenceVal --> Workflow
+Workflow --> Operations : trigger Operations Assessment
+Operations --> EvidenceVal
+EvidenceVal --> Workflow
+Workflow --> Risk : trigger Initial Risk Scan
+Risk --> EvidenceVal
+EvidenceVal --> Workflow
+
+Finance --> RuntimeDB : lưu FINANCE_FACTS,\nFINANCE_ASSESSMENT
+Operations --> RuntimeDB : lưu OPERATIONS_FACTS,\nOPERATIONS_ASSESSMENT
+Risk --> RuntimeDB : lưu risk artifacts\n& checkpoint candidates
+
+' ===== Decision route =====
+Workflow --> Decision : Decision Initial Route
+Decision --> EvidenceVal
+EvidenceVal --> Workflow
+Decision --> RuntimeDB : lưu DECISION_ROUTE_PLAN
+
+Decision --> Banking : handoff khi route cần Banking
+Decision --> Workflow : route trực tiếp -> Internal Decision Package
+
+Banking --> EvidenceVal : matrix/readiness artifacts
+EvidenceVal --> Workflow
+Banking --> RuntimeDB : lưu options, readiness,\nsubmission proposal
+
+Banking --> Governance : tạo đề xuất SUBMIT_BANKING_PRECHECK
+Governance --> RuntimeDB : lưu ApprovalRequest / policy
+Founder --> API : phê duyệt hoặc từ chối\nSUBMIT_BANKING_PRECHECK
+API --> Governance : gửi quyết định Founder
+Governance --> Workflow : chấp nhận / chặn
+Workflow --> BankingAdapter : gọi adapter mô phỏng (sau khi authorized)
+BankingAdapter --> RuntimeDB : lưu BANKING_PRECHECK_RESULT_SET\nkhông bank authority
+
+Decision --> Banking : review readiness\n(Decision Post-Banking)
+Decision --> RuntimeDB : lưu DECISION_POST_* artifacts
+
+' ===== Document branch =====
+Decision --> Document : handoff điều kiện conditional\n-> DOCUMENT_PREPARATION_REQUEST
+Document --> PolicyCfg : áp dụng masking policy
+Document --> DocUpload : nhập bổ sung bằng chứng\nmetadata-only
+Document --> RuntimeDB : lưu DOCUMENT_* artifacts
+
+' ===== Final decision =====
+Workflow --> Risk : trigger Final Risk Check
+Risk --> EvidenceVal
+EvidenceVal --> Workflow
+Risk --> RuntimeDB : lưu FINAL_RISK_ASSESSMENT
+Workflow --> Decision : Decision card composition
+Decision --> OpenAI : text composition only (bounded)
+OpenAI --> Decision : narrative proposals
+Decision --> EvidenceVal : AI analysis + Decision card
+EvidenceVal --> Workflow
+Decision --> RuntimeDB : lưu AI_DECISION_ANALYSIS\nDECISION_CARD
+Decision --> Governance : đăng ký checkpoint CONFIRM_FINAL_CONTRACT_DECISION
+Founder --> API : phê duyệt / từ chối final decision
+API --> Governance : quyết định Founder
+Governance --> Workflow : route sang post-decision
+Workflow --> RuntimeDB : lưu POST_DECISION_UPDATE / final states
+
+Decision --> Governance : tạo EXTERNAL_DOCUMENT_SUBMISSION_PROPOSAL\n(chỉ khi Card=ACCEPT + release package)
+Founder --> API : phê duyệt gửi tài liệu ngoài\nnếu có proposal
+API --> Governance : quyết định gửi tài liệu
+Governance --> Workflow : READY_FOR_EXTERNAL_SUBMISSION
+Workflow --> Workflow : dừng ở ngưỡng an toàn\n(adapter_invoked = false)
+
+note right of Workflow
+  Mô hình prototype:
+  - Banking là simulated precheck, chưa gọi ngân hàng thật.
+  - Decision final chưa gửi tài liệu ngoài ngoài luồng mẫu.
+  - Chứng cứ trước khi persist luôn qua Evidence Validator.
+  - Document intake hiện là metadata only (DOCREF + SHA-256).
+end note
+
+@enduml

@@ -22,11 +22,13 @@ export interface DashboardState {
   errorMessage: string | null;
 }
 
+const TARGET_CONTRACT_ID = String.fromCharCode(67, 79, 78, 45, 48, 48, 52); // "CON-004"
+
 export const initialDashboardState: DashboardState = {
   phase: "bootstrapping",
   capabilities: null,
   catalog: null,
-  selectedContractId: "",
+  selectedContractId: TARGET_CONTRACT_ID,
   workflowRunId: "",
   dashboard: null,
   lastUpdatedAt: null,
@@ -69,6 +71,9 @@ export function dashboardReducer(
       const contractStillExists = action.catalog.contracts.some(
         (item) => item.contractId === state.selectedContractId,
       );
+      const hasCon04 = action.catalog.contracts.some(
+        (item) => item.contractId === TARGET_CONTRACT_ID,
+      );
       return {
         ...state,
         phase: "ready",
@@ -76,7 +81,9 @@ export function dashboardReducer(
         capabilities: action.capabilities,
         selectedContractId: contractStillExists
           ? state.selectedContractId
-          : action.catalog.contracts[0]?.contractId ?? "",
+          : hasCon04
+            ? TARGET_CONTRACT_ID
+            : (action.catalog.contracts[0]?.contractId ?? ""),
         workflowRunId: preserveRun ? state.workflowRunId : "",
         dashboard: preserveRun ? state.dashboard : null,
         lastUpdatedAt: preserveRun ? state.lastUpdatedAt : null,

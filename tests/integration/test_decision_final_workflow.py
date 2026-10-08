@@ -217,8 +217,10 @@ def test_exact_decision_card_requires_founder_then_routes_to_negotiation(
 
     completed = _wait_for_pause_or_completion(decision_client, workflow_run_id)
     assert len(decision_client.app.state.decision_compose_calls) == compose_call_count
-    assert completed["status"] == "COMPLETED"
-    assert completed["current_stage"] == "NEGOTIATION_IN_PROGRESS"
+    assert completed["status"] == "WAITING_FOR_INPUT"
+    assert completed["current_stage"] == "NEGOTIATION_TERMS_SENT"
+    assert completed["pending_missing_data_ids"]
+    assert completed["pending_missing_data_ids"][0].startswith("NTS-")
     assert completed["post_decision_outcome"] == "NEGOTIATION_AUTHORIZED"
     assert completed["post_decision_update_id"]
     assert completed["external_document_submission_proposal_id"] is None
@@ -233,6 +235,22 @@ def test_exact_decision_card_requires_founder_then_routes_to_negotiation(
     assert not any(
         item["artifact_type"] == "EXTERNAL_DOCUMENT_SUBMISSION_PROPOSAL"
         for item in artifacts
+    )
+    terms_sent = decision_client.post(
+        f"/api/cases/{case_id}/negotiation/terms-sent",
+        json={
+            "workflow_run_id": workflow_run_id,
+            "decision_card_artifact_id": card["artifact_id"],
+        },
+    )
+    assert terms_sent.status_code == 202
+    outcome_wait = _wait_for_pause_or_completion(decision_client, workflow_run_id)
+    assert outcome_wait["status"] == "COMPLETED"
+    assert outcome_wait["current_stage"] == "FINAL_DECISION_ACCEPTED"
+    assert outcome_wait["pending_missing_data_ids"] == []
+    assert all(
+        node["node"] != "NEGOTIATION_OUTCOME_RECEIVED"
+        for node in outcome_wait["nodes"]
     )
 
 
@@ -416,7 +434,10 @@ def test_con004_card_carries_one_precomputed_margin_negotiation_strategy(
     negotiation = _wait_for_pause_or_completion(
         decision_client, workflow_run_id
     )
-    assert negotiation["current_stage"] == "NEGOTIATION_IN_PROGRESS"
+    assert negotiation["status"] == "WAITING_FOR_INPUT"
+    assert negotiation["current_stage"] == "NEGOTIATION_TERMS_SENT"
+    assert negotiation["pending_missing_data_ids"]
+    assert negotiation["pending_missing_data_ids"][0].startswith("NTS-")
     artifacts = decision_client.get(f"/api/cases/{case_id}/artifacts").json()
     update = next(
         item
@@ -426,6 +447,36 @@ def test_con004_card_carries_one_precomputed_margin_negotiation_strategy(
     assert update["payload"]["approved_negotiation_strategy_ids"] == (
         decision_wait["decision_selected_negotiation_strategy_ids"]
     )
+    terms_sent = decision_client.post(
+        f"/api/cases/{case_id}/negotiation/terms-sent",
+        json={
+            "workflow_run_id": workflow_run_id,
+            "decision_card_artifact_id": card["artifact_id"],
+        },
+    )
+    assert terms_sent.status_code == 202
+    release_wait = _wait_for_pause_or_completion(
+        decision_client, workflow_run_id
+    )
+    assert release_wait["status"] == "WAITING_FOR_APPROVAL"
+    assert release_wait["current_stage"] == "WAITING_FOR_APPROVAL"
+    assert release_wait["blocked_action"] == "SEND_DOCUMENT_TO_EXTERNAL_PARTNER"
+    assert release_wait["external_document_submission_proposal_id"]
+    assert all(
+        node["node"] != "NEGOTIATION_OUTCOME_RECEIVED"
+        for node in release_wait["nodes"]
+    )
+    dashboard = decision_client.get(
+        f"/api/workflows/{workflow_run_id}/dashboard"
+    ).json()
+    task_statuses = {
+        task["task_id"]: task["status"]
+        for stage in dashboard["stages"]
+        for task in stage["tasks"]
+    }
+    assert task_statuses["NEGOTIATION_TERMS_SENT"] == "COMPLETED"
+    assert task_statuses["EXTERNAL_DOCUMENT_SUBMISSION_PROPOSAL"] == "COMPLETED"
+    assert task_statuses["EXTERNAL_RELEASE_APPROVAL"] == "WAITING_FOR_APPROVAL"
 
     second_created = decision_client.post(
         "/api/cases/run",

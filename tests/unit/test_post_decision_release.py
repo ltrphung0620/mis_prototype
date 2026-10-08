@@ -374,6 +374,35 @@ def test_external_proposal_is_exact_and_never_authorizes_or_sends() -> None:
     assert "sanitized_payload" not in proposal.model_dump(mode="json")
 
 
+def test_external_proposal_allows_sent_conditional_terms_with_exact_package() -> None:
+    approved = _approved_context(
+        DecisionRecommendation.NEGOTIATE_CONDITIONS_TO_ACCEPT,
+        with_release=True,
+    )
+    update = PostDecisionUpdateBuilder.build(approved)
+    context = _proposal_context()
+    negotiated = ExternalReleaseProposalContext(
+        update_artifact=_envelope(
+            "ART-UPDATE",
+            ArtifactType.POST_DECISION_UPDATE,
+            update.model_dump(mode="json"),
+            update.evidence_ids,
+        ),
+        update=update,
+        card_artifact=approved.card_artifact,
+        card=approved.card,
+        release_artifact=context.release_artifact,
+        release_package=context.release_package,
+    )
+
+    proposal = ExternalDocumentSubmissionProposalBuilder.build(negotiated)
+
+    assert update.outcome is PostDecisionOutcome.NEGOTIATION_AUTHORIZED
+    assert update.contract_execution_status is ContractExecutionStatus.PENDING_NEGOTIATION
+    assert proposal.contract_execution_status is ContractExecutionStatus.SIGNED
+    assert proposal.proposed_action is ProtectedAction.SEND_DOCUMENT_TO_EXTERNAL_PARTNER
+
+
 def test_external_proposal_rejects_non_accept_route() -> None:
     approved = _approved_context(DecisionRecommendation.NEGOTIATE_CONDITIONS_TO_ACCEPT)
     update = PostDecisionUpdateBuilder.build(approved)
@@ -387,7 +416,7 @@ def test_external_proposal_rejects_non_accept_route() -> None:
         release_package=context.release_package,
     )
 
-    with pytest.raises(ValueError, match="Only an approved ACCEPT"):
+    with pytest.raises(ValueError, match="exact package"):
         ExternalDocumentSubmissionProposalBuilder.build(invalid)
 
 
