@@ -803,9 +803,9 @@
 .missing-data-dialog > article,
 .missing-data-dialog > div,
 .negotiation-dialog > article {
-  background: #fafcfe;
+  background: var(--color-surface-muted);
   width: min(780px, 100%);
-  border: 1px solid #e5e7ed;
+  border: 1px solid var(--color-line);
   border-radius: 12px;
   padding: 30px;
   overflow-y: auto;
