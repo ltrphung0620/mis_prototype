@@ -125,7 +125,9 @@ export function useDialogFocus(
       const fallback = fallbackFocusIdRef.current
         ? document.getElementById(fallbackFocusIdRef.current)
         : null;
-      (trigger?.isConnected ? trigger : fallback)?.focus();
+      // Restoring focus must not scroll the page: focusing the tall workspace fallback
+      // would otherwise push the header out of view.
+      (trigger?.isConnected ? trigger : fallback)?.focus({ preventScroll: true });
     };
   }, [active]);
 }

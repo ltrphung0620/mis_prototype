@@ -1,6 +1,6 @@
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { useState } from "react";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { focusableWithin, useDialogFocus } from "./useDialogFocus";
 
 function DialogExample({ escapeDisabled = false }: { escapeDisabled?: boolean }) {
@@ -29,6 +29,10 @@ function DialogExample({ escapeDisabled = false }: { escapeDisabled?: boolean })
 }
 
 describe("dialog keyboard focus", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
   it("focuses the dialog, traps Tab and Shift+Tab, closes with Escape and restores the trigger", () => {
     render(<DialogExample />);
     const trigger = screen.getByRole("button", { name: "Mở" });
@@ -115,7 +119,21 @@ describe("dialog keyboard focus", () => {
     }
     render(<AutoOpened />);
     expect(screen.getByRole("dialog", { name: "Tự mở" })).toHaveFocus();
+    const focusSpy = vi.spyOn(HTMLElement.prototype, "focus");
     fireEvent.keyDown(document, { key: "Escape" });
     expect(screen.getByRole("main")).toHaveFocus();
+    expect(focusSpy).toHaveBeenLastCalledWith({ preventScroll: true });
+  });
+
+  it("restores the trigger without scrolling the page", () => {
+    render(<DialogExample />);
+    const trigger = screen.getByRole("button", { name: "Mở" });
+    trigger.focus();
+    fireEvent.click(trigger);
+    const focusSpy = vi.spyOn(HTMLElement.prototype, "focus");
+    fireEvent.keyDown(document, { key: "Escape" });
+    expect(trigger).toHaveFocus();
+    expect(focusSpy.mock.instances.at(-1)).toBe(trigger);
+    expect(focusSpy).toHaveBeenLastCalledWith({ preventScroll: true });
   });
 });

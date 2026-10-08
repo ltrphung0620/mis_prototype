@@ -22,6 +22,7 @@ import { useWorkflowDashboard } from "../hooks/useWorkflowDashboard";
 import { Notice } from "../shared/components/Notice";
 import { StatusBadge } from "../shared/components/StatusBadge";
 import { useDialogFocus } from "../shared/useDialogFocus";
+import { useScrollTopOnChange } from "../shared/useScrollTopOnChange";
 import { isTerminalExecutionStatus } from "../shared/workflowLabels";
 import { WorkflowEvents } from "../features/workspace/WorkflowEvents";
 import {
@@ -77,6 +78,7 @@ export function App() {
     null,
   );
   const [view, setView] = useState<WorkspaceView>("decision");
+  useScrollTopOnChange(view);
 
   const dashboard = state.dashboard;
   const playback = useWorkflowPlayback(dashboard);
@@ -417,9 +419,16 @@ export function App() {
             <div>
               <p>KHÔNG GIAN QUYẾT ĐỊNH</p>
               <h1>
-                {state.selectedContractId
-                  ? `Hợp đồng ${state.selectedContractId}`
-                  : "Đánh giá hợp đồng"}
+                {state.selectedContractId ? (
+                  <>
+                    Hợp đồng{" "}
+                    <span className="page-heading__id">
+                      {state.selectedContractId}
+                    </span>
+                  </>
+                ) : (
+                  "Đánh giá hợp đồng"
+                )}
               </h1>
               <span>
                 {dashboard?.input.customerName ||

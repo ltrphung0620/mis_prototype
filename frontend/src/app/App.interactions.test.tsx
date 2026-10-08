@@ -462,3 +462,33 @@ describe("Founder interaction popups", () => {
     expect(decideApproval).not.toHaveBeenCalled();
   });
 });
+
+describe("Workspace view navigation", () => {
+  it("starts a newly selected view at the top of the page without moving focus", () => {
+    const scrollTo = vi.fn();
+    vi.stubGlobal("scrollTo", scrollTo);
+    const scrollY = vi.spyOn(window, "scrollY", "get").mockReturnValue(480);
+    try {
+      dashboardHookMock.mockReturnValue(hookValue(dashboard([])));
+      render(<App />);
+
+      const tabs = screen.getByRole("navigation", { name: "Các phần của hợp đồng" });
+      const workflowTab = within(tabs).getByRole("button", { name: "Quy trình" });
+      workflowTab.focus();
+      fireEvent.click(workflowTab);
+
+      expect(workflowTab).toHaveAttribute("aria-pressed", "true");
+      expect(scrollTo).toHaveBeenCalledWith({ top: 0, left: 0 });
+      expect(workflowTab).toHaveFocus();
+    } finally {
+      scrollY.mockRestore();
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("keeps the contract heading readable as one accessible name", () => {
+    dashboardHookMock.mockReturnValue(hookValue(dashboard([])));
+    render(<App />);
+    expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("Hợp đồng CON-004");
+  });
+});
