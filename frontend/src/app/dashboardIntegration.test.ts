@@ -7,6 +7,7 @@ import type {
 } from "../api/types";
 import {
   allowedDocumentTypes,
+  hasAssessmentArtifact,
   pendingApproval,
   pendingMissingInteraction,
   pendingNotEvaluableReview,
@@ -55,6 +56,35 @@ describe("dashboard integration", () => {
       statements: [{ text: "Biên lợi nhuận cần được cải thiện." }],
     });
     expect(selected?.payload).not.toHaveProperty("source");
+  });
+
+  it("opens post-decision artifacts and keeps their recorded upstream IDs", () => {
+    const outcome = {
+      ...artifact("ART-NEG", "NEGOTIATION_OUTCOME", { outcome_status: "ALL_CONDITIONS_ACCEPTED" }),
+      version: 2,
+      input_artifact_ids: ["ART-CARD"],
+    };
+
+    expect(hasAssessmentArtifact(["ART-NEG"], [outcome])).toBe(true);
+    const selected = selectAssessmentArtifact(["ART-NEG"], [outcome]);
+    expect(selected).toMatchObject({
+      artifact_id: "ART-NEG",
+      artifact_type: "NEGOTIATION_OUTCOME",
+      version: 2,
+      input_artifact_ids: ["ART-CARD"],
+    });
+  });
+
+  it("keeps the existing assessment preference when supplements share a row", () => {
+    const artifacts = [
+      artifact("ART-SUP", "BANKING_INPUT_SUPPLEMENT", { requested_amount: 1 }),
+      artifact("ART-RES", "BANKING_PRECHECK_RESULT_SET", { results: [] }),
+    ];
+    expect(selectAssessmentArtifact(["ART-SUP", "ART-RES"], artifacts)?.artifact_id).toBe("ART-RES");
+  });
+
+  it("still refuses artifact types without a typed renderer", () => {
+    expect(hasAssessmentArtifact(["ART-AI"], [artifact("ART-AI", "AI_DECISION_ANALYSIS", {})])).toBe(false);
   });
 
   it("selects only the pending approval named by the current projection", () => {

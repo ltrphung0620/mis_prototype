@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
-  ArtifactAssessmentView,
+  ArtifactDetailDialog,
   type ArtifactEnvelope,
 } from "../features/artifacts";
 import { DecisionCardModal, DecisionDashboard } from "../features/decision";
@@ -46,48 +46,6 @@ import {
   pendingNotEvaluableReview,
   selectAssessmentArtifact,
 } from "./dashboardIntegration";
-
-function AssessmentDialog({
-  artifact,
-  runArtifacts = [],
-  onClose,
-}: {
-  artifact: ArtifactEnvelope | null;
-  runArtifacts?: readonly ArtifactEnvelope[];
-  onClose: () => void;
-}) {
-  if (!artifact) return null;
-  return (
-    <div
-      className="assessment-dialog modal-layer"
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="assessment-dialog-title"
-    >
-      <article className="modal-card">
-        <header className="modal-card__header">
-          <div>
-            <p>Kết quả nghiệp vụ</p>
-            <h2 id="assessment-dialog-title">Chi tiết đánh giá</h2>
-          </div>
-          <button
-            type="button"
-            onClick={onClose}
-            aria-label="Đóng chi tiết đánh giá"
-          >
-            ×
-          </button>
-        </header>
-        <div className="modal-card__body">
-          <ArtifactAssessmentView
-            artifact={artifact}
-            runArtifacts={runArtifacts}
-          />
-        </div>
-      </article>
-    </div>
-  );
-}
 
 export function App() {
   const {
@@ -711,7 +669,7 @@ export function App() {
         </main>
       </div>
 
-      <AssessmentDialog
+      <ArtifactDetailDialog
         artifact={assessment}
         runArtifacts={runArtifacts}
         onClose={() => setAssessment(null)}

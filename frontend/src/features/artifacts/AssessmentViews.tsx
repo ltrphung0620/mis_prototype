@@ -27,6 +27,17 @@ import {
   PlannerAssessmentView,
   RiskPreScanView,
 } from "./WorkflowArtifactViews";
+import {
+  ExternalDocumentSubmissionProposalView,
+  NegotiationOutcomeView,
+  PostDecisionUpdateView,
+} from "./PostDecisionViews";
+import {
+  BankingInputSupplementView,
+  BankingPrecheckEvidenceSupplementView,
+  BankingPrecheckSubmissionProposalView,
+  DocumentEvidenceSupplementView,
+} from "./SupplementViews";
 import type {
   BankingAdvicePayload,
   BankingDiscoveryPayload,
@@ -34,7 +45,14 @@ import type {
   DocumentChecklistPayload,
   EvaluationCasePayload,
   InternalDecisionPackagePayload,
+  BankingInputSupplementPayload,
+  BankingPrecheckEvidenceSupplementPayload,
+  BankingPrecheckSubmissionProposalPayload,
+  DocumentEvidenceSupplementPayload,
+  ExternalDocumentSubmissionProposalPayload,
+  NegotiationOutcomePayload,
   PlannerResultPayload,
+  PostDecisionUpdatePayload,
   RiskPreScanPayload,
 } from "./types";
 
@@ -109,6 +127,7 @@ const LABELS: Record<string, string> = {
   ELIGIBLE: "Đủ điều kiện sơ bộ",
   CONDITIONAL: "Có điều kiện",
   NO_DECISION: "Chưa có quyết định",
+  PERFORMANCE_BOND_DOCUMENT_RELEASE: "Hồ sơ đề nghị bảo lãnh thực hiện",
 };
 
 function humanize(value?: string | null): string {
@@ -214,7 +233,7 @@ function Notes({ title, items = [] }: { title: string; items?: AssessmentNote[] 
       <h4>{title}</h4>
       <ul className="assessment-list">
         {visibleItems.map((item, index) => {
-          const rawTitle = item.title ?? humanize(item.code);
+          const rawTitle = item.title ?? (item.code ? humanize(item.code) : null);
           const hasTitle = rawTitle && rawTitle !== "Trạng thái đã được hệ thống ghi nhận";
           const rawDetail = item.detail ?? item.text ?? item.description;
           return (
@@ -596,6 +615,20 @@ export function ArtifactAssessmentView({
       return <DocumentPackageView payload={artifact.payload as DocumentArtifactPayload} variant="RELEASE" />;
     case "INTERNAL_DECISION_PACKAGE":
       return <InternalDecisionPackageView payload={artifact.payload as InternalDecisionPackagePayload} />;
+    case "BANKING_INPUT_SUPPLEMENT":
+      return <BankingInputSupplementView payload={artifact.payload as BankingInputSupplementPayload} />;
+    case "BANKING_PRECHECK_SUBMISSION_PROPOSAL":
+      return <BankingPrecheckSubmissionProposalView payload={artifact.payload as BankingPrecheckSubmissionProposalPayload} />;
+    case "BANKING_PRECHECK_EVIDENCE_SUPPLEMENT":
+      return <BankingPrecheckEvidenceSupplementView payload={artifact.payload as BankingPrecheckEvidenceSupplementPayload} />;
+    case "DOCUMENT_EVIDENCE_SUPPLEMENT":
+      return <DocumentEvidenceSupplementView payload={artifact.payload as DocumentEvidenceSupplementPayload} />;
+    case "POST_DECISION_UPDATE":
+      return <PostDecisionUpdateView payload={artifact.payload as PostDecisionUpdatePayload} />;
+    case "NEGOTIATION_OUTCOME":
+      return <NegotiationOutcomeView payload={artifact.payload as NegotiationOutcomePayload} />;
+    case "EXTERNAL_DOCUMENT_SUBMISSION_PROPOSAL":
+      return <ExternalDocumentSubmissionProposalView payload={artifact.payload as ExternalDocumentSubmissionProposalPayload} />;
     default:
       return <p>Chưa có màn hình đánh giá dành cho loại kết quả này.</p>;
   }

@@ -6,6 +6,8 @@ export interface ArtifactEnvelope<TPayload = Record<string, unknown>> {
   version: number;
   validation_status: string;
   payload: TPayload;
+  /** Explicit upstream artifacts recorded by the Orchestrator. */
+  input_artifact_ids?: readonly string[];
 }
 
 export interface AssessmentFact {
@@ -295,4 +297,122 @@ export interface DecisionPostPrecheckReviewPayload {
   evidence_required_option_ids?: string[];
   not_eligible_option_ids?: string[];
   required_input_fields?: string[];
+}
+
+export interface ExactArtifactRefPayload {
+  artifact_id?: string;
+  artifact_type?: string;
+  version?: number;
+}
+
+export interface BankingPrecheckSubmissionProposalPayload {
+  proposal_id?: string;
+  requested_amount?: number;
+  requested_amount_currency?: string;
+  proposed_action?: string;
+  candidate_option_ids?: string[];
+  non_ready_option_ids?: string[];
+  candidates?: Array<{
+    option_id?: string;
+    bank_product_id?: string;
+    need_type?: string;
+    provider?: string;
+    product_name?: string;
+    api_provider?: string;
+    catalog_terms?: {
+      annual_rate_or_fee?: number | null;
+      processing_fee_rate?: number | null;
+      collateral_ratio?: number | null;
+      minimum_amount?: number | null;
+      minimum_amount_currency?: string;
+    };
+    field_bindings?: Array<{ required_field?: string; source?: string }>;
+  }>;
+  precheck_executed?: boolean;
+  submission_executed?: boolean;
+}
+
+export interface PostDecisionUpdatePayload {
+  update_id?: string;
+  decision_card_artifact?: ExactArtifactRefPayload;
+  founder_approval?: {
+    approval_request_id?: string;
+    protected_action?: string;
+    status?: string;
+    decision?: string;
+    decision_reason?: string;
+    decided_at?: string;
+    approver_role?: string;
+  };
+  recommendation?: string;
+  outcome?: string;
+  contract_execution_status?: string;
+  approved_condition_ids?: string[];
+  selected_option_ids?: string[];
+  negotiation_outcome_artifact?: ExactArtifactRefPayload | null;
+  external_document_release_required?: boolean;
+  founder_decision_recorded?: boolean;
+  external_action_performed?: boolean;
+}
+
+export interface NegotiationOutcomePayload {
+  negotiation_outcome_id?: string;
+  decision_card_artifact?: ExactArtifactRefPayload;
+  condition_outcomes?: Array<{
+    condition_id?: string;
+    condition_code?: string;
+    condition_title?: string;
+    customer_accepted?: boolean;
+    founder_note?: string | null;
+  }>;
+  all_conditions_accepted?: boolean;
+  outcome_status?: string;
+  founder_summary?: string | null;
+  confirmation_requested?: boolean;
+}
+
+export interface ExternalDocumentSubmissionProposalPayload {
+  proposal_id?: string;
+  decision_card_artifact?: ExactArtifactRefPayload;
+  post_decision_update_artifact?: ExactArtifactRefPayload;
+  contract_execution_status?: string;
+  recipient?: string;
+  purpose?: string;
+  document_codes?: string[];
+  approval_condition_codes?: string[];
+  limitation_codes?: string[];
+  proposed_action?: string;
+  approval_requested?: boolean;
+  release_authorized?: boolean;
+  external_submission_performed?: boolean;
+}
+
+export interface BankingInputSupplementPayload {
+  supplement_id?: string;
+  requested_amount?: number;
+  requested_amount_currency?: string;
+  provider?: string;
+  note?: string;
+}
+
+export interface BankingPrecheckEvidenceSupplementPayload {
+  supplement_id?: string;
+  option_id?: string;
+  bank_product_id?: string;
+  required_field?: string;
+  evidence_reference_id?: string;
+  provided_by?: string;
+  evidence_note?: string;
+  source_outcome?: string;
+  fresh_governed_precheck_required?: boolean;
+  bank_approval_obtained?: boolean;
+}
+
+export interface DocumentEvidenceSupplementPayload {
+  supplement_id?: string;
+  document_reference_id?: string;
+  content_sha256?: string;
+  document_type?: string;
+  provided_by?: string;
+  evidence_note?: string;
 }

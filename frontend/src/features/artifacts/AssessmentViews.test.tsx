@@ -68,6 +68,12 @@ describe("artifact assessment views", () => {
     expect(screen.getByText(/Mức còn lại: Trung bình/)).toHaveClass("status-badge--warning");
   });
 
+  it("does not invent a title for a limitation without title or code", () => {
+    render(<RiskAssessmentView phase="FINAL" payload={{ conclusion: "ATTENTION_REQUIRED", limitations: [{ detail: "Kết quả precheck là mô phỏng." }] }} />);
+    expect(screen.getByText("Kết quả precheck là mô phỏng.")).toBeInTheDocument();
+    expect(screen.queryByText("Chưa xác định", { selector: "li strong" })).not.toBeInTheDocument();
+  });
+
   it("labels post-precheck outcomes as simulated and never as success", () => {
     const { container } = render(
       <DecisionPostPrecheckReviewView
