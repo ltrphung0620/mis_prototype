@@ -115,6 +115,22 @@ export async function getWorkflowDashboard(
   }
 }
 
+/** Append-only events with `sequence > afterSequence`; the caller validates each item. */
+export function getWorkflowEvents(
+  workflowRunId: string,
+  afterSequence: number,
+  signal?: AbortSignal,
+): Promise<unknown> {
+  const params = new URLSearchParams({
+    after_sequence: String(Math.max(0, Math.trunc(afterSequence))),
+  });
+  return requestJson<unknown>(
+    `/api/workflows/${encodeURIComponent(workflowRunId)}/events?${params}`,
+    {},
+    signal,
+  );
+}
+
 export function getCaseArtifacts(
   evaluationCaseId: string,
   signal?: AbortSignal,

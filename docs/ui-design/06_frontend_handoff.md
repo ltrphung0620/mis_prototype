@@ -1,6 +1,6 @@
 # Bàn giao frontend — OPC MIS Contract Decision Workspace
 
-Ngày rà soát: 08/10/2026 (cập nhật cùng ngày sau 2 task P1 trên nhánh `feat/ui-polish`). Đây là bản UI đã triển khai để tiếp tục phát triển, chưa phải bản sản phẩm production hoàn chỉnh. Không đổi business logic/API/backend trong lần redesign này.
+Ngày rà soát: 08/10/2026 (cập nhật cùng ngày sau các task P1, bug Decision Card trên demo và P2 lịch sử workflow, nhánh `feat/ui-polish`). Đây là bản UI đã triển khai để tiếp tục phát triển, chưa phải bản sản phẩm production hoàn chỉnh. Không đổi business logic/API/backend trong lần redesign này.
 
 ## Backend đã có chưa?
 
@@ -28,6 +28,8 @@ API đầy đủ và setup cấu hình nằm ở [README](../../README.md). Xem 
 - FastAPI `/dashboard` dùng bundle đã build. Development Vite proxy sang backend ở port 8000.
 - Detail views (Finance/Operations/Risk, Banking, Document, precheck) và form bổ sung hồ sơ dùng class/tokens, không còn inline styles. Badge mức rủi ro/precheck theo ngữ nghĩa, không dùng success.
 - Dialog chi tiết ([ArtifactDetailDialog.tsx](../../frontend/src/features/artifacts/ArtifactDetailDialog.tsx)) hiện loại artifact, `ID · vN · validation` và **Nguồn đầu vào** từ `input_artifact_ids`. Nhãn đủ 33 artifact types ở `shared/artifactLabels.ts`.
+- Khi playback timeline chưa bắt kịp projection, view Quyết định ghi rõ Decision Card **đã được tạo và đang chờ hiển thị** (`reveal_pending`), không còn báo "chưa sẵn sàng" như thể chưa có card. Gate playback giữ nguyên; reduced motion hiện ngay.
+- Nhật ký quy trình ([WorkflowEvents.tsx](../../frontend/src/features/workspace/WorkflowEvents.tsx)) hiện nhãn tiếng Việt cho các `event_type` backend đang phát (`shared/eventLabels.ts`); mã/node chưa map hiện nguyên mã. Tải tăng dần bằng `after_sequence`, merge/dedupe theo `sequence`, reset khi đổi run, dừng poll sau một lần đọc bù khi projection terminal; lỗi giữ dữ liệu đã tải và retry từ cùng cursor.
 
 Review và screenshots: [05_mercury_redesign_review.md](05_mercury_redesign_review.md). Quy tắc bắt buộc khi tiếp tục UI: [style.md](../../style.md). Các tài liệu 01/02/04 có phần kế hoạch lịch sử; **03, 05, 06 và style.md** mô tả bản hiện hành. Không dùng prompt forest cũ để redesign lần tiếp theo.
 
@@ -41,12 +43,14 @@ Review và screenshots: [05_mercury_redesign_review.md](05_mercury_redesign_revi
 | P1 — Artifact detail coverage và lineage — **phần lớn đã xong** | Đã thêm renderer + tests cho `BANKING_PRECHECK_SUBMISSION_PROPOSAL`, `EXTERNAL_DOCUMENT_SUBMISSION_PROPOSAL`, `POST_DECISION_UPDATE`, `NEGOTIATION_OUTCOME`, `BANKING_INPUT_SUPPLEMENT`, `BANKING_PRECHECK_EVIDENCE_SUPPLEMENT`, `DOCUMENT_EVIDENCE_SUPPLEMENT`; dialog hiện ID/version/upstream | Còn 6 types disable detail: `APPROVAL_CHECKPOINTS`, `RISK_RULE_EVALUATION`, `DECISION_ROUTE_PLAN`, `DECISION_POST_BANKING_REVIEW`, `DOCUMENT_PREPARATION_REQUEST`, `AI_DECISION_ANALYSIS` (Decision Card có panel riêng). `RiskPreScanView` chọn `APPROVAL_CHECKPOINTS` v1 theo heuristic vì backend không ghi upstream giữa pre-scan và checkpoint. Demo fixture chưa có các types mới, mới verify bằng unit tests |
 | P1 — Accessibility của dialogs/forms — **phần lớn đã xong** | `useDialogFocus` bám dialog modal trên cùng (kể cả khi dialog được thay thế), đặt `inert` cho nền, focus ban đầu vào dialog (không vào nút hành động), chặn Escape khi đang submit, trả focus về trigger hoặc `#workspace-content`. Form số tiền/precheck gắn `aria-invalid` + `aria-describedby` với lỗi. Contrast các cặp token chữ/nền ≥ 4,5:1 | Chưa audit bằng screen reader thật (NVDA/VoiceOver) và zoom 200%; không công bố WCAG certification |
 | P1 — Browser E2E của toàn workflow và edge cases | Unit/regression tests đã có; screenshot fixture chỉ là một thời điểm final approval pending, live smoke chưa đi hết mọi branch | Cover banking/document waits, pause/resume, NOT_EVALUABLE, stale/replaced/resolved approval, duplicate submit, negotiation outcome và separate release gate bằng isolated fixtures/test backend; không dùng DB thật hoặc gọi external adapter |
-| P2 — Workflow history dễ đọc và tải hiệu quả hơn | `features/workspace/WorkflowEvents.tsx` hiện show raw `event_type`, poll toàn list 1,5s; backend có `after_sequence` | Map event labels, xử lý unknown codes trung thực; incremental fetch/merge/dedupe theo sequence, dừng timer đúng lifecycle, test đổi run/error/recovery; không lấy log làm source state |
+| ~~P2 — Workflow history dễ đọc và tải hiệu quả hơn~~ **Đã xong** | Labels ở `shared/eventLabels.ts` (lấy từ các event mà orchestrators/runtime ghi); `api/client.ts#getWorkflowEvents`; polling theo `live` = projection chưa terminal, không suy trạng thái từ log | Còn lại: chưa hiển thị `metadata` của event; khi backend thêm event mới phải bổ sung label (mã lạ vẫn hiện nguyên) |
 | P2 — Evidence table khi có nhiều artifacts | `features/workspace/ContractWorkspace.tsx`: chưa search/filter/paging | Filter/sort/search từ artifacts đã được API trả; preserve run scope/version. Empty filter state rõ; không biến thành document upload/search service mới |
 | P2 — Navigation và component organization | Sidebar local views, không URL state; `App.tsx` vẫn chứa nhiều interaction wiring; brand link `/dashboard` cần kiểm tra cả Vite base và FastAPI | Kiểm tra reload/back/brand trên cả hai server; chỉ thêm URL/view state khi có scope. Tách shell/interaction presentation với tests giữ handlers/guards, không đổi API để phục vụ layout |
 | P2 — Responsive/state polish | Đã kiểm tra 390/768/1440/1920px ở views chính; chưa audit mọi dialog/form và chuỗi text dài | Kiểm tra zoom 200%, long IDs/text, loading/empty/error/warning/failed-safe/stale và pending/resolved; không tràn trang hoặc mất hành động |
 
-Gợi ý task tiếp theo: **P1 — browser E2E** cho các nhánh workflow, hoặc bổ sung các artifact types mới vào demo fixture để xem renderer trên UI. Cần kiểm tra: trong demo fixture, view Quyết định hiện "Decision Card của lượt chạy hiện tại chưa sẵn sàng" dù fixture có card (`DecisionDashboard`, chưa rõ do fixture hay mapping). Mỗi task nhỏ nên có before/after và nêu rõ ảnh dùng dữ liệu thật hay fixture.
+Gợi ý task tiếp theo: **P1 — browser E2E** cho các nhánh workflow (cần Playwright làm dev dependency — hỏi owner trước khi đổi dependency), hoặc không cần dependency mới: **P2 — Evidence table** search/filter/sort, hoặc bổ sung các artifact types mới vào demo fixture để xem renderer trên UI. Mỗi task nhỏ nên có before/after và nêu rõ ảnh dùng dữ liệu thật hay fixture.
+
+Đã giải quyết: demo fixture từng hiện "Decision Card của lượt chạy hiện tại chưa sẵn sàng" ~8 giây đầu. Không do fixture hay `normalize.ts` (card `available: true` được map đúng) mà do `App.tsx` ẩn card trong lúc playback timeline chạy từng mốc 1 giây, còn `DecisionDashboard` dùng chung câu "chưa sẵn sàng" cho cả hai trường hợp.
 
 Các mở rộng cần backend/product scope riêng: multi-contract overview/search được persist, quản lý người dùng/RBAC, policy settings, historical analytics, document repository verification, live banking/external connector. Không tạo UI trông như đã hoạt động cho các phần này.
 
@@ -104,7 +108,7 @@ Các browser scripts `mercury-review.js`, `workspace-validation.js`, `live-smoke
 
 ## Checks và lỗi cần người phụ trách backend review
 
-Frontend tại thời điểm bàn giao: **21 test files, 99 tests pass** (bản redesign ban đầu: 20 files, 77 tests); TypeScript/Vite build pass. Responsive, keyboard review và live smoke đã kiểm tra, không có screen-reader audit đầy đủ.
+Frontend tại thời điểm bàn giao: **21 test files, 107 tests pass** (bản redesign ban đầu: 20 files, 77 tests); TypeScript/Vite build pass. Responsive, keyboard review và live smoke đã kiểm tra, không có screen-reader audit đầy đủ.
 
 Backend: **481 passed, 4 failed / 485 tests**; Ruff **2 I001**. Python source/tests không thay đổi trong redesign; các failures đã quan sát trước lần bàn giao này. Không xem chúng là kiểm tra xanh hay tự sửa business semantics trong task UI.
 

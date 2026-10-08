@@ -43,4 +43,15 @@ describe("DecisionDashboard", () => {
     ).toBeInTheDocument();
     expect(screen.queryByText(/MEDIUM|HIGH|NEGOTIATION_AUTHORIZED/)).not.toBeInTheDocument();
   });
+
+  it("separates a card waiting for playback from a missing card", () => {
+    const base = { contract_id: "CON-1", execution_status_label_vi: "Chờ Founder", business_status: "WAITING_FOR_FINAL_DECISION", business_status_label_vi: "Chờ duyệt quyết định cuối", current_stage_label_vi: "Founder xem xét", progress_percent: 40 };
+    const { rerender } = render(<DecisionDashboard data={{ ...base, decision_card: { available: false, reveal_pending: true, recommendation_label_vi: "Đang chờ" } }} />);
+    expect(screen.getByRole("status")).toHaveTextContent("đã được tạo; đang hiển thị lần lượt");
+    expect(screen.queryByText(/chưa sẵn sàng/)).not.toBeInTheDocument();
+
+    rerender(<DecisionDashboard data={{ ...base, decision_card: { available: false, recommendation_label_vi: "Chưa có" } }} />);
+    expect(screen.getByText("Decision Card của lượt chạy hiện tại chưa sẵn sàng.")).toBeInTheDocument();
+    expect(screen.queryByText(/đã được tạo/)).not.toBeInTheDocument();
+  });
 });

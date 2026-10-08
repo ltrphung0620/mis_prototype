@@ -7,6 +7,7 @@ import type {
 } from "../api/types";
 import {
   allowedDocumentTypes,
+  decisionDashboardData,
   hasAssessmentArtifact,
   pendingApproval,
   pendingMissingInteraction,
@@ -157,5 +158,48 @@ describe("dashboard integration", () => {
       subject_artifact_id: "ART-CARD",
       subject_artifact_version: 2,
     });
+  });
+
+  it("reports a projected card as pending reveal during playback, not as missing", () => {
+    const projected = {
+      contractId: "CON-1",
+      statusLabel: "Chờ Founder",
+      businessStatus: "WAITING_FOR_FINAL_DECISION",
+      businessStatusLabel: "Chờ duyệt quyết định cuối",
+      currentStageLabel: "Founder xem xét",
+      progressPercent: 40,
+      metrics: [],
+      decisionCard: {
+        available: true,
+        artifact_id: "ART-CARD",
+        decision_card_id: "DC-1",
+        recommendation: "ACCEPT",
+        recommendation_label_vi: "Chấp nhận hợp đồng",
+        confidence: "MEDIUM",
+        executive_summary: "Tóm tắt.",
+      },
+    } as unknown as NormalizedWorkflowDashboard;
+
+    const pending = decisionDashboardData(projected, null, { revealPending: true });
+    expect(pending.decision_card).toMatchObject({
+      available: false,
+      reveal_pending: true,
+      artifact_id: "ART-CARD",
+    });
+    expect(pending.decision_card.recommendation).toBeUndefined();
+    expect(pending.decision_card.executive_summary).toBeUndefined();
+
+    expect(decisionDashboardData(projected, null).decision_card).toMatchObject({
+      available: true,
+      recommendation_label_vi: "Chấp nhận hợp đồng",
+    });
+
+    const missing = decisionDashboardData(
+      { ...projected, decisionCard: { available: false, recommendation_label_vi: "Chưa có" } },
+      null,
+      { revealPending: true },
+    );
+    expect(missing.decision_card.available).toBe(false);
+    expect(missing.decision_card.reveal_pending).toBeUndefined();
   });
 });

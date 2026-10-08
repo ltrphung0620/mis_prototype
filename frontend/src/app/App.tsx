@@ -22,6 +22,7 @@ import { useWorkflowDashboard } from "../hooks/useWorkflowDashboard";
 import { Notice } from "../shared/components/Notice";
 import { StatusBadge } from "../shared/components/StatusBadge";
 import { useDialogFocus } from "../shared/useDialogFocus";
+import { isTerminalExecutionStatus } from "../shared/workflowLabels";
 import { WorkflowEvents } from "../features/workspace/WorkflowEvents";
 import {
   AssessmentIndex,
@@ -116,27 +117,16 @@ export function App() {
     () => allowedDocumentTypes(runArtifacts, currentMissingRequestId),
     [currentMissingRequestId, runArtifacts],
   );
-  const decisionDashboard = useMemo(() => {
-    if (!dashboard) return null;
-    return {
-      ...dashboard,
-      progressPercent: playback.percent,
-      decisionCard: playback.canRevealDecisionCard
-        ? dashboard.decisionCard
-        : {
-            ...dashboard.decisionCard,
-            available: false,
-            recommendation_label_vi:
-              "Decision Card đang được đồng bộ theo tiến trình",
-          },
-    };
-  }, [dashboard, playback.canRevealDecisionCard, playback.percent]);
   const decisionData = useMemo(
     () =>
-      decisionDashboard
-        ? decisionDashboardData(decisionDashboard, presentationCard)
+      dashboard
+        ? decisionDashboardData(
+            { ...dashboard, progressPercent: playback.percent },
+            presentationCard,
+            { revealPending: !playback.canRevealDecisionCard },
+          )
         : null,
-    [decisionDashboard, presentationCard],
+    [dashboard, playback.canRevealDecisionCard, playback.percent, presentationCard],
   );
   const isFinalDecisionAction =
     activeApproval?.command.action_type === "CONFIRM_FINAL_CONTRACT_DECISION";
@@ -651,7 +641,10 @@ export function App() {
                 onOpenAssessment={openAssessment}
                 canOpenAssessment={canOpenAssessment}
               />
-              <WorkflowEvents runId={dashboard.workflowRunId} />
+              <WorkflowEvents
+                runId={dashboard.workflowRunId}
+                live={!isTerminalExecutionStatus(dashboard.status)}
+              />
             </>
           )}
           {dashboard?.failureReason && view !== "workflow" && (
