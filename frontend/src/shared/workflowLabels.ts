@@ -38,6 +38,11 @@ const WORKFLOW_LABELS: Readonly<Record<string, string>> = {
   WAITING_FOR_APPROVAL: "Đang chờ Founder phê duyệt",
 };
 
+/** Label for a known workflow node/stage code, or `null` when the code is not mapped. */
+export function knownWorkflowLabel(code: string): string | null {
+  return WORKFLOW_LABELS[code.toUpperCase()] ?? null;
+}
+
 export function stageLabel(code: string): string {
   return WORKFLOW_LABELS[code.toUpperCase()] ?? "Giai đoạn xử lý";
 }

@@ -4,6 +4,10 @@ import type {
   DashboardMetricDto,
   NormalizedWorkflowDashboard,
 } from "../../api/types";
+import {
+  artifactTypeLabel,
+  artifactValidationLabel,
+} from "../../shared/artifactLabels";
 import { businessValueLabel } from "../../shared/businessLabels";
 import { formatVndCompact } from "../../shared/formatters";
 import { StatusBadge } from "../../shared/components/StatusBadge";
@@ -22,31 +26,6 @@ export const workspaceViews: {
   { id: "workflow", label: "Quy trình", icon: "workflow" },
   { id: "input", label: "Dữ liệu đầu vào", icon: "input" },
 ];
-
-const artifactLabels: Record<string, string> = {
-  FINANCE_ASSESSMENT: "Finance · Đánh giá tài chính",
-  FINANCE_FACTS: "Finance · Số liệu tài chính",
-  OPERATIONS_ASSESSMENT: "Operations · Đánh giá vận hành",
-  OPERATIONS_FACTS: "Operations · Số liệu vận hành",
-  INITIAL_RISK_ASSESSMENT: "Risk · Đánh giá ban đầu",
-  FINAL_RISK_ASSESSMENT: "Risk · Kiểm tra cuối",
-  RISK_PRE_SCAN: "Risk · Quét sơ bộ",
-  AI_DECISION_ANALYSIS: "Phân tích quyết định",
-  DECISION_CARD: "Decision Card",
-  EVALUATION_CASE: "Hồ sơ đánh giá",
-  PLANNER_RESULT: "Kết quả tiếp nhận",
-  DOCUMENT_RELEASE_PACKAGE: "Gói hồ sơ nội bộ",
-  INTERNAL_DECISION_PACKAGE: "Hồ sơ quyết định nội bộ",
-  BANKING_PRECHECK_RESULT_SET: "Kết quả precheck mô phỏng",
-};
-
-const validationLabels: Record<string, string> = {
-  VALID: "Đã kiểm tra bằng chứng",
-  VALID_WITH_WARNINGS: "Đã kiểm tra · có cảnh báo",
-  INVALID: "Không đạt kiểm tra",
-  BLOCKED: "Bị chặn bởi kiểm tra",
-  PENDING: "Chưa kiểm tra",
-};
 
 export function WorkspaceIcon({ name }: { name: string }) {
   const paths: Record<string, ReactNode> = {
@@ -265,13 +244,7 @@ export function EvidenceIndex({
               {artifacts.map((artifact) => (
                 <tr key={artifact.artifact_id}>
                   <td>
-                    <strong>
-                      {artifactLabels[artifact.artifact_type] ??
-                        businessValueLabel(
-                          artifact.artifact_type,
-                          artifact.artifact_type,
-                        )}
-                    </strong>
+                    <strong>{artifactTypeLabel(artifact.artifact_type)}</strong>
                     <small>{artifact.artifact_id}</small>
                   </td>
                   <td>v{artifact.version}</td>
@@ -279,10 +252,7 @@ export function EvidenceIndex({
                     <StatusBadge
                       compact
                       status={artifact.validation_status}
-                      label={
-                        validationLabels[artifact.validation_status] ??
-                        artifact.validation_status
-                      }
+                      label={artifactValidationLabel(artifact.validation_status)}
                     />
                   </td>
                   <td>

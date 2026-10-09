@@ -211,9 +211,13 @@ export function DecisionCardModal({
   if (!open) return null;
   if (!card) {
     return (
-      <div role="dialog" aria-modal="true" aria-label="Decision Card">
-        <p>Decision Card của lượt chạy hiện tại chưa sẵn sàng.</p>
-        <button type="button" onClick={onClose}>Đóng</button>
+      <div role="dialog" aria-modal="true" aria-label="Decision Card" className="decision-card-modal">
+        <article>
+          <p role="status">Decision Card của lượt chạy hiện tại chưa sẵn sàng.</p>
+          <footer>
+            <button type="button" onClick={onClose}>Đóng</button>
+          </footer>
+        </article>
       </div>
     );
   }

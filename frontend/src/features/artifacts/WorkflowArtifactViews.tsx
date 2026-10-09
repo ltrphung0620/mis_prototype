@@ -182,7 +182,7 @@ export function RiskPreScanView({
       <section>
         <h4>1. Dữ liệu nguồn & Quy tắc rủi ro đã quét (Sheet 06)</h4>
         {!!recordCountEntries.length && (
-          <p style={{ margin: "0 0 10px 0" }}>
+          <p>
             <strong>Dữ liệu nguồn đã quét:</strong>{" "}
             {recordCountEntries
               .map(([sheet, count]) => `${translateText(label(sheet))}: ${count} dòng`)
@@ -190,12 +190,12 @@ export function RiskPreScanView({
           </p>
         )}
         {rules.length ? (
-          <ul>
+          <ul className="assessment-list">
             {rules.map((rule) => (
-              <li key={rule.rule_id} style={{ marginBottom: "8px" }}>
+              <li key={rule.rule_id}>
                 <strong>{rule.rule_id} · {translateText(label(rule.risk_type))} · {translateText(label(rule.severity))}</strong>
-                <p style={{ margin: "2px 0" }}>{translateText(rule.declared_condition)}</p>
-                <p style={{ margin: "0", fontSize: "12px", color: "var(--color-ink-600)" }}>
+                <p>{translateText(rule.declared_condition)}</p>
+                <p className="assessment-item__secondary">
                   Hành động yêu cầu: {translateText(rule.required_action)}
                 </p>
               </li>
@@ -211,19 +211,19 @@ export function RiskPreScanView({
         <h4>2. Cảnh báo rủi ro phát hiện (Sheet 07)</h4>
         {caseAlerts.length ? (
           <div>
-            <h5 style={{ margin: "5px 0" }}>Cảnh báo riêng của Hợp đồng:</h5>
-            <ul>
+            <h5>Cảnh báo riêng của hợp đồng</h5>
+            <ul className="assessment-list">
               {caseAlerts.map((alert, index) => (
-                <li key={`case-alert-${index}`} style={{ marginBottom: "6px" }}>
+                <li key={`case-alert-${index}`}>
                   <strong>{translateText(label(alert.alert_type))} · {translateText(label(alert.severity))}</strong>
-                  <p style={{ margin: "2px 0" }}>{translateText(alert.description)}</p>
+                  <p>{translateText(alert.description)}</p>
                   {alert.recommended_action && (
-                    <p style={{ margin: "0", fontSize: "12px", color: "var(--color-ink-600)" }}>
+                    <p className="assessment-item__secondary">
                       Hướng xử lý: {translateText(alert.recommended_action)}
                     </p>
                   )}
                   {!!alert.related_entity_ids?.length && (
-                    <p style={{ margin: "0", fontSize: "11px", color: "var(--color-ink-450)" }}>
+                    <p className="assessment-item__meta">
                       Thực thể liên quan: {alert.related_entity_ids.join(", ")}
                     </p>
                   )}
@@ -234,15 +234,15 @@ export function RiskPreScanView({
         ) : null}
 
         {globalAlerts.length ? (
-          <div style={{ marginTop: "10px" }}>
-            <h5 style={{ margin: "5px 0" }}>Cảnh báo rủi ro toàn OPC:</h5>
-            <ul>
+          <div>
+            <h5>Cảnh báo rủi ro toàn OPC</h5>
+            <ul className="assessment-list">
               {globalAlerts.map((alert, index) => (
-                <li key={`global-alert-${index}`} style={{ marginBottom: "6px" }}>
+                <li key={`global-alert-${index}`}>
                   <strong>{translateText(label(alert.alert_type))} · {translateText(label(alert.severity))}</strong>
-                  <p style={{ margin: "2px 0" }}>{translateText(alert.description)}</p>
+                  <p>{translateText(alert.description)}</p>
                   {alert.recommended_action && (
-                    <p style={{ margin: "0", fontSize: "12px", color: "var(--color-ink-600)" }}>
+                    <p className="assessment-item__secondary">
                       Hướng xử lý: {translateText(alert.recommended_action)}
                     </p>
                   )}
@@ -261,12 +261,11 @@ export function RiskPreScanView({
       <section>
         <h4>3. Các điểm phê duyệt được đăng ký (Approval signals)</h4>
         {checkpoints.length ? (
-          <ul>
+          <ul className="assessment-list">
             {checkpoints.map((checkpoint, index) => (
               <li key={`${checkpoint.source_rule_id ?? "approval"}-${index}`}>
                 <strong>{checkpoint.source_rule_id ?? "Quy tắc kiểm soát"}</strong>: Founder cần phê duyệt trước khi{" "}
-                {translateText(label(checkpoint.protected_action)).toLowerCase()}
-                {checkpoint.source_rule_id === "RR-005" ? " (lớn hơn 300 triệu)" : ""}.
+                {translateText(label(checkpoint.protected_action)).toLowerCase()}.
               </li>
             ))}
           </ul>
@@ -275,7 +274,7 @@ export function RiskPreScanView({
         )}
       </section>
 
-      <p style={{ marginTop: "15px", fontStyle: "italic", fontSize: "12px", color: "var(--color-ink-600)" }}>
+      <p className="assessment-view__footnote">
         Kết quả này mới là tín hiệu đầu vào; mức rủi ro được kết luận sau khi có kết quả Tài chính và Vận hành.
       </p>
     </article>

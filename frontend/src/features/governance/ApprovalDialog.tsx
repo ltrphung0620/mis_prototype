@@ -73,9 +73,13 @@ export function ApprovalDialog({
   if (!open) return null;
   if (!request || !subject) {
     return (
-      <div role="dialog" aria-modal="true" aria-label="Phê duyệt của Founder">
-        <p>Không thể hiển thị yêu cầu phê duyệt vì thiếu nội dung cần xem xét.</p>
-        <button type="button" onClick={onClose}>Đóng</button>
+      <div role="dialog" aria-modal="true" aria-label="Phê duyệt của Founder" className="approval-dialog">
+        <article>
+          <p role="alert">Không thể hiển thị yêu cầu phê duyệt vì thiếu nội dung cần xem xét.</p>
+          <footer>
+            <button type="button" onClick={onClose}>Đóng</button>
+          </footer>
+        </article>
       </div>
     );
   }

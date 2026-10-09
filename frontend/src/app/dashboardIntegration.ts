@@ -43,6 +43,19 @@ const PRESENTABLE_ARTIFACT_TYPES = new Set([
   "DOCUMENT_RELEASE_PACKAGE",
   "INTERNAL_DECISION_PACKAGE",
   "DECISION_POST_PRECHECK_REVIEW",
+  "BANKING_INPUT_SUPPLEMENT",
+  "BANKING_PRECHECK_SUBMISSION_PROPOSAL",
+  "BANKING_PRECHECK_EVIDENCE_SUPPLEMENT",
+  "DOCUMENT_EVIDENCE_SUPPLEMENT",
+  "POST_DECISION_UPDATE",
+  "NEGOTIATION_OUTCOME",
+  "EXTERNAL_DOCUMENT_SUBMISSION_PROPOSAL",
+  "APPROVAL_CHECKPOINTS",
+  "RISK_RULE_EVALUATION",
+  "DECISION_ROUTE_PLAN",
+  "DECISION_POST_BANKING_REVIEW",
+  "DOCUMENT_PREPARATION_REQUEST",
+  "AI_DECISION_ANALYSIS",
 ]);
 
 const ARTIFACT_PREFERENCE = [
@@ -66,6 +79,20 @@ const ARTIFACT_PREFERENCE = [
   "FINANCE_FACTS",
   "DECISION_POST_PRECHECK_REVIEW",
   "OPERATIONS_FACTS",
+  "BANKING_INPUT_SUPPLEMENT",
+  "BANKING_PRECHECK_SUBMISSION_PROPOSAL",
+  "BANKING_PRECHECK_EVIDENCE_SUPPLEMENT",
+  "DOCUMENT_EVIDENCE_SUPPLEMENT",
+  "POST_DECISION_UPDATE",
+  "NEGOTIATION_OUTCOME",
+  "EXTERNAL_DOCUMENT_SUBMISSION_PROPOSAL",
+  // Audit/handoff records come last so existing milestone selections stay unchanged.
+  "APPROVAL_CHECKPOINTS",
+  "RISK_RULE_EVALUATION",
+  "DECISION_ROUTE_PLAN",
+  "DECISION_POST_BANKING_REVIEW",
+  "DOCUMENT_PREPARATION_REQUEST",
+  "AI_DECISION_ANALYSIS",
 ] as const;
 
 function record(value: unknown): JsonRecord {
@@ -91,6 +118,7 @@ function envelope(item: ApiArtifactEnvelope): ArtifactEnvelope {
     version: item.version,
     validation_status: item.validation_status,
     payload: item.payload,
+    input_artifact_ids: strings(item.input_artifact_ids),
   };
 }
 
@@ -214,7 +242,12 @@ export function decisionCardArtifact(
 export function decisionDashboardData(
   dashboard: NormalizedWorkflowDashboard,
   card: DecisionCardArtifact | null,
+  options: { revealPending?: boolean } = {},
 ): DecisionDashboardData {
+  // Playback only delays presentation; a projected card is never reported as missing.
+  const revealPending = Boolean(
+    options.revealPending && dashboard.decisionCard.available,
+  );
   const hasUnverifiedRecommendation = Boolean(
     card && card.payload.analysis_source !== "OPENAI",
   );
@@ -227,6 +260,35 @@ export function decisionDashboardData(
     scope: item.scope,
     contract_attributable: item.scope !== "OPC_GLOBAL",
   }));
+  const decisionCard: DecisionDashboardData["decision_card"] = revealPending
+    ? {
+        available: false,
+        reveal_pending: true,
+        artifact_id: dashboard.decisionCard.artifact_id,
+        decision_card_id: dashboard.decisionCard.decision_card_id,
+        recommendation_label_vi: "Decision Card đang chờ hiển thị theo tiến trình",
+      }
+    : {
+        available: dashboard.decisionCard.available,
+        artifact_id: dashboard.decisionCard.artifact_id,
+        decision_card_id: dashboard.decisionCard.decision_card_id,
+        recommendation: (hasUnverifiedRecommendation
+          ? "NOT_EVALUABLE"
+          : dashboard.decisionCard.recommendation ?? undefined) as
+          | DecisionCardPayload["recommendation"]
+          | undefined,
+        recommendation_label_vi: hasUnverifiedRecommendation
+          ? "AI chưa tạo được đề xuất có thể xác thực"
+          : dashboard.decisionCard.recommendation_label_vi,
+        confidence: (hasUnverifiedRecommendation
+          ? "NOT_EVALUABLE"
+          : dashboard.decisionCard.confidence ?? undefined) as
+          | DecisionCardPayload["confidence"]
+          | undefined,
+        executive_summary: hasUnverifiedRecommendation
+          ? "Nguồn phân tích AI của Decision Card không phải OpenAI hoặc không thể đối chiếu chính xác."
+          : dashboard.decisionCard.executive_summary,
+      };
   return {
     contract_id: dashboard.contractId,
     execution_status_label_vi: dashboard.statusLabel,
@@ -235,27 +297,7 @@ export function decisionDashboardData(
     current_stage_label_vi: dashboard.currentStageLabel,
     progress_percent: dashboard.progressPercent ?? 0,
     metrics,
-    decision_card: {
-      available: dashboard.decisionCard.available,
-      artifact_id: dashboard.decisionCard.artifact_id,
-      decision_card_id: dashboard.decisionCard.decision_card_id,
-      recommendation: (hasUnverifiedRecommendation
-        ? "NOT_EVALUABLE"
-        : dashboard.decisionCard.recommendation ?? undefined) as
-        | DecisionCardPayload["recommendation"]
-        | undefined,
-      recommendation_label_vi: hasUnverifiedRecommendation
-        ? "AI chưa tạo được đề xuất có thể xác thực"
-        : dashboard.decisionCard.recommendation_label_vi,
-      confidence: (hasUnverifiedRecommendation
-        ? "NOT_EVALUABLE"
-        : dashboard.decisionCard.confidence ?? undefined) as
-        | DecisionCardPayload["confidence"]
-        | undefined,
-      executive_summary: hasUnverifiedRecommendation
-        ? "Nguồn phân tích AI của Decision Card không phải OpenAI hoặc không thể đối chiếu chính xác."
-        : dashboard.decisionCard.executive_summary,
-    },
+    decision_card: decisionCard,
     condition_titles: card?.payload.conditions?.map((item) => item.title) ?? [],
     residual_risk_level: card?.payload.residual_risk_level ?? null,
     ready_for_external_submission:

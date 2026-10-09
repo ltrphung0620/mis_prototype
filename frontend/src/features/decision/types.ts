@@ -157,6 +157,8 @@ export interface PendingDecisionApproval {
 
 export interface DecisionCardSummary {
   available: boolean;
+  /** Projection has a card, but workflow playback has not caught up to reveal it yet. */
+  reveal_pending?: boolean;
   artifact_id?: string | null;
   decision_card_id?: string | null;
   recommendation?: DecisionRecommendation | null;

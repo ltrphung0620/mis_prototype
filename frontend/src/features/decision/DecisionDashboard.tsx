@@ -36,6 +36,10 @@ export function DecisionDashboard({ data }: DecisionDashboardProps): ReactElemen
           <div className="decision-properties">{data.decision_card.confidence && <p><span>Độ tin cậy</span><strong>{businessValueLabel(data.decision_card.confidence)}</strong></p>}
           {data.residual_risk_level && <p><span>Rủi ro còn lại</span><strong>{businessValueLabel(data.residual_risk_level)}</strong></p>}</div>
         </article>
+      ) : data.decision_card.reveal_pending ? (
+        <p role="status">
+          Decision Card của lượt chạy này đã được tạo; đang hiển thị lần lượt các bước đã hoàn tất trước khi mở.
+        </p>
       ) : <p>Decision Card của lượt chạy hiện tại chưa sẵn sàng.</p>}
 
       {data.post_decision_outcome && <p>Kết quả sau quyết định: {businessValueLabel(data.post_decision_outcome)}.</p>}

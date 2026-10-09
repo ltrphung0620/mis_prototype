@@ -159,6 +159,7 @@ export interface ApiArtifactEnvelope extends JsonRecord {
   status: string;
   payload: JsonRecord;
   validation_status: string;
+  input_artifact_ids?: readonly string[];
 }
 
 export interface ApiApprovalRequest extends JsonRecord {

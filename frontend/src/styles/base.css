@@ -34,6 +34,11 @@ button:hover:not(:disabled) {
   background: var(--color-surface-muted);
   border-color: #bfc2d0;
 }
+input[aria-invalid="true"],
+select[aria-invalid="true"],
+textarea[aria-invalid="true"] {
+  border-color: var(--color-red-700);
+}
 button:disabled,
 select:disabled {
   cursor: not-allowed;

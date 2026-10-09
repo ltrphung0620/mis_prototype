@@ -26,6 +26,22 @@ describe("typed missing-data forms", () => {
     expect(submit).not.toHaveBeenCalled();
   });
 
+  it("refuses to fabricate a reference or hash when browser hashing is unavailable", async () => {
+    const submit = vi.fn();
+    vi.stubGlobal("crypto", { randomUUID: () => "11111111-1111-4111-8111-111111111111" });
+    try {
+      render(<DocumentSupplementForm workflow_run_id="RUN-1" missing_request_id="MDR-1" allowed_document_types={["PERFORMANCE_BOND_REQUEST_FORM"]} onSubmit={submit} />);
+      const file = new File(["bank form"], "don-de-nghi.pdf", { type: "application/pdf" });
+      fireEvent.change(screen.getByLabelText(/Chọn tệp/i), { target: { files: [file] } });
+      expect(await screen.findByRole("alert")).toHaveTextContent(/không hỗ trợ tính mã băm SHA-256/i);
+      expect(screen.getByLabelText(/Chọn tệp/i)).toHaveAttribute("aria-invalid", "true");
+      expect(screen.getByRole("button", { name: "Bổ sung tệp và tiếp tục quy trình" })).toBeDisabled();
+      expect(submit).not.toHaveBeenCalled();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
   it("binds precheck evidence to the exact workflow request", () => {
     const submit = vi.fn();
     render(<PrecheckEvidenceForm workflow_run_id="RUN-2" missing_request_id="MDR-2" onSubmit={submit} />);
@@ -41,7 +57,23 @@ describe("typed missing-data forms", () => {
     fireEvent.change(screen.getByLabelText("Số tiền cần hỗ trợ (VND)"), { target: { value: "420.5" } });
     fireEvent.change(screen.getByLabelText("Căn cứ nhập liệu"), { target: { value: "Founder cung cấp cho yêu cầu legacy." } });
     fireEvent.submit(screen.getByRole("form", { name: "Bổ sung số tiền ngân hàng" }));
-    expect(screen.getByRole("alert")).toHaveTextContent(/số nguyên VND dương/i);
+    const alert = screen.getByRole("alert");
+    expect(alert).toHaveTextContent(/số nguyên VND dương/i);
+    expect(screen.getByLabelText("Số tiền cần hỗ trợ (VND)")).toHaveAttribute("aria-invalid", "true");
+    expect(screen.getByLabelText("Số tiền cần hỗ trợ (VND)")).toHaveAttribute("aria-describedby", alert.id);
+    expect(screen.getByLabelText("Căn cứ nhập liệu")).not.toHaveAttribute("aria-invalid");
+    expect(submit).not.toHaveBeenCalled();
+  });
+
+  it("marks only the missing precheck evidence field as invalid", () => {
+    const submit = vi.fn();
+    render(<PrecheckEvidenceForm workflow_run_id="RUN-2" missing_request_id="MDR-2" onSubmit={submit} />);
+    fireEvent.change(screen.getByLabelText("Mã tham chiếu tài liệu bổ sung"), { target: { value: "DOC-REF-22" } });
+    fireEvent.submit(screen.getByRole("form", { name: "Bổ sung căn cứ cho kiểm tra sơ bộ với ngân hàng" }));
+    const alert = screen.getByRole("alert");
+    expect(screen.getByLabelText("Nội dung bổ sung")).toHaveAttribute("aria-invalid", "true");
+    expect(screen.getByLabelText("Nội dung bổ sung")).toHaveAttribute("aria-describedby", alert.id);
+    expect(screen.getByLabelText("Mã tham chiếu tài liệu bổ sung")).not.toHaveAttribute("aria-invalid");
     expect(submit).not.toHaveBeenCalled();
   });
 

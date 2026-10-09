@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
-  ArtifactAssessmentView,
+  ArtifactDetailDialog,
   type ArtifactEnvelope,
 } from "../features/artifacts";
 import { DecisionCardModal, DecisionDashboard } from "../features/decision";
@@ -22,6 +22,8 @@ import { useWorkflowDashboard } from "../hooks/useWorkflowDashboard";
 import { Notice } from "../shared/components/Notice";
 import { StatusBadge } from "../shared/components/StatusBadge";
 import { useDialogFocus } from "../shared/useDialogFocus";
+import { useScrollTopOnChange } from "../shared/useScrollTopOnChange";
+import { isTerminalExecutionStatus } from "../shared/workflowLabels";
 import { WorkflowEvents } from "../features/workspace/WorkflowEvents";
 import {
   AssessmentIndex,
@@ -46,48 +48,6 @@ import {
   pendingNotEvaluableReview,
   selectAssessmentArtifact,
 } from "./dashboardIntegration";
-
-function AssessmentDialog({
-  artifact,
-  runArtifacts = [],
-  onClose,
-}: {
-  artifact: ArtifactEnvelope | null;
-  runArtifacts?: readonly ArtifactEnvelope[];
-  onClose: () => void;
-}) {
-  if (!artifact) return null;
-  return (
-    <div
-      className="assessment-dialog modal-layer"
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="assessment-dialog-title"
-    >
-      <article className="modal-card">
-        <header className="modal-card__header">
-          <div>
-            <p>Kết quả nghiệp vụ</p>
-            <h2 id="assessment-dialog-title">Chi tiết đánh giá</h2>
-          </div>
-          <button
-            type="button"
-            onClick={onClose}
-            aria-label="Đóng chi tiết đánh giá"
-          >
-            ×
-          </button>
-        </header>
-        <div className="modal-card__body">
-          <ArtifactAssessmentView
-            artifact={artifact}
-            runArtifacts={runArtifacts}
-          />
-        </div>
-      </article>
-    </div>
-  );
-}
 
 export function App() {
   const {
@@ -118,6 +78,7 @@ export function App() {
     null,
   );
   const [view, setView] = useState<WorkspaceView>("decision");
+  useScrollTopOnChange(view);
 
   const dashboard = state.dashboard;
   const playback = useWorkflowPlayback(dashboard);
@@ -158,27 +119,16 @@ export function App() {
     () => allowedDocumentTypes(runArtifacts, currentMissingRequestId),
     [currentMissingRequestId, runArtifacts],
   );
-  const decisionDashboard = useMemo(() => {
-    if (!dashboard) return null;
-    return {
-      ...dashboard,
-      progressPercent: playback.percent,
-      decisionCard: playback.canRevealDecisionCard
-        ? dashboard.decisionCard
-        : {
-            ...dashboard.decisionCard,
-            available: false,
-            recommendation_label_vi:
-              "Decision Card đang được đồng bộ theo tiến trình",
-          },
-    };
-  }, [dashboard, playback.canRevealDecisionCard, playback.percent]);
   const decisionData = useMemo(
     () =>
-      decisionDashboard
-        ? decisionDashboardData(decisionDashboard, presentationCard)
+      dashboard
+        ? decisionDashboardData(
+            { ...dashboard, progressPercent: playback.percent },
+            presentationCard,
+            { revealPending: !playback.canRevealDecisionCard },
+          )
         : null,
-    [decisionDashboard, presentationCard],
+    [dashboard, playback.canRevealDecisionCard, playback.percent, presentationCard],
   );
   const isFinalDecisionAction =
     activeApproval?.command.action_type === "CONFIRM_FINAL_CONTRACT_DECISION";
@@ -401,6 +351,7 @@ export function App() {
       negotiationConfirmOpen,
     ),
     closeDialogs,
+    { escapeDisabled: submittingInteraction, fallbackFocusId: "workspace-content" },
   );
 
   return (
@@ -468,9 +419,16 @@ export function App() {
             <div>
               <p>KHÔNG GIAN QUYẾT ĐỊNH</p>
               <h1>
-                {state.selectedContractId
-                  ? `Hợp đồng ${state.selectedContractId}`
-                  : "Đánh giá hợp đồng"}
+                {state.selectedContractId ? (
+                  <>
+                    Hợp đồng{" "}
+                    <span className="page-heading__id">
+                      {state.selectedContractId}
+                    </span>
+                  </>
+                ) : (
+                  "Đánh giá hợp đồng"
+                )}
               </h1>
               <span>
                 {dashboard?.input.customerName ||
@@ -692,7 +650,10 @@ export function App() {
                 onOpenAssessment={openAssessment}
                 canOpenAssessment={canOpenAssessment}
               />
-              <WorkflowEvents runId={dashboard.workflowRunId} />
+              <WorkflowEvents
+                runId={dashboard.workflowRunId}
+                live={!isTerminalExecutionStatus(dashboard.status)}
+              />
             </>
           )}
           {dashboard?.failureReason && view !== "workflow" && (
@@ -711,7 +672,7 @@ export function App() {
         </main>
       </div>
 
-      <AssessmentDialog
+      <ArtifactDetailDialog
         artifact={assessment}
         runArtifacts={runArtifacts}
         onClose={() => setAssessment(null)}
