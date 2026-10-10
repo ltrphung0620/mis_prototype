@@ -1,5 +1,9 @@
 # Bàn giao frontend — OPC MIS Contract Decision Workspace
 
+> Vòng Visual Refinement 11/10/2026 đã thực hiện trong preview của Checkpoint 1; IA/bố cục đã được Founder duyệt. Xem [review 14](14_visual_refinement_review.md) để review typography, charts, bảng hợp đồng, screenshot before/after và checks. Chờ duyệt polish trước Workflow Viewer; không mở rộng backend/API trong vòng này.
+
+> Cập nhật 11/10/2026: **Executive Home + Drill-down đã có UI preview riêng** tại `/dashboard-assets/?preview=1#/dashboard`. Checkpoint 1 gồm Dashboard, Company Overview và Contracts, toàn bộ dữ liệu là fixtures có nhãn; không gọi API. Xem [checkpoint 13](13_ui_first_preview_checkpoint.md) và [roadmap UI-first](12_revised_implementation_roadmap.md). UI connected khi không có `preview=1` vẫn là baseline PR #3 mô tả phía dưới. Company/global read APIs và Dify canvas chưa triển khai.
+
 Ngày rà soát: 08/10/2026 (cập nhật cùng ngày sau các task P1, bug Decision Card trên demo, P2 lịch sử workflow, đợt P1 detail coverage/form audit và đợt sửa lỗi UI từ browser review 09/10/2026, nhánh `feat/ui-polish`). Đây là bản UI đã triển khai để tiếp tục phát triển, chưa phải bản sản phẩm production hoàn chỉnh. Không đổi business logic/API/backend trong lần redesign này.
 
 ## Backend đã có chưa?

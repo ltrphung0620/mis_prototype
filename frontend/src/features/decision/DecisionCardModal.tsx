@@ -18,6 +18,8 @@ export interface DecisionCardModalProps {
   pending_approval?: PendingDecisionApproval | null;
   review_instruction?: string | null;
   submitting?: boolean;
+  /** Optional presentation context; approval guards and handlers are unchanged. */
+  context?: ReactElement;
   onClose: () => void;
   onApprove: (requestId: string) => void | Promise<void>;
   onReject: (requestId: string) => void | Promise<void>;
@@ -204,6 +206,7 @@ export function DecisionCardModal({
   pending_approval,
   review_instruction = null,
   submitting = false,
+  context,
   onClose,
   onApprove,
   onReject,
@@ -243,6 +246,7 @@ export function DecisionCardModal({
           <p>Độ tin cậy: {label(payload.confidence)}</p>
           <small className="review-artifact-identity">{card.artifact_id} · v{card.version}</small>
         </header>
+        {context}
 
         {!isCurrent && <p role="alert">Đây không phải Decision Card hiện hành; thao tác phê duyệt đã bị khóa.</p>}
 
