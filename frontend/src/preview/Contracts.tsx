@@ -1,4 +1,11 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import {
+  lazy,
+  Suspense,
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+} from "react";
 import {
   ArtifactDetailDialog,
   type ArtifactEnvelope,
@@ -20,6 +27,8 @@ import {
 } from "./components";
 import type { PreviewRoute } from "./models";
 import { navigatePreview } from "./navigation";
+
+const WorkflowViewer = lazy(() => import("./workflow/WorkflowViewer"));
 
 const views = [
   { key: "overview", label: "Tổng quan" },
@@ -565,26 +574,9 @@ export function Contracts({ route }: { route: PreviewRoute }) {
           </Section>
         ))}
       {view === "workflow" && (
-        <Section
-          title="Workflow · Checkpoint tiếp theo"
-          description="Dify-style canvas được triển khai sau khi bạn review ba trang chính"
-        >
-          <div className="pv-workflow-checkpoint">
-            <Icon name="operations" size={32} />
-            <h3>Workspace đã sẵn sàng cho Workflow Viewer</h3>
-            <p>
-              Tab và navigation có sẵn. Chưa có canvas hoặc topology được kết
-              nối ở checkpoint này.
-            </p>
-            <Badge tone={tone(contract.businessStatus)}>
-              {contract.statusLabel} · Minh họa
-            </Badge>
-          </div>
-          <SourceNote>
-            Checkpoint 2: read-only topology thực tế, zoom/pan, node inspector,
-            governance gates và danh sách mobile.
-          </SourceNote>
-        </Section>
+        <Suspense fallback={<p role="status">Đang tải Workflow Viewer…</p>}>
+          <WorkflowViewer key={contract.id} contract={contract} route={route} />
+        </Suspense>
       )}
       {view === "history" && (
         <Section

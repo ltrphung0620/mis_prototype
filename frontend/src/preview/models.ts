@@ -1,17 +1,9 @@
 /** Presentation contracts for isolated UI fixtures; these are not new public API schemas. */
 export type PreviewMode = "ready" | "loading" | "empty" | "error";
 export type CompanySection =
-  | "overview"
-  | "finance"
-  | "business"
-  | "invoices"
-  | "alerts";
+  "overview" | "finance" | "business" | "invoices" | "alerts";
 export type ContractSection =
-  | "overview"
-  | "assessments"
-  | "workflow"
-  | "evidence"
-  | "history";
+  "overview" | "assessments" | "workflow" | "evidence" | "history";
 export interface PreviewRoute {
   page: "dashboard" | "company" | "contracts" | "not-found";
   section?: CompanySection;
@@ -20,6 +12,8 @@ export interface PreviewRoute {
   period?: string;
   status?: string;
   request?: string;
+  workflowScenario?: string;
+  workflowPhase?: string;
 }
 export interface PreviewContract {
   id: string;

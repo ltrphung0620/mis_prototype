@@ -39,6 +39,10 @@ export function parsePreviewRoute(hash: string): PreviewRoute {
         ? params.get("view")
         : "overview") as ContractSection,
       request: params.get("request") ?? undefined,
+      ...(params.has("scenario")
+        ? { workflowScenario: params.get("scenario")! }
+        : {}),
+      ...(params.has("phase") ? { workflowPhase: params.get("phase")! } : {}),
     };
   return { page: "not-found" };
 }
