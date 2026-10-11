@@ -1,8 +1,10 @@
 # Bàn giao frontend — OPC MIS Contract Decision Workspace
 
-> Vòng Visual Refinement 11/10/2026 đã thực hiện trong preview của Checkpoint 1; IA/bố cục đã được Founder duyệt. Xem [review 14](14_visual_refinement_review.md) để review typography, charts, bảng hợp đồng, screenshot before/after và checks. Chờ duyệt polish trước Workflow Viewer; không mở rộng backend/API trong vòng này.
+> Bản tiếp quản tổng hợp sau Checkpoint 2: [handoff 16](16_frontend_handoff_checkpoint2.md) — source map, setup, Git inventory và kết quả audit 11/10/2026. Phần dưới giữ baseline connected UI; các số kiểm thử/servers lịch sử không thay thế kết quả hiện hành ở 16.
 
-> Cập nhật 11/10/2026: **Executive Home + Drill-down đã có UI preview riêng** tại `/dashboard-assets/?preview=1#/dashboard`. Checkpoint 1 gồm Dashboard, Company Overview và Contracts, toàn bộ dữ liệu là fixtures có nhãn; không gọi API. Xem [checkpoint 13](13_ui_first_preview_checkpoint.md) và [roadmap UI-first](12_revised_implementation_roadmap.md). UI connected khi không có `preview=1` vẫn là baseline PR #3 mô tả phía dưới. Company/global read APIs và Dify canvas chưa triển khai.
+> Checkpoint 1 và polish đã được Founder duyệt. **Checkpoint 2 Workflow Viewer đã triển khai trong preview, chờ review browser**: [review 15](15_workflow_viewer_checkpoint.md). Canvas chỉ đọc, topology đối chiếu orchestration, 9 kịch bản fixture độc lập, inspector và mobile list. Chưa tích hợp live API hoặc thay đổi backend.
+
+> Cập nhật 11/10/2026: **Executive Home + Drill-down đã có UI preview riêng** tại `/dashboard-assets/?preview=1#/dashboard`. Checkpoint 1 gồm Dashboard, Company Overview và Contracts; Checkpoint 2 thêm viewer ở `#/contracts/CON-004?view=workflow`. Toàn bộ dữ liệu là fixtures có nhãn; không gọi API. Xem [checkpoint 13](13_ui_first_preview_checkpoint.md) và [roadmap UI-first](12_revised_implementation_roadmap.md). UI connected khi không có `preview=1` vẫn là baseline PR #3 mô tả phía dưới. Company/global read APIs và canonical graph API chưa triển khai.
 
 Ngày rà soát: 08/10/2026 (cập nhật cùng ngày sau các task P1, bug Decision Card trên demo, P2 lịch sử workflow, đợt P1 detail coverage/form audit và đợt sửa lỗi UI từ browser review 09/10/2026, nhánh `feat/ui-polish`). Đây là bản UI đã triển khai để tiếp tục phát triển, chưa phải bản sản phẩm production hoàn chỉnh. Không đổi business logic/API/backend trong lần redesign này.
 
