@@ -44,10 +44,12 @@ function UpstreamArtifacts({
 export function ArtifactDetailDialog({
   artifact,
   runArtifacts = [],
+  context,
   onClose,
 }: {
   artifact: ArtifactEnvelope | null;
   runArtifacts?: readonly ArtifactEnvelope[];
+  context?: ReactElement;
   onClose: () => void;
 }): ReactElement | null {
   if (!artifact) return null;
@@ -81,6 +83,7 @@ export function ArtifactDetailDialog({
           {artifactValidationLabel(artifact.validation_status)}
         </p>
         <div className="modal-card__body">
+          {context}
           <ArtifactAssessmentView
             artifact={artifact}
             runArtifacts={runArtifacts}

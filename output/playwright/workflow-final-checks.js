@@ -1,0 +1,53 @@
+async (page) => {
+  const results = [], errors = [], requests = [];
+  page.on('pageerror', e => errors.push(e.message));
+  page.on('request', r => { if (new URL(r.url()).pathname.startsWith('/api/') || !['GET', 'HEAD'].includes(r.method())) requests.push({ method: r.method(), url: r.url() }); });
+  const base = 'http://127.0.0.1:5173/dashboard-assets/?preview=1';
+  const assert = (name, value) => { results.push({ name, passed: !!value }); if (!value) throw new Error(name); };
+  await page.setViewportSize({ width: 1440, height: 1080 });
+  await page.goto(`${base}#/contracts/CON-004?view=workflow&scenario=approval&phase=decision`);
+  await page.locator('.wf-node-button').first().waitFor();
+  for (const mode of ['loading', 'empty', 'error']) {
+    await page.getByRole('combobox', { name: 'Trạng thái preview' }).selectOption(mode);
+    assert(`${mode} hides interactive workflow`, await page.locator('.wf-viewer').count() === 0);
+    await page.getByRole('combobox', { name: 'Trạng thái preview' }).selectOption('ready');
+    await page.locator('.wf-node-button').first().waitFor();
+  }
+  await page.getByRole('button', { name: 'Đánh giá', exact: true }).click();
+  await page.locator('.react-flow__node[data-id="FINANCE_ASSESSMENT"]').waitFor();
+  await page.getByRole('button', { name: 'Fit workflow vào khung' }).click();
+  const node = page.locator('.react-flow__node[data-id="FINANCE_ASSESSMENT"]');
+  const position = await node.getAttribute('style');
+  await node.scrollIntoViewIfNeeded();
+  const box = await node.boundingBox();
+  await page.mouse.move(box.x + 40, box.y + 50); await page.mouse.down(); await page.mouse.move(box.x + 90, box.y + 90, { steps: 10 }); await page.mouse.up();
+  assert('Pointer drag cannot edit node position', await node.getAttribute('style') === position);
+  const button = node.getByRole('button');
+  await button.focus(); await page.keyboard.press('Space');
+  await page.getByRole('complementary', { name: 'Chi tiết node Finance' }).waitFor();
+  assert('Space opens node inspector', await page.getByRole('complementary', { name: /Chi tiết node/ }).isVisible());
+  await page.keyboard.press('Escape'); await page.getByRole('complementary', { name: /Chi tiết node/ }).waitFor({ state: 'detached' });
+  await page.getByRole('button', { name: 'Banking & hồ sơ', exact: true }).click();
+  await page.getByRole('button', { name: 'Gate · Precheck · Không áp dụng', exact: true }).click();
+  const panel = page.getByRole('complementary', { name: /Chi tiết node/ });
+  assert('Not applicable has no fabricated execution status', (await panel.textContent()).includes('Không có execution status'));
+  await page.getByRole('button', { name: 'Đóng Node Inspector' }).click();
+  await page.getByRole('combobox', { name: 'Kịch bản workflow' }).selectOption('banking');
+  await page.waitForFunction(() => location.hash.includes('scenario=banking'));
+  const deepLink = page.url(); await page.reload(); await page.locator('.wf-node-button').first().waitFor();
+  assert('Scenario survives reload', await page.getByRole('combobox', { name: 'Kịch bản workflow' }).inputValue() === 'banking' && page.url() === deepLink);
+  await page.getByRole('button', { name: 'Đánh giá', exact: true }).click();
+  await page.getByRole('button', { name: 'Quyết định', exact: true }).click();
+  await page.goBack(); await page.waitForFunction(() => location.hash.includes('phase=assessment'));
+  assert('Back restores phase', await page.getByRole('button', { name: 'Đánh giá', exact: true }).getAttribute('aria-current') === 'true');
+  await page.goForward(); await page.waitForFunction(() => location.hash.includes('phase=decision'));
+  assert('Forward restores phase', await page.getByRole('button', { name: 'Quyết định', exact: true }).getAttribute('aria-current') === 'true');
+  await page.setViewportSize({ width: 720, height: 540 });
+  assert('Narrow/200%-equivalent viewport has list and no horizontal overflow', await page.locator('.wf-list').isVisible() && await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
+  await page.setViewportSize({ width: 1440, height: 1080 });
+  await page.goto(`${base}#/contracts/CON-004?view=workflow&scenario=approval&phase=decision`);
+  await page.locator('.wf-node-button').first().waitFor();
+  assert('No API/protected requests', requests.length === 0);
+  assert('No browser errors', errors.length === 0);
+  return { results, requests, errors, url: page.url() };
+}

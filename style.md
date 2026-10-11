@@ -1,5 +1,9 @@
 # Frontend style guide — Contract Decision Workspace
 
+> Tiếp quản sau Checkpoint 2: [handoff hiện hành 16](docs/ui-design/16_frontend_handoff_checkpoint2.md), gồm source map, preview/live boundaries, setup, Git inventory và backlog. [Handoff 06](docs/ui-design/06_frontend_handoff.md) giữ chi tiết connected UI baseline.
+
+> Cập nhật 11/10/2026: **Executive Home + Drill-down có preview cô lập** trong `frontend/src/preview/`, bật bằng `?preview=1`. Xem [checkpoint 13](docs/ui-design/13_ui_first_preview_checkpoint.md). Navigation single-contract phía dưới mô tả connected UI baseline PR #3 khi không bật preview. Preview global shell có ba mục và hash routes; dữ liệu/biểu đồ hoàn toàn là fixtures có nhãn, không phải API mới hoặc historical data thật. Mercury tokens/conventions/governance guards được giữ.
+
 Hướng dẫn cho người và agents tiếp tục UI. Đọc [AGENTS.md](AGENTS.md) trước; backlog và cách chạy nằm trong [frontend handoff](docs/ui-design/06_frontend_handoff.md). Design system chi tiết: [03_design_system.md](docs/ui-design/03_design_system.md).
 
 ## Hướng thiết kế hiện hành
@@ -35,6 +39,20 @@ Nguồn duy nhất cho màu/spacing/font là `frontend/src/styles/tokens.css`. D
 - Không tự suy ra tên token như `--color-red-650`: kiểm tra token tồn tại trước khi dùng.
 
 ## Component và code conventions
+
+### UI-first preview
+
+Refinement Checkpoint 1: xem [visual review 14](docs/ui-design/14_visual_refinement_review.md). Giữ hierarchy đã duyệt: heading/metric desktop 28px, body/table 14px, controls/copy phụ 13px, metadata/chips/legends 12px; mobile table 13px. Dùng `--pv-text-body/control/meta`, không giảm metadata xuống 10–11px để nhồi nội dung. Tiền đầu vào vẫn VND: chart/tóm tắt hiển thị tỷ VND tối đa 2 chữ số thập phân, tooltip có VND đầy đủ; header bảng phải khớp đơn vị. Không tính lại nghiệp vụ. Contract row shortcut phải giữ native links, không chặn modified click hoặc text selection; wrapper phải chuyển tiếp accessible name cho icon links.
+
+- `preview/PreviewEntry.tsx` lazy-load preview; `main.tsx` chỉ mount một root, không đặt lazy component boundary trong bootstrap để tránh entrypoint bị Fast Refresh chạy lại.
+- `preview/data.ts` là read-model context, fixtures ở `preview/fixtures.ts`, presentation types ở `preview/models.ts`. Components đọc provider; không import production API clients/hooks, không tạo writes. API adapter tương lai là checkpoint riêng, cần approved schema/provenance/run binding.
+- `preview/navigation.ts` giữ hash route/page/section/contract/period/request. Link dùng native anchors, `aria-current`; không ghi đè run/request bằng lựa chọn mặc định. Preview không thay connected navigation.
+- CSS `pv-*` scoped dưới `.pv-app`, reuse Mercury tokens trong `tokens.css`. Không dùng fixture styles để thay business guards. Chart colors/CTA bổ sung là presentation tokens trong `preview.css`, xem bảng ở checkpoint 13; màu nhạt dùng surface, màu series có contrast ≥3:1 trên trắng; CTA trắng/primary ≥4.5:1.
+- Recharts 3.10.1 là dependency đã được user cho phép cho preview; không thêm UI framework/router. Mỗi chart có tooltip/unit/source, table alternative và controls; không dựa vào màu để thao tác. Native bảng có caption và vùng cuộn focusable, giữ scrollbar trong container ở mobile.
+- Decision/artifact dialogs reuse components hiện hành với optional `context` slot để đặt disclaimer/preview controls **bên trong focus trap**. Exact artifact/version/current/request/source/NOT_EVALUABLE guards không đổi. Context không thay approval logic.
+- Mock submit chỉ hiện thông báo local, không resolve request như kết quả thật, không patch/resume/external release. Preview badge phải hiện xuyên suốt; mock labels không được bỏ khi chưa kết nối và xác minh API thật.
+- Workflow tab có viewer chỉ đọc của Checkpoint 2 trong `frontend/src/preview/workflow/`: React Flow, typed topology/fixtures, phase navigation, inspector và mobile list. Xem [review 15](docs/ui-design/15_workflow_viewer_checkpoint.md). Không nối preview với API client, không dùng event order để dựng edges, không thêm editor/run-node/approval actions. Hai gate presentation dùng `APPROVAL_GATE` phải giữ nhãn instance, không trình bày như persisted node ID mới.
+- Workflow scenarios là snapshot minh họa riêng, ID chứa contract + scenario. Không ghi đè contract status, Decision Card hay approval request của workspace. `not-applicable` là applicability, không phải `WorkflowNodeStatus`; unknown không đồng nghĩa bị skip. Output chưa hoàn tất không được hiển thị như artifact đã validation. Giữ exact ID/version/action binding khi tích hợp sau duyệt.
 
 | Nơi | Trách nhiệm |
 |---|---|
