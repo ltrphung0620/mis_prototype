@@ -28,6 +28,7 @@ export function Icon({
       </>
     ),
     arrow: <path d="m9 5 7 7-7 7" />,
+    "chevron-down": <path d="m6 9 6 6 6-6" />,
     check: <path d="m5 12 4 4L19 6" />,
     approval: (
       <>
@@ -128,6 +129,16 @@ export function Link({
       {children}
     </a>
   );
+}
+/** Badge tone for a contract's workflow status; presentation only. */
+export function contractTone(status: string) {
+  return status === "FAILED_SAFE"
+    ? "error"
+    : status === "WAITING_FOR_FINAL_DECISION"
+      ? "lavender"
+      : status === "WAITING_FOR_INPUT"
+        ? "warning"
+        : "neutral";
 }
 export function Badge({
   children,

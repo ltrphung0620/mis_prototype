@@ -136,6 +136,31 @@ describe("isolated executive preview", () => {
     expect(screen.getByText("Hóa đơn ghi nguồn Open")).toBeInTheDocument();
     expect(fetch).not.toHaveBeenCalled();
   });
+  it("offers native links to every contract from the dashboard header", () => {
+    render(<PreviewApp />);
+    const summary = screen.getByText("Đi tới hợp đồng");
+    const menu = summary.closest("details")!;
+    const links = within(menu).getAllByRole("link");
+    expect(links.map((link) => link.getAttribute("href"))).toEqual([
+      "#/contracts/CON-004",
+      "#/contracts/CON-002",
+      "#/contracts/CON-001",
+      "#/contracts/CON-005",
+      "#/contracts/CON-003",
+      "#/contracts",
+    ]);
+
+    menu.open = true;
+    fireEvent.keyDown(links[0], { key: "Escape" });
+    expect(menu.open).toBe(false);
+    expect(summary).toHaveFocus();
+
+    menu.open = true;
+    fireEvent.pointerDown(document.body);
+    expect(menu.open).toBe(false);
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
   it("drills down into invoice scope and filters the table", async () => {
     render(<PreviewApp />);
     route("/company?section=invoices&status=Open");

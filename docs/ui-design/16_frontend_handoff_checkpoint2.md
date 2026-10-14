@@ -42,7 +42,7 @@ OPC MIS
 
 Routing đã xác minh tại `frontend/src/main.tsx` và `frontend/src/preview/navigation.ts`: `?preview=1` **trước** `#` chọn preview entry; các paths trên là **hash routes**, không server routes mới. Company có `section=overview|finance|business|invoices|alerts`, `period`, `status`; contract có `view=overview|assessments|workflow|evidence|history`, optional `request`, `scenario`, `phase`. Workflow phase là `assessment|banking|decision|followup|all`. Reload/back/forward giữ hash route; state local của dialogs/filter không lưu URL sẽ reset. Connected App khi không có `preview=1` vẫn dùng local workspace views. FastAPI chỉ phục vụ bundle ở `/dashboard`, assets ở `/dashboard-assets`; chưa có global route fallback mới.
 
-**Định hướng thiết kế:** Mercury-inspired (nền trắng/cool-neutral, màu periwinkle/lavender, chữ charcoal, border rất nhẹ, ít shadow); Linear tham khảo typography, hierarchy, navigation; Dify tham khảo workflow graph/canvas interaction. Không khôi phục theme forest/emerald cũ.
+**Định hướng thiết kế:** _(13/10/2026: visual language đã chuyển sang Dify, xem [18](18_dify_design_language.md); mô tả Mercury dưới đây là lịch sử)_ Mercury-inspired (nền trắng/cool-neutral, màu periwinkle/lavender, chữ charcoal, border rất nhẹ, ít shadow); Linear tham khảo typography, hierarchy, navigation; Dify tham khảo workflow graph/canvas interaction. Không khôi phục theme forest/emerald cũ.
 
 ## 2. Hiện trạng đã bàn giao
 

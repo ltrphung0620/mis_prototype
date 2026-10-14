@@ -1,4 +1,6 @@
-# Design system hiện hành — Mercury × OPC MIS
+# Design system Mercury × OPC MIS (lịch sử)
+
+> 13/10/2026: visual language đã chuyển sang Dify. Bản hiện hành: [18_dify_design_language.md](18_dify_design_language.md). Phần dưới chỉ còn giá trị lịch sử; các token value không còn đúng.
 
 Cập nhật 08/10/2026. Đã triển khai trong `frontend/src/styles/`. Tài liệu này thay thế design system forest/emerald trước đó. Các màu là lựa chọn của OPC MIS dựa trên ba ảnh tham chiếu, không phải token chính thức của Mercury.
 

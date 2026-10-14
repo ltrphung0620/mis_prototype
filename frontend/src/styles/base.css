@@ -10,6 +10,7 @@ html {
 body {
   margin: 0;
   color: var(--color-ink-950);
+  background: var(--color-canvas);
   font: 14px/1.5 var(--font-sans);
 }
 button,
@@ -20,19 +21,24 @@ textarea {
 }
 button {
   cursor: pointer;
-  border: 1px solid var(--color-line-strong);
-  border-radius: 8px;
-  background: var(--color-surface);
+  border: 1px solid var(--color-button-border);
+  border-radius: var(--radius-md);
+  background: var(--color-button-bg);
   color: var(--color-ink-800);
-  min-height: 36px;
-  padding: 7px 14px;
+  min-height: 32px;
+  padding: 5px 12px;
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 20px;
+  box-shadow: var(--shadow-xs);
   transition:
     background 140ms,
-    border-color 140ms;
+    border-color 140ms,
+    box-shadow 140ms;
 }
 button:hover:not(:disabled) {
-  background: var(--color-surface-muted);
-  border-color: #bfc2d0;
+  background: var(--color-button-bg-hover);
+  border-color: var(--color-button-border-hover);
 }
 input[aria-invalid="true"],
 select[aria-invalid="true"],
@@ -50,8 +56,8 @@ select:focus-visible,
 textarea:focus-visible,
 a:focus-visible,
 summary:focus-visible {
-  outline: 2px solid var(--color-primary-strong);
-  outline-offset: 3px;
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
 }
 a {
   color: inherit;
@@ -89,15 +95,42 @@ svg {
 img {
   max-width: 100%;
 }
+/* Dify inputs: filled gray at rest, white with a light border once active. */
 input,
 select,
 textarea {
   color: var(--color-ink-950);
-  background: #fff;
-  border: 1px solid var(--color-line-strong);
-  border-radius: 6px;
-  padding: 9px 12px;
+  background: var(--color-input-bg);
+  border: 1px solid transparent;
+  border-radius: var(--radius-md);
+  min-height: 32px;
+  padding: 6px 12px;
+  font-size: 13px;
+  line-height: 20px;
   max-width: 100%;
+  transition:
+    background 140ms,
+    border-color 140ms;
+}
+input:hover:not(:disabled),
+select:hover:not(:disabled),
+textarea:hover:not(:disabled) {
+  background: var(--color-state-active);
+}
+input:focus,
+select:focus,
+textarea:focus {
+  background: var(--color-surface);
+  border-color: var(--color-input-border-active);
+  box-shadow: var(--shadow-xs);
+}
+input::placeholder,
+textarea::placeholder {
+  color: var(--color-placeholder);
+}
+input[type="file"] {
+  background: transparent;
+  padding-left: 0;
 }
 input,
 textarea {
@@ -108,8 +141,8 @@ textarea {
   resize: vertical;
 }
 ::selection {
-  background: #dfe4ff;
-  color: #292b35;
+  background: var(--color-selection);
+  color: var(--color-ink-950);
 }
 [hidden] {
   display: none !important;
@@ -129,9 +162,11 @@ textarea {
   left: 260px;
   top: -60px;
   z-index: 200;
-  padding: 12px;
-  background: #fff;
-  border: 1px solid var(--color-primary);
+  padding: 8px 12px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-accent);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-lg);
 }
 .skip-link:focus {
   top: 8px;

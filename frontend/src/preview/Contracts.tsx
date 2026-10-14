@@ -15,6 +15,7 @@ import { useDialogFocus } from "../shared/useDialogFocus";
 import { usePreviewData } from "./data";
 import {
   Badge,
+  contractTone,
   Icon,
   Link,
   money,
@@ -104,14 +105,6 @@ export function Contracts({ route }: { route: PreviewRoute }) {
     () => (contract ? contractArtifacts(contract) : []),
     [contract],
   );
-  const tone = (status: string) =>
-    status === "FAILED_SAFE"
-      ? "error"
-      : status === "WAITING_FOR_FINAL_DECISION"
-        ? "lavender"
-        : status === "WAITING_FOR_INPUT"
-          ? "warning"
-          : "neutral";
   if (!route.contractId) {
     const rows = contracts.filter(
       (c) =>
@@ -215,7 +208,7 @@ export function Contracts({ route }: { route: PreviewRoute }) {
                       <small>{c.sourceStatus}</small>
                     </td>
                     <td>
-                      <Badge tone={tone(c.businessStatus)}>
+                      <Badge tone={contractTone(c.businessStatus)}>
                         {c.statusLabel}
                       </Badge>
                     </td>
@@ -388,7 +381,7 @@ export function Contracts({ route }: { route: PreviewRoute }) {
         eyebrow={`${contract.id} · ${contract.customer}`}
         title={contract.title}
         action={
-          <Badge tone={tone(contract.businessStatus)}>
+          <Badge tone={contractTone(contract.businessStatus)}>
             {contract.statusLabel}
           </Badge>
         }

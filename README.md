@@ -2,7 +2,7 @@
 
 ## Founder UI — current handoff
 
-The React frontend is now a Mercury-inspired **Contract Decision Workspace** for one selected
+The React frontend is now a Dify-inspired **Contract Decision Workspace** for one selected
 contract, with Decision, Assessments, Evidence, Workflow and Input views. FastAPI and the persisted
 workflow already exist; this redesign changes frontend presentation, not backend contracts.
 

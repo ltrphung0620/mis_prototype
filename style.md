@@ -2,16 +2,19 @@
 
 > Tiếp quản sau Checkpoint 2: [handoff hiện hành 16](docs/ui-design/16_frontend_handoff_checkpoint2.md), gồm source map, preview/live boundaries, setup, Git inventory và backlog. [Handoff 06](docs/ui-design/06_frontend_handoff.md) giữ chi tiết connected UI baseline.
 
-> Cập nhật 11/10/2026: **Executive Home + Drill-down có preview cô lập** trong `frontend/src/preview/`, bật bằng `?preview=1`. Xem [checkpoint 13](docs/ui-design/13_ui_first_preview_checkpoint.md). Navigation single-contract phía dưới mô tả connected UI baseline PR #3 khi không bật preview. Preview global shell có ba mục và hash routes; dữ liệu/biểu đồ hoàn toàn là fixtures có nhãn, không phải API mới hoặc historical data thật. Mercury tokens/conventions/governance guards được giữ.
+> Cập nhật 11/10/2026: **Executive Home + Drill-down có preview cô lập** trong `frontend/src/preview/`, bật bằng `?preview=1`. Xem [checkpoint 13](docs/ui-design/13_ui_first_preview_checkpoint.md). Navigation single-contract phía dưới mô tả connected UI baseline PR #3 khi không bật preview. Preview global shell có ba mục và hash routes; dữ liệu/biểu đồ hoàn toàn là fixtures có nhãn, không phải API mới hoặc historical data thật. Tokens/conventions/governance guards dùng chung.
 
-Hướng dẫn cho người và agents tiếp tục UI. Đọc [AGENTS.md](AGENTS.md) trước; backlog và cách chạy nằm trong [frontend handoff](docs/ui-design/06_frontend_handoff.md). Design system chi tiết: [03_design_system.md](docs/ui-design/03_design_system.md).
+> Cập nhật 13/10/2026: owner chuyển visual language từ Mercury sang **Dify** cho cả connected UI và preview. Nghiên cứu, mapping token và các điều chỉnh contrast: [18_dify_design_language.md](docs/ui-design/18_dify_design_language.md). Cấu trúc thông tin, navigation và mọi guard bên dưới không đổi.
+
+Hướng dẫn cho người và agents tiếp tục UI. Đọc [AGENTS.md](AGENTS.md) trước; backlog và cách chạy nằm trong [frontend handoff](docs/ui-design/06_frontend_handoff.md). Design system chi tiết: [18_dify_design_language.md](docs/ui-design/18_dify_design_language.md) (hiện hành); [03_design_system.md](docs/ui-design/03_design_system.md) là bản Mercury lịch sử.
 
 ## Hướng thiết kế hiện hành
 
-**Mercury cho visual language, Linear cho tổ chức thông tin.** Giao diện là workspace của **một hợp đồng đang chọn**: trạng thái → đề xuất → kết quả đánh giá → bằng chứng → bước Founder cần làm. Không trở lại theme forest/emerald hoặc layout dashboard ba cột trước đây.
+**Dify cho visual language, Linear cho tổ chức thông tin.** Giao diện là workspace của **một hợp đồng đang chọn**: trạng thái → đề xuất → kết quả đánh giá → bằng chứng → bước Founder cần làm. Không trở lại theme forest/emerald, Mercury periwinkle hoặc layout dashboard ba cột trước đây.
 
-- Nền trắng/cool neutral, chữ charcoal, accent periwinkle/lavender; border và shadow nhẹ.
-- Sidebar compact; nội dung rộng; section và bảng nhẹ thay vì nhiều card lồng nhau.
+- Canvas xám `#F2F4F7` cho cả trang và sidebar (không kẻ giữa); nội dung nằm trong panel trắng bo 12px, `shadow-xs`; accent xanh điện `#0033FF`; divider alpha mảnh.
+- Sidebar kiểu Dify main nav: workspace card trắng, item 32px bo 10px, item chọn là nền "blue glass" (`--nav-active-surface`). Một lớp panel; panel lồng bên trong dùng `--color-surface-muted` và không thêm shadow.
+- Nhãn section, eyebrow, header bảng và nhãn metric dùng uppercase 12px medium màu tertiary; filter/phase dùng segmented control; tabs gạch chân accent.
 - Decision Card là đối tượng cần đọc và xem xét. CTA ở workspace mở review; approval/rejection ở dialog khớp đúng yêu cầu hiện hành.
 - Sidebar và navigation mobile hiện dùng local views: Quyết định, Đánh giá, Bằng chứng, Quy trình, Dữ liệu đầu vào. Chưa có router, URL deep linking hoặc portal nhiều hợp đồng.
 - Copy tiếng Việt đủ dấu; giữ tên Finance, Operations, Risk, Decision Card khi hữu ích. Không dùng emoji làm icon.
@@ -22,32 +25,37 @@ Nguồn duy nhất cho màu/spacing/font là `frontend/src/styles/tokens.css`. D
 
 | Vai trò | CSS token | Giá trị hiện tại |
 |---|---|---|
-| Canvas / surface | `--color-canvas` / `--color-surface` | `#FDFDFD` / `#FFFFFF` |
-| Surface phụ / lavender | `--color-surface-muted` / `--color-lavender` | `#F7F8FA` / `#F0F1FC` |
-| Accent / CTA | `--color-primary` / `--color-primary-strong` | `#536EF1` / `#4358C6` |
-| Text chính / phụ | `--color-ink-950` / `--color-ink-600` | `#292B35` / `#656771` |
-| Border nhẹ / control | `--color-line` / `--color-line-strong` | `#EDEEF1` / `#D5D7DF` |
-| Success | `--color-green-700` / `--color-green-100` | `#237555` / `#E8F3EE` |
-| Warning | `--color-amber-700` / `--color-amber-100` | `#8C641B` / `#FBF3E2` |
-| Error | `--color-red-700` / `--color-red-100` | `#B23C50` / `#FBEEF0` |
+| Canvas / surface | `--color-canvas` / `--color-surface` | `#F2F4F7` / `#FFFFFF` |
+| Surface phụ / accent nhạt | `--color-surface-muted` / `--color-accent-soft` (= `--color-lavender`) | `#F9FAFB` / `#EEF4FF` |
+| Accent / CTA hover | `--color-primary` / `--color-primary-strong` | `#0033FF` / `#002CDE` |
+| Text chính / phụ / nav / tertiary | `--color-ink-950` / `--color-ink-800` / `--color-ink-600` / `--color-ink-450` | `#101828` / `#354052` / `#495464` / `#676F83` |
+| Divider / control border | `--color-line` / `--color-line-strong` | `rgb(16 24 40 / .08)` / `rgb(16 24 40 / .14)` |
+| Input nền / hover state | `--color-input-bg` / `--color-state-hover` | `rgb(200 206 218 / .25)` / `rgb(200 206 218 / .2)` |
+| Success | `--color-green-700` / `--color-green-100` | `#067647` / `#ECFDF3` |
+| Warning | `--color-amber-700` / `--color-amber-100` | `#B54708` / `#FFFAEB` |
+| Error | `--color-red-700` / `--color-red-100` | `#B42318` / `#FEF3F2` |
 
-- Font: `--font-sans` (Segoe UI + system fallback), `--font-mono` cho ID. Số liệu dùng `font-variant-numeric: tabular-nums`.
+- Font: `--font-sans` (system stack như Dify: -apple-system, Segoe UI, Roboto…), `--font-mono` cho ID. Số liệu dùng `font-variant-numeric: tabular-nums`.
 - Spacing: bước 4px, ưu tiên `--space-1` tới `--space-10`; section padding thường 24px.
-- Radius: `--radius-sm/md/lg` = 6/10/12px. Không phủ pill lên mọi control.
-- Sidebar desktop 224px, 190px dưới 1100px; header 76px; workspace max-width 1160px, padding desktop 40px. Dưới 760px dùng navigation ngang và content stack theo CSS hiện hành.
-- `--color-emerald-*` và `--color-blue-*` là alias tương thích cho component cũ, hiện trỏ về periwinkle. Không dùng alias đó làm brand token trong code mới. Green chỉ dùng ngữ nghĩa, không làm theme.
+- Radius: `--radius-sm/md/lg/xl` = 6/8/12/16px (badge / button–input / panel / dialog–workflow block). Không phủ pill lên mọi control.
+- Shadow: `--shadow-xs` cho panel/button, `--shadow-lg` cho popover/tooltip, `--shadow-xl` cho dialog; `--shadow-primary-button` chỉ cho CTA primary.
+- Control cao 32px, chữ 13px medium; input nền xám, focus nền trắng + viền `--color-input-border-active`, luôn giữ outline focus 2px accent.
+- Sidebar desktop 240px, 200px dưới 1100–1200px; header 56px; workspace max-width 1160px, padding desktop 32px. Dưới 760px dùng navigation ngang và content stack theo CSS hiện hành.
+- `--color-emerald-*`, `--color-blue-*` và `--color-lavender` là alias tương thích cho component cũ, trỏ về accent. Code mới dùng `--color-primary`/`--color-accent-soft`. Green chỉ dùng ngữ nghĩa, không làm theme.
+- Chữ trạng thái dùng bậc 700 (contrast ≥4,5:1), chấm status/legend có thể dùng bậc 500 khi đi kèm nhãn chữ.
+- **Dark mode**: giá trị dark chỉ nằm trong `:root[data-theme="dark"]` ở `tokens.css`; không viết selector dark trong component. `--color-primary` chỉ làm nền (nút, brand mark); chữ/icon/viền/focus dùng `--color-accent`. Không viết literal `rgb(...)`/hex trong component CSS: thêm token kèm giá trị dark và kiểm tra contrast ở cả hai theme. Theme do `ThemeSwitcher` chọn, lưu `localStorage` của trình duyệt, không phải setting backend. Chi tiết: [18](docs/ui-design/18_dify_design_language.md#dark-mode).
 - Không tự suy ra tên token như `--color-red-650`: kiểm tra token tồn tại trước khi dùng.
 
 ## Component và code conventions
 
 ### UI-first preview
 
-Refinement Checkpoint 1: xem [visual review 14](docs/ui-design/14_visual_refinement_review.md). Giữ hierarchy đã duyệt: heading/metric desktop 28px, body/table 14px, controls/copy phụ 13px, metadata/chips/legends 12px; mobile table 13px. Dùng `--pv-text-body/control/meta`, không giảm metadata xuống 10–11px để nhồi nội dung. Tiền đầu vào vẫn VND: chart/tóm tắt hiển thị tỷ VND tối đa 2 chữ số thập phân, tooltip có VND đầy đủ; header bảng phải khớp đơn vị. Không tính lại nghiệp vụ. Contract row shortcut phải giữ native links, không chặn modified click hoặc text selection; wrapper phải chuyển tiếp accessible name cho icon links.
+Refinement Checkpoint 1: xem [visual review 14](docs/ui-design/14_visual_refinement_review.md). Hierarchy (cập nhật theo Dify 13/10/2026): page heading desktop 24px (mobile 20px), metric 26px, body/table 14px, controls/copy phụ 13px, metadata/chips/legends 12px; mobile table 13px. Dùng `--pv-text-body/control/meta`, không giảm metadata xuống 10–11px để nhồi nội dung. Tiền đầu vào vẫn VND: chart/tóm tắt hiển thị tỷ VND tối đa 2 chữ số thập phân, tooltip có VND đầy đủ; header bảng phải khớp đơn vị. Không tính lại nghiệp vụ. Contract row shortcut phải giữ native links, không chặn modified click hoặc text selection; wrapper phải chuyển tiếp accessible name cho icon links.
 
 - `preview/PreviewEntry.tsx` lazy-load preview; `main.tsx` chỉ mount một root, không đặt lazy component boundary trong bootstrap để tránh entrypoint bị Fast Refresh chạy lại.
 - `preview/data.ts` là read-model context, fixtures ở `preview/fixtures.ts`, presentation types ở `preview/models.ts`. Components đọc provider; không import production API clients/hooks, không tạo writes. API adapter tương lai là checkpoint riêng, cần approved schema/provenance/run binding.
 - `preview/navigation.ts` giữ hash route/page/section/contract/period/request. Link dùng native anchors, `aria-current`; không ghi đè run/request bằng lựa chọn mặc định. Preview không thay connected navigation.
-- CSS `pv-*` scoped dưới `.pv-app`, reuse Mercury tokens trong `tokens.css`. Không dùng fixture styles để thay business guards. Chart colors/CTA bổ sung là presentation tokens trong `preview.css`, xem bảng ở checkpoint 13; màu nhạt dùng surface, màu series có contrast ≥3:1 trên trắng; CTA trắng/primary ≥4.5:1.
+- CSS `pv-*` scoped dưới `.pv-app`, reuse tokens trong `tokens.css`. Không dùng fixture styles để thay business guards. Chart colors/CTA bổ sung là presentation tokens trong `preview.css`, xem bảng ở checkpoint 13; màu nhạt dùng surface, màu series có contrast ≥3:1 trên trắng; CTA trắng/primary ≥4.5:1.
 - Recharts 3.10.1 là dependency đã được user cho phép cho preview; không thêm UI framework/router. Mỗi chart có tooltip/unit/source, table alternative và controls; không dựa vào màu để thao tác. Native bảng có caption và vùng cuộn focusable, giữ scrollbar trong container ở mobile.
 - Decision/artifact dialogs reuse components hiện hành với optional `context` slot để đặt disclaimer/preview controls **bên trong focus trap**. Exact artifact/version/current/request/source/NOT_EVALUABLE guards không đổi. Context không thay approval logic.
 - Mock submit chỉ hiện thông báo local, không resolve request như kết quả thật, không patch/resume/external release. Preview badge phải hiện xuyên suốt; mock labels không được bỏ khi chưa kết nối và xác minh API thật.

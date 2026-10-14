@@ -86,7 +86,7 @@ export function CashChart({
   const series = closing
     ? [
         { key: "closing", label: "Tiền cuối kỳ dự kiến", color: COLORS[0] },
-        { key: "reserve", label: "Ngưỡng dự trữ nguồn", color: "#9D896A" },
+        { key: "reserve", label: "Ngưỡng dự trữ nguồn", color: "var(--pv-chart-reserve)" },
       ]
     : [
         { key: "cashIn", label: "Thu dự kiến", color: COLORS[0] },
@@ -213,7 +213,7 @@ export function CashChart({
               margin={{ top: 20, right: 18, bottom: 6, left: -18 }}
               accessibilityLayer
             >
-              <CartesianGrid vertical={false} stroke="#EDEEF1" />
+              <CartesianGrid vertical={false} stroke="var(--color-line)" />
               <XAxis
                 dataKey="label"
                 axisLine={false}
@@ -359,7 +359,7 @@ export function DistributionChart({
                 margin={{ top: 10, right: 30, bottom: 5, left: 5 }}
                 accessibilityLayer
               >
-                <CartesianGrid horizontal={false} stroke="#EDEEF1" />
+                <CartesianGrid horizontal={false} stroke="var(--color-line)" />
                 <XAxis
                   type="number"
                   axisLine={false}

@@ -5,6 +5,7 @@ import { Dashboard } from "./Dashboard";
 import { Badge, Icon, Link, StateView } from "./components";
 import type { PreviewMode } from "./models";
 import { usePreviewRoute } from "./navigation";
+import { ThemeSwitcher } from "../shared/components/ThemeSwitcher";
 import "./preview.css";
 
 const navigation = [
@@ -70,6 +71,7 @@ export default function PreviewApp() {
             </Link>
           ))}
         </nav>
+        <ThemeSwitcher className="pv-sidebar-theme" />
         <div className="pv-sidebar-footer">
           <span className="pv-preview-dot" />
           Bản xem trước <small>Không kết nối backend</small>

@@ -57,6 +57,16 @@ function Status({ state }: { state: NodeSnapshot }) {
     </span>
   );
 }
+/** Node type icon; also picks the Dify-style colored tile. */
+function nodeIcon(n: { id: string; kind: string }) {
+  return n.kind === "gate"
+    ? "approval"
+    : n.id.includes("RISK")
+      ? "risk"
+      : n.id.includes("FINANCE")
+        ? "finance"
+        : "operations";
+}
 function WorkflowNode({ data, selected }: NodeProps<FlowNode>) {
   const { definition: n, snapshot: state, open } = data;
   return (
@@ -109,19 +119,8 @@ function WorkflowNode({ data, selected }: NodeProps<FlowNode>) {
         aria-pressed={selected}
         aria-label={`${n.title} · ${statusPresentation(state).label}`}
       >
-        <span className={`wf-node-icon ${n.kind === "gate" ? "is-gate" : ""}`}>
-          <Icon
-            name={
-              n.kind === "gate"
-                ? "approval"
-                : n.id.includes("RISK")
-                  ? "risk"
-                  : n.id.includes("FINANCE")
-                    ? "finance"
-                    : "operations"
-            }
-            size={16}
-          />
+        <span className={`wf-node-icon wf-node-icon--${nodeIcon(n)}`}>
+          <Icon name={nodeIcon(n)} size={14} />
         </span>
         <span className="wf-node-title">{n.title}</span>
         <span className="wf-node-kind">
@@ -199,15 +198,15 @@ function Canvas({
           width: 16,
           height: 16,
           color: touching
-            ? "var(--color-primary-strong)"
-            : "var(--color-ink-450)",
+            ? "var(--color-workflow-line-active)"
+            : "var(--color-workflow-line)",
         },
         className: `${touching ? "is-highlighted" : ""} ${inactive ? "is-inactive" : ""} ${d.condition ? "is-conditional" : ""}`,
         style: {
           stroke: touching
-            ? "var(--color-primary-strong)"
-            : "var(--color-line-strong)",
-          strokeWidth: touching ? 2 : 1.6,
+            ? "var(--color-workflow-line-active)"
+            : "var(--color-workflow-line)",
+          strokeWidth: 2,
         },
         selectable: false,
         focusable: false,
@@ -286,15 +285,15 @@ function Canvas({
       >
         <Background
           variant={BackgroundVariant.Dots}
-          gap={20}
-          size={1}
-          color="var(--color-line-strong)"
+          gap={14}
+          size={2}
+          color="var(--color-workflow-dot)"
         />
         {view === "all" && (
           <MiniMap
             ariaLabel="Bản đồ toàn quy trình"
-            nodeColor="var(--color-lavender)"
-            nodeStrokeColor="var(--color-ink-450)"
+            nodeColor="var(--color-workflow-minimap-block)"
+            nodeStrokeColor="var(--color-workflow-line)"
             pannable
             zoomable
           />
@@ -760,10 +759,8 @@ export default function WorkflowViewer({
                   onClick={() => select(n.id)}
                   aria-pressed={selected === n.id}
                 >
-                  <span className="wf-list-icon">
-                    <Icon
-                      name={n.kind === "gate" ? "approval" : "operations"}
-                    />
+                  <span className={`wf-list-icon wf-node-icon--${nodeIcon(n)}`}>
+                    <Icon name={nodeIcon(n)} />
                   </span>
                   <span>
                     <strong>{n.title}</strong>

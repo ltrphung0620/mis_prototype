@@ -1,30 +1,105 @@
-/* Mercury reference estimates. White surfaces and periwinkle, not a banking feature set. */
+/*
+ * Dify-inspired palette (langgenius/dify packages/dify-ui light + dark themes, 2026).
+ * Gray body canvas, white panels, electric-blue accent, hairline alpha dividers.
+ * Token names predate the Dify direction; components keep using them unchanged.
+ * <html data-theme="light|dark"> is resolved before first paint (index.html) and kept in
+ * sync by shared/theme.ts; only the dark block below overrides values.
+ */
 :root {
   color-scheme: light;
-  --color-canvas: #fdfdfd;
+  /* Surfaces: Dify background-body / components-panel-bg / background-section. */
+  --color-canvas: #f2f4f7;
   --color-surface: #ffffff;
-  --color-surface-muted: #f7f8fa;
-  --color-lavender: #f0f1fc;
-  --color-primary: #536ef1;
-  --color-primary-strong: #4358c6;
-  --color-ink-950: #292b35;
-  --color-ink-800: #41434d;
-  --color-ink-600: #656771;
-  --color-ink-450: #6c707a;
-  --color-line: #edeef1;
-  --color-line-strong: #d5d7df;
-  --color-green-700: #237555;
-  --color-green-100: #e8f3ee;
-  --color-amber-700: #8c641b;
-  --color-amber-100: #fbf3e2;
-  --color-red-700: #b23c50;
-  --color-red-100: #fbeef0;
+  --color-surface-muted: #f9fafb;
+  --color-surface-burn: #f2f4f7;
+  /* Accent soft fill: Dify state-accent-hover. Name kept for compatibility. */
+  --color-lavender: #eef4ff;
+  --color-accent-soft: #eef4ff;
+  --color-accent-active: rgb(0 51 255 / 0.08);
+  /* Accent fill: Dify components-button-primary-bg / -hover. */
+  --color-primary: #0033ff;
+  --color-primary-strong: #002cde;
+  --color-primary-border: rgb(16 24 40 / 0.04);
+  --color-primary-border-hover: rgb(16 24 40 / 0.08);
+  --color-primary-disabled: rgb(0 51 255 / 0.14);
+  --color-primary-disabled-text: rgb(255 255 255 / 0.9);
+  /* Accent as text, icon, border or focus ring (Dify text-accent). Equals the fill in light. */
+  --color-accent: #0033ff;
+  --color-accent-border: rgb(0 51 255 / 0.14);
+  --color-accent-border-subtle: rgb(0 51 255 / 0.08);
+  --color-accent-border-strong: rgb(0 51 255 / 0.24);
+  --color-nav-active-text: #0033ff;
+  --color-selection: rgb(0 51 255 / 0.14);
+  /* Text: Dify text-primary / text-secondary / main-nav text / text-tertiary. */
+  --color-ink-950: #101828;
+  --color-ink-800: #354052;
+  --color-ink-600: #495464;
+  --color-ink-450: #676f83;
+  --color-placeholder: #98a2b2;
+  /* Dividers: Dify divider-regular / divider-deep / divider-subtle. */
+  --color-line: rgb(16 24 40 / 0.08);
+  --color-line-strong: rgb(16 24 40 / 0.14);
+  --color-line-subtle: rgb(16 24 40 / 0.04);
+  --color-line-hover: rgb(16 24 40 / 0.2);
+  /* Panel edge on the canvas: invisible in light (Dify card-border is white). */
+  --color-card-border: #ffffff;
+  --color-highlight: rgb(255 255 255 / 0.6);
+  --color-overlay: rgb(16 24 40 / 0.4);
+  --color-fill-subtle: rgb(16 24 40 / 0.04);
+  /* Secondary button: Dify components-button-secondary-*. */
+  --color-button-bg: #ffffff;
+  --color-button-bg-hover: #f9fafb;
+  --color-button-border: rgb(16 24 40 / 0.14);
+  --color-button-border-hover: rgb(16 24 40 / 0.2);
+  /* Segmented control: Dify components-segmented-control-*. */
+  --color-segmented-bg: rgb(200 206 218 / 0.2);
+  --color-segmented-active: #ffffff;
+  /* Interaction states: Dify state-base-hover / state-base-active / input-bg-normal. */
+  --color-state-hover: rgb(200 206 218 / 0.2);
+  --color-state-active: rgb(200 206 218 / 0.4);
+  --color-input-bg: rgb(200 206 218 / 0.25);
+  --color-input-border-active: #d0d5dc;
+  /* Semantic text uses the 700 step of Dify util colors so small text keeps 4.5:1. */
+  --color-green-700: #067647;
+  --color-green-500: #17b26a;
+  --color-green-100: #ecfdf3;
+  --color-green-border: rgb(23 178 106 / 0.2);
+  --color-amber-700: #b54708;
+  --color-amber-500: #f79009;
+  --color-amber-100: #fffaeb;
+  --color-amber-border: rgb(247 144 9 / 0.2);
+  --color-red-700: #b42318;
+  --color-red-500: #f04438;
+  --color-red-100: #fef3f2;
+  --color-red-border: rgb(240 68 56 / 0.2);
   --color-white: #ffffff;
-  --color-violet-700: #595d9e;
-  --color-violet-100: #f0f1fc;
-  --color-sky-700: #45628b;
-  --color-sky-100: #edf3fa;
-  /* Existing component token compatibility. Brand green is replaced by periwinkle. */
+  --color-violet-700: #5925dc;
+  --color-violet-500: #7839ee;
+  --color-violet-100: #f5f3ff;
+  --color-sky-700: #026aa2;
+  --color-sky-500: #0ba5ec;
+  --color-sky-100: #f0f9ff;
+  --color-indigo-500: #6172f3;
+  --color-indigo-100: #e0eaff;
+  --color-blue-brand-500: #085afc;
+  --color-cyan-600: #088ab2;
+  --color-warning-600: #dc6803;
+  /* Workflow canvas: Dify workflow-canvas / workflow-link-line tokens. */
+  --color-workflow-canvas: #f2f4f7;
+  --color-workflow-dot: rgb(133 133 173 / 0.15);
+  --color-workflow-block: #fcfcfd;
+  --color-workflow-line: #d0d5dc;
+  --color-workflow-line-active: #085afc;
+  --color-workflow-minimap-block: rgb(200 206 218 / 0.3);
+  --color-workflow-minimap-bg: #e9ebf0;
+  /* Chart series: Dify util colors with distinct hues, each >= 3:1 on the panel. */
+  --color-chart-1: #155aef;
+  --color-chart-2: #0e9384;
+  --color-chart-3: #7839ee;
+  --color-chart-4: #e04f16;
+  --color-chart-5: #667085;
+  --color-chart-6: #b54708;
+  /* Existing component token compatibility. Brand green is replaced by the accent. */
   --color-emerald-500: var(--color-primary);
   --color-emerald-600: var(--color-primary-strong);
   --color-emerald-700: var(--color-primary-strong);
@@ -32,12 +107,34 @@
   --color-blue-500: var(--color-primary);
   --color-blue-600: var(--color-primary-strong);
   --color-blue-700: var(--color-primary-strong);
-  --shadow-soft: 0 1px 2px rgba(25, 29, 50, 0.025);
-  --shadow-elevated: 0 16px 48px rgba(29, 32, 55, 0.12);
-  --shadow-focus: 0 0 0 3px rgba(83, 110, 241, 0.22);
+  /* Dify shadow scale. */
+  --shadow-xs: 0 1px 2px 0 rgb(16 24 40 / 0.05);
+  --shadow-sm: 0 1px 2px 0 rgb(16 24 40 / 0.06), 0 1px 3px 0 rgb(16 24 40 / 0.1);
+  --shadow-md: 0 2px 4px -2px rgb(16 24 40 / 0.06), 0 4px 8px -2px rgb(16 24 40 / 0.1);
+  --shadow-lg: 0 4px 6px -2px rgb(16 24 40 / 0.03), 0 12px 16px -4px rgb(16 24 40 / 0.08);
+  --shadow-xl: 0 8px 8px -4px rgb(16 24 40 / 0.03), 0 20px 24px -4px rgb(16 24 40 / 0.08);
+  --shadow-primary-button:
+    0 2px 2px -1px rgb(0 0 0 / 0.12), 0 1px 1px -1px rgb(0 0 0 / 0.12),
+    0 0 0 0.5px rgb(9 9 11 / 0.05), inset 0 -6px 12px -4px rgb(9 9 11 / 0.05),
+    inset 0 0 1px 0 rgb(255 255 255 / 0.16), inset 0 0.5px 0 0 rgb(255 255 255 / 0.08);
+  --shadow-soft: var(--shadow-xs);
+  --shadow-elevated: var(--shadow-xl);
+  --shadow-focus: 0 0 0 3px rgb(0 51 255 / 0.14);
+  /* Active navigation item: Dify blue glass surface, flattened. */
+  --nav-active-surface: linear-gradient(
+    91deg,
+    rgb(0 51 255 / 0.08) 0%,
+    rgb(0 51 255 / 0.12) 18%,
+    rgb(0 51 255 / 0.1) 59%,
+    rgb(0 51 255 / 0.08) 100%
+  );
+  --nav-active-shadow:
+    0 10px 12px -4px rgb(9 9 11 / 0.06), 0 3px 5px -2px rgb(9 9 11 / 0.03),
+    0 8px 16px -4px rgb(0 51 255 / 0.04), inset 0 0 0 1px rgb(255 255 255 / 0.6);
   --radius-sm: 6px;
-  --radius-md: 10px;
+  --radius-md: 8px;
   --radius-lg: 12px;
+  --radius-xl: 16px;
   --radius-full: 9999px;
   --space-1: 4px;
   --space-2: 8px;
@@ -47,6 +144,101 @@
   --space-6: 24px;
   --space-8: 32px;
   --space-10: 40px;
-  --font-sans: "Segoe UI", -apple-system, BlinkMacSystemFont, sans-serif;
-  --font-mono: Consolas, "SFMono-Regular", monospace;
+  --font-sans:
+    -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", "Noto Sans", Arial,
+    sans-serif;
+  --font-mono: ui-monospace, "SFMono-Regular", Menlo, Monaco, Consolas, monospace;
+}
+
+/*
+ * Dark: Dify dark theme. Text, semantic and accent-as-text values use lighter steps so small
+ * text keeps >= 4.5:1 on #222225; the accent fill stays #085AFC for white button labels.
+ */
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --color-canvas: #1d1d20;
+  --color-surface: #222225;
+  --color-surface-muted: #27272b;
+  --color-surface-burn: #1c1c1f;
+  --color-lavender: rgb(8 90 252 / 0.16);
+  --color-accent-soft: rgb(8 90 252 / 0.16);
+  --color-accent-active: rgb(8 90 252 / 0.14);
+  --color-primary: #085afc;
+  --color-primary-strong: #1e63ff;
+  --color-primary-border: rgb(255 255 255 / 0.12);
+  --color-primary-border-hover: rgb(255 255 255 / 0.16);
+  --color-primary-disabled: rgb(8 90 252 / 0.2);
+  --color-primary-disabled-text: rgb(255 255 255 / 0.5);
+  --color-accent: #6694ff;
+  --color-accent-border: rgb(102 148 255 / 0.24);
+  --color-accent-border-subtle: rgb(102 148 255 / 0.14);
+  --color-accent-border-strong: rgb(102 148 255 / 0.4);
+  --color-nav-active-text: #f4f4f5;
+  --color-selection: rgb(102 148 255 / 0.3);
+  --color-ink-950: #fbfbfc;
+  --color-ink-800: #d9d9de;
+  --color-ink-600: #b4b8c2;
+  --color-ink-450: #8e93a0;
+  --color-placeholder: #6b6f78;
+  --color-line: rgb(200 206 218 / 0.14);
+  --color-line-strong: rgb(200 206 218 / 0.2);
+  --color-line-subtle: rgb(200 206 218 / 0.08);
+  --color-line-hover: rgb(200 206 218 / 0.3);
+  --color-card-border: rgb(200 206 218 / 0.08);
+  --color-highlight: rgb(255 255 255 / 0.04);
+  --color-overlay: rgb(0 0 0 / 0.55);
+  --color-fill-subtle: rgb(200 206 218 / 0.08);
+  --color-button-bg: rgb(255 255 255 / 0.08);
+  --color-button-bg-hover: rgb(255 255 255 / 0.14);
+  --color-button-border: rgb(255 255 255 / 0.1);
+  --color-button-border-hover: rgb(255 255 255 / 0.18);
+  --color-segmented-bg: rgb(24 24 27 / 0.7);
+  --color-segmented-active: rgb(255 255 255 / 0.1);
+  --color-state-hover: rgb(200 206 218 / 0.08);
+  --color-state-active: rgb(200 206 218 / 0.2);
+  --color-input-bg: rgb(255 255 255 / 0.08);
+  --color-input-border-active: #747481;
+  --color-green-700: #47cd89;
+  --color-green-100: rgb(23 178 106 / 0.14);
+  --color-green-border: rgb(23 178 106 / 0.3);
+  --color-amber-700: #fdb022;
+  --color-amber-100: rgb(247 144 9 / 0.14);
+  --color-amber-border: rgb(247 144 9 / 0.3);
+  --color-red-700: #f97066;
+  --color-red-100: rgb(240 68 56 / 0.14);
+  --color-red-border: rgb(240 68 56 / 0.3);
+  --color-violet-700: #c3b5fd;
+  --color-violet-100: rgb(135 91 247 / 0.16);
+  --color-sky-700: #7cd4fd;
+  --color-sky-100: rgb(11 165 236 / 0.16);
+  --color-indigo-100: rgb(97 114 243 / 0.2);
+  --color-workflow-canvas: #1d1d20;
+  --color-workflow-dot: rgb(133 133 173 / 0.18);
+  --color-workflow-block: #27272b;
+  --color-workflow-line: #676f83;
+  --color-workflow-line-active: #3072ff;
+  --color-workflow-minimap-block: rgb(200 206 218 / 0.12);
+  --color-workflow-minimap-bg: #27272b;
+  --color-chart-1: #6694ff;
+  --color-chart-2: #2ed3b7;
+  --color-chart-3: #a48afb;
+  --color-chart-4: #f38744;
+  --color-chart-5: #98a2b2;
+  --color-chart-6: #fdb022;
+  --shadow-xs: 0 1px 2px 0 rgb(0 0 0 / 0.24);
+  --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.24), 0 1px 3px 0 rgb(0 0 0 / 0.3);
+  --shadow-md: 0 2px 4px -2px rgb(0 0 0 / 0.24), 0 4px 8px -2px rgb(0 0 0 / 0.32);
+  --shadow-lg: 0 4px 6px -2px rgb(0 0 0 / 0.16), 0 12px 16px -4px rgb(0 0 0 / 0.36);
+  --shadow-xl: 0 8px 8px -4px rgb(0 0 0 / 0.16), 0 20px 24px -4px rgb(0 0 0 / 0.44);
+  --shadow-focus: 0 0 0 3px rgb(102 148 255 / 0.3);
+  --nav-active-surface: linear-gradient(
+    91deg,
+    rgb(196 207 255 / 0.08) 0%,
+    rgb(210 219 255 / 0.12) 18%,
+    rgb(210 219 255 / 0.1) 59%,
+    rgb(196 207 255 / 0.08) 100%
+  );
+  --nav-active-shadow:
+    0 10px 12px -4px rgb(0 0 0 / 0.24), 0 3px 5px -2px rgb(0 0 0 / 0.16),
+    inset 0 0 0 1px rgb(210 219 255 / 0.1);
 }

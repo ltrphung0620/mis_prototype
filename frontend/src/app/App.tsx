@@ -21,6 +21,7 @@ import { useWorkflowPlayback } from "../features/workflow/useWorkflowPlayback";
 import { useWorkflowDashboard } from "../hooks/useWorkflowDashboard";
 import { Notice } from "../shared/components/Notice";
 import { StatusBadge } from "../shared/components/StatusBadge";
+import { ThemeSwitcher } from "../shared/components/ThemeSwitcher";
 import { useDialogFocus } from "../shared/useDialogFocus";
 import { useScrollTopOnChange } from "../shared/useScrollTopOnChange";
 import { isTerminalExecutionStatus } from "../shared/workflowLabels";
@@ -390,6 +391,7 @@ export function App() {
           <strong>{state.selectedContractId || "Chưa chọn"}</strong>
           <p>{dashboard?.input.customerName || "Dữ liệu do máy chủ quản lý"}</p>
         </div>
+        <ThemeSwitcher className="sidebar-theme" />
         <div className="sidebar-footer">
           <span className="sidebar-footer__mark">OPC</span>
           <div>

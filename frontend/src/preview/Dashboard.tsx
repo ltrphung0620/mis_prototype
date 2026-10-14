@@ -1,7 +1,8 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { usePreviewData } from "./data";
 import {
   Badge,
+  contractTone,
   Icon,
   Link,
   money,
@@ -11,6 +12,59 @@ import {
 } from "./components";
 import { CashChart } from "./Charts";
 import { navigatePreview } from "./navigation";
+import type { PreviewContract } from "./models";
+
+/** Dify-style dropdown of native contract links; closes on outside click and Escape. */
+function ContractJump({ contracts }: { contracts: readonly PreviewContract[] }) {
+  const menu = useRef<HTMLDetailsElement>(null);
+  const close = () => menu.current?.removeAttribute("open");
+  useEffect(() => {
+    const closeOutside = (event: PointerEvent) => {
+      if (menu.current?.open && !menu.current.contains(event.target as Node)) {
+        close();
+      }
+    };
+    document.addEventListener("pointerdown", closeOutside);
+    return () => document.removeEventListener("pointerdown", closeOutside);
+  }, []);
+  return (
+    <details
+      ref={menu}
+      className="pv-jump"
+      onKeyDown={(event) => {
+        if (event.key !== "Escape" || !menu.current?.open) return;
+        close();
+        menu.current.querySelector("summary")?.focus();
+      }}
+    >
+      <summary className="pv-button">
+        Đi tới hợp đồng <Icon name="chevron-down" size={16} />
+      </summary>
+      <div className="pv-jump__menu">
+        <p className="pv-jump__heading">{contracts.length} hợp đồng minh họa</p>
+        <ul>
+          {contracts.map((c) => (
+            <li key={c.id}>
+              <Link to={`/contracts/${c.id}`} onClick={close}>
+                <span className="pv-jump__id">{c.id}</span>
+                <span className="pv-jump__name">
+                  {c.customer}
+                  <small>{c.title}</small>
+                </span>
+                <Badge tone={contractTone(c.businessStatus)}>
+                  {c.statusLabel}
+                </Badge>
+              </Link>
+            </li>
+          ))}
+        </ul>
+        <Link to="/contracts" className="pv-jump__all" onClick={close}>
+          Xem danh sách hợp đồng <Icon size={14} />
+        </Link>
+      </div>
+    </details>
+  );
+}
 
 export function Dashboard({ period = "all" }: { period?: string }) {
   const { actions, alerts, contracts, snapshot } = usePreviewData();
@@ -25,9 +79,12 @@ export function Dashboard({ period = "all" }: { period?: string }) {
         title="Bảng điều hành"
         description="Những việc cần bạn xem xét, trong bối cảnh hoạt động của công ty."
         action={
-          <Link className="pv-button" to="/company">
-            Tình hình công ty <Icon />
-          </Link>
+          <div className="pv-heading-actions">
+            <ContractJump contracts={contracts} />
+            <Link className="pv-button" to="/company">
+              Tình hình công ty <Icon />
+            </Link>
+          </div>
         }
       />
       <div className="pv-dashboard-top">
