@@ -69,12 +69,12 @@ describe("artifact assessment views", () => {
   });
 
   it("does not invent a title for a limitation without title or code", () => {
-    render(<RiskAssessmentView phase="FINAL" payload={{ conclusion: "ATTENTION_REQUIRED", limitations: [{ detail: "Kết quả precheck là mô phỏng." }] }} />);
-    expect(screen.getByText("Kết quả precheck là mô phỏng.")).toBeInTheDocument();
+    render(<RiskAssessmentView phase="FINAL" payload={{ conclusion: "ATTENTION_REQUIRED", limitations: [{ detail: "Kết quả kiểm tra sơ bộ là mô phỏng." }] }} />);
+    expect(screen.getByText("Kết quả kiểm tra sơ bộ là mô phỏng.")).toBeInTheDocument();
     expect(screen.queryByText("Chưa xác định", { selector: "li strong" })).not.toBeInTheDocument();
   });
 
-  it("labels post-precheck outcomes as simulated and never as success", () => {
+  it("labels post-kiểm tra sơ bộ outcomes as simulated and never as success", () => {
     const { container } = render(
       <DecisionPostPrecheckReviewView
         payload={{
@@ -85,7 +85,7 @@ describe("artifact assessment views", () => {
     );
     expect(screen.getByText(/Kết luận: Không có phương án nào đủ điều kiện/)).toHaveClass("status-badge--danger");
     expect(screen.getByRole("note")).toHaveTextContent(/mô phỏng, không ràng buộc/);
-    expect(screen.getByText(/Kết quả precheck mô phỏng:/)).toBeInTheDocument();
+    expect(screen.getByText(/Kết quả kiểm tra sơ bộ mô phỏng:/)).toBeInTheDocument();
     expect(screen.queryByText(/Phản hồi từ ngân hàng/)).not.toBeInTheDocument();
     expect(container.querySelector(".status-badge--success")).not.toBeInTheDocument();
   });
@@ -105,7 +105,7 @@ describe("artifact assessment views", () => {
         ]}
       />,
     );
-    expect(screen.getByText(/Founder cần phê duyệt trước khi cam kết quyết định tài chính lớn\./)).toBeInTheDocument();
+    expect(screen.getByText(/cần phê duyệt trước khi cam kết quyết định tài chính lớn\./)).toBeInTheDocument();
     expect(screen.queryByText(/300 triệu/)).not.toBeInTheDocument();
   });
 });

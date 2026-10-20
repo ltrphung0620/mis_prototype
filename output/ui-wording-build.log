@@ -1,0 +1,20 @@
+
+> opc-mis-founder-dashboard@0.1.0 build
+> tsc -b && vite build
+
+vite v8.1.5 building client environment for production...
+[2K
+transforming...✓ 778 modules transformed.
+rendering chunks...
+computing gzip size...
+../src/opc_mis/api/static/react/index.html                            0.79 kB │ gzip:   0.43 kB
+../src/opc_mis/api/static/react/assets/WorkflowViewer-DOzebP57.css   27.98 kB │ gzip:   5.10 kB
+../src/opc_mis/api/static/react/assets/PreviewApp-BeE4GEFc.css       29.18 kB │ gzip:   5.91 kB
+../src/opc_mis/api/static/react/assets/index-B_zY6uaR.css            33.00 kB │ gzip:   7.00 kB
+../src/opc_mis/api/static/react/assets/testing-BWwAMkJF.js           17.22 kB │ gzip:   7.02 kB
+../src/opc_mis/api/static/react/assets/jsx-runtime-D_io6lAH.js       17.79 kB │ gzip:   6.66 kB
+../src/opc_mis/api/static/react/assets/WorkflowViewer-BVXKlQ25.js   203.26 kB │ gzip:  62.76 kB
+../src/opc_mis/api/static/react/assets/index-CSaIlftZ.js            376.34 kB │ gzip: 105.21 kB
+../src/opc_mis/api/static/react/assets/PreviewApp-DM8xoSHY.js       430.89 kB │ gzip: 120.02 kB
+
+✓ built in 1.31s

@@ -16,12 +16,12 @@ import type {
 } from "./types";
 
 const LABELS: Record<string, string> = {
-  // Governance
+  // Kiểm soát và phê duyệt
   REGISTERED: "Đã đăng ký",
-  FOUNDER: "Founder",
+  FOUNDER: "Người phê duyệt",
   SEND_DOCUMENT_TO_EXTERNAL_PARTNER: "Gửi tài liệu ra đối tác bên ngoài",
   COMMIT_LARGE_FINANCIAL_DECISION: "Cam kết quyết định tài chính lớn",
-  SUBMIT_BANKING_PRECHECK: "Chạy precheck với ngân hàng",
+  SUBMIT_BANKING_PRECHECK: "Chạy kiểm tra sơ bộ với ngân hàng",
   CONFIRM_FINAL_CONTRACT_DECISION: "Xác nhận quyết định hợp đồng cuối cùng",
   CONFIRM_NEGOTIATION_OUTCOME: "Xác nhận kết quả đàm phán",
   DOCUMENT_EXTERNAL_RELEASE_REQUESTED: "Khi có đề xuất gửi tài liệu ra ngoài",
@@ -44,10 +44,10 @@ const LABELS: Record<string, string> = {
   REQUIRED: "Bắt buộc",
   POSSIBLE: "Có thể phát sinh",
   // Post-banking review
-  BANKING_PRECHECK_READY: "Có phương án đủ dữ liệu để chạy precheck",
-  BANKING_INPUT_REQUIRED: "Cần bổ sung dữ liệu trước khi chạy precheck",
-  NO_PRECHECK_PATH: "Không có tuyến precheck phù hợp",
-  UNSUPPORTED_PRECHECK_MAPPING: "Chưa hỗ trợ ánh xạ dữ liệu precheck",
+  BANKING_PRECHECK_READY: "Có phương án đủ dữ liệu để chạy kiểm tra sơ bộ",
+  BANKING_INPUT_REQUIRED: "Cần bổ sung dữ liệu trước khi chạy kiểm tra sơ bộ",
+  NO_PRECHECK_PATH: "Không có tuyến kiểm tra sơ bộ phù hợp",
+  UNSUPPORTED_PRECHECK_MAPPING: "Chưa hỗ trợ ánh xạ dữ liệu kiểm tra sơ bộ",
   NO_VIABLE_OPTION: "Không có phương án khả thi",
   requested_amount: "Số tiền yêu cầu",
   // Document preparation
@@ -152,7 +152,9 @@ export function ApprovalCheckpointsView({ payload }: { payload: ApprovalCheckpoi
                 <strong>{translateText(label(item.protected_action))}</strong>
                 <p>
                   {item.requires_human_approval
-                    ? `Cần ${label(item.approver_role)} phê duyệt`
+                    ? item.approver_role === "FOUNDER"
+                      ? "Cần phê duyệt"
+                      : `Cần ${label(item.approver_role)} phê duyệt`
                     : "Chính sách không yêu cầu phê duyệt thủ công"}
                 </p>
                 {!!item.source_policy_ids?.length && (
@@ -326,7 +328,7 @@ export function DecisionPostBankingReviewView({ payload }: { payload: DecisionPo
           <dd>{payload.candidate_option_ids?.length ?? 0}</dd>
         </div>
         <div>
-          <dt>Đủ dữ liệu để chạy precheck</dt>
+          <dt>Đủ dữ liệu để chạy kiểm tra sơ bộ</dt>
           <dd>{payload.precheck_ready_option_ids?.length ?? 0}</dd>
         </div>
         <div>
@@ -350,8 +352,8 @@ export function DecisionPostBankingReviewView({ payload }: { payload: DecisionPo
       )}
       <p role="note" className="assessment-view__footnote">
         {payload.precheck_executed
-          ? "Hệ thống ghi nhận precheck đã chạy."
-          : "Chưa chạy precheck. Rà soát này không chọn phương án ngân hàng nào."}
+          ? "Hệ thống ghi nhận kiểm tra sơ bộ đã chạy."
+          : "Chưa chạy kiểm tra sơ bộ. Rà soát này không chọn phương án ngân hàng nào."}
       </p>
     </article>
   );
@@ -381,7 +383,7 @@ export function DocumentPreparationRequestView({ payload }: { payload: DocumentP
           <dd>{money(payload.requested_amount, currency)}</dd>
         </div>
         <div>
-          <dt>Số tiền được hỗ trợ (kết quả precheck)</dt>
+          <dt>Số tiền được hỗ trợ (kết quả kiểm tra sơ bộ)</dt>
           <dd>{money(payload.supported_amount, currency)}</dd>
         </div>
         <div>
@@ -390,9 +392,9 @@ export function DocumentPreparationRequestView({ payload }: { payload: DocumentP
         </div>
       </dl>
       <CodeList title="Tài liệu cần chuẩn bị" codes={payload.required_document_codes} />
-      <CodeList title="Điều kiện từ kết quả precheck" codes={payload.approval_condition_codes} />
+      <CodeList title="Điều kiện từ kết quả kiểm tra sơ bộ" codes={payload.approval_condition_codes} />
       <p role="note" className="assessment-view__footnote">
-        Kết quả precheck là mô phỏng, không ràng buộc và chưa phải phê duyệt của ngân hàng. Yêu cầu này không chọn
+        Kết quả kiểm tra sơ bộ là mô phỏng, không ràng buộc và chưa phải phê duyệt của ngân hàng. Yêu cầu này không chọn
         phương án và không gửi hồ sơ ra ngoài.
         {payload.external_release_performed && " Hệ thống ghi nhận đã có hành động gửi ra ngoài."}
       </p>
@@ -415,8 +417,8 @@ export function AIDecisionAnalysisView({ payload }: { payload: AIDecisionAnalysi
           </span>
         </div>
         <div className="assessment-view__meta">
-          {payload.model && <span>Model: {payload.model}</span>}
-          {payload.prompt_version && <span>· Prompt: {payload.prompt_version}</span>}
+          {payload.model && <span>Mô hình AI: {payload.model}</span>}
+          {payload.prompt_version && <span>· Phiên bản hướng dẫn: {payload.prompt_version}</span>}
         </div>
       </header>
       {payload.fallback_reason && (
@@ -460,7 +462,7 @@ export function AIDecisionAnalysisView({ payload }: { payload: AIDecisionAnalysi
       )}
       {!!attention.length && (
         <section>
-          <h4>Điểm Founder cần lưu ý</h4>
+          <h4>Điểm người phê duyệt cần lưu ý</h4>
           <ul className="assessment-list">
             {attention.map((item, index) => (
               <li key={item.attention_point_id ?? index}>{translateText(item.text ?? label(item.code))}</li>
@@ -474,8 +476,8 @@ export function AIDecisionAnalysisView({ payload }: { payload: AIDecisionAnalysi
         <ArtifactRef title="Kiểm tra rủi ro cuối" reference={payload.final_risk_artifact} />
       </section>
       <p role="note" className="assessment-view__footnote">
-        Đây là đề xuất đã qua kiểm tra xác định, chưa phải quyết định của Founder; Decision Card hiện hành nằm ở view
-        Quyết định. Model không tự tính số liệu, không tạo yêu cầu phê duyệt và không thực hiện hành động bên ngoài.
+        Đây là đề xuất đã qua kiểm tra xác định, chưa phải quyết định của người phê duyệt; Phiếu đề xuất quyết định hiện hành nằm ở tab
+        Quyết định. AI không tự tính số liệu, không tạo yêu cầu phê duyệt và không thực hiện hành động bên ngoài.
         {payload.external_action_performed && " Hệ thống ghi nhận đã có hành động bên ngoài."}
       </p>
     </article>

@@ -18,8 +18,8 @@ function UpstreamArtifacts({
   const upstreamIds = artifact.input_artifact_ids ?? [];
   if (!upstreamIds.length) return null;
   return (
-    <section className="artifact-lineage" aria-label="Nguồn đầu vào">
-      <h3>Nguồn đầu vào</h3>
+    <section className="artifact-lineage" aria-label="Nguồn gốc dữ liệu">
+      <h3>Nguồn gốc dữ liệu</h3>
       <ul>
         {upstreamIds.map((artifactId) => {
           const upstream = runArtifacts.find((item) => item.artifact_id === artifactId);
@@ -30,7 +30,7 @@ function UpstreamArtifacts({
                   <strong>{artifactTypeLabel(upstream.artifact_type)}</strong> · v{upstream.version}
                 </>
               ) : (
-                <strong>Không thuộc danh sách của lượt xử lý này</strong>
+                <strong>Không thuộc danh sách của lần xử lý này</strong>
               )}
               <span className="artifact-id">{artifactId}</span>
             </li>

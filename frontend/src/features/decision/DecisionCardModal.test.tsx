@@ -33,25 +33,25 @@ describe("DecisionCardModal", () => {
     expect(screen.getByText("ART-CURRENT · v1")).toBeInTheDocument();
     expect(screen.getByText(card.payload.executive_summary)).toBeInTheDocument();
     expect(screen.getByText("Quan hệ giao dịch còn giới hạn.")).toBeInTheDocument();
-    expect(screen.getByText(/Prototype không gửi hồ sơ ra ngoài/)).toBeInTheDocument();
+    expect(screen.getByText(/Hệ thống chưa gửi hồ sơ ra ngoài/)).toBeInTheDocument();
   });
   it("shows only contract-attributable metrics and allows only exact current approval", () => {
     const approve = vi.fn();
     render(<DecisionCardModal open card={card} current_decision_card_artifact_id="ART-CURRENT" pending_approval={{ request_id: "APR-1", status: "PENDING", subject_artifact_id: "ART-CURRENT", subject_artifact_version: 1, protected_action: "CONFIRM_FINAL_CONTRACT_DECISION" }} onClose={vi.fn()} onApprove={approve} onReject={vi.fn()} />);
 
     expect(screen.getAllByText("12%").length).toBeGreaterThan(0);
-    expect(screen.getByRole("heading", { name: /Decision Card/ })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: /Phiếu đề xuất quyết định/ })).toBeInTheDocument();
     expect(screen.queryByText(/500\.000\.000/)).not.toBeInTheDocument();
     expect(screen.getByText(/mô phỏng, không ràng buộc/i)).toBeInTheDocument();
     const aiRecommendation = screen.getByRole("group", { name: "Đề xuất từ trí tuệ nhân tạo" });
-    expect(within(aiRecommendation).getByText(/ACCEPT_WITH_CONDITIONS/)).toBeInTheDocument();
+    expect(within(aiRecommendation).getByText(/Chấp nhận có điều kiện/)).toBeInTheDocument();
     expect(within(aiRecommendation).getByText(/Biên hiện tại chưa đạt mục tiêu/)).toBeInTheDocument();
     expect(within(aiRecommendation).getByText(/Đàm phán lại giá bán hoặc giảm chi phí/)).toBeInTheDocument();
     expect(within(aiRecommendation).queryByText(/Đạt biên mục tiêu|Điều chỉnh giá|Chỉ chấp nhận sau/)).not.toBeInTheDocument();
     expect(screen.queryByText("Đạt biên mục tiêu")).not.toBeInTheDocument();
     expect(screen.queryByText("Điều chỉnh giá")).not.toBeInTheDocument();
     expect(screen.queryByText("Điều kiện cần đáp ứng")).not.toBeInTheDocument();
-    expect(screen.queryByText("Điểm Founder cần lưu ý")).not.toBeInTheDocument();
+    expect(screen.queryByText("Điểm người phê duyệt cần lưu ý")).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Phê duyệt" }));
     expect(approve).toHaveBeenCalledWith("APR-1");
   });
@@ -61,12 +61,12 @@ describe("DecisionCardModal", () => {
 
     expect(screen.queryByRole("button", { name: "Phê duyệt" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Từ chối" })).not.toBeInTheDocument();
-    expect(screen.getByText(/không phải Decision Card hiện hành/i)).toBeInTheDocument();
+    expect(screen.getByText(/không phải Phiếu đề xuất quyết định hiện hành/i)).toBeInTheDocument();
     expect(screen.queryByRole("group", { name: "Đề xuất từ trí tuệ nhân tạo" })).not.toBeInTheDocument();
     expect(screen.getByText("AI chưa tạo được đề xuất")).toBeInTheDocument();
   });
 
-  it("does not expose approval actions for a stale Decision Card version", () => {
+  it("does not expose approval actions for a stale Phiếu đề xuất quyết định version", () => {
     render(
       <DecisionCardModal
         open

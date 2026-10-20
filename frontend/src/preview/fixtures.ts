@@ -36,7 +36,7 @@ export const contracts: readonly PreviewContract[] = [
     statusLabel: "Chờ duyệt quyết định",
     runId: "UI-RUN-CON-004",
     date: "10/10/2026",
-    attention: "Decision Card cần Founder xem xét",
+    attention: "Phiếu đề xuất quyết định cần người phê duyệt xem xét",
   },
   {
     id: "CON-002",
@@ -49,7 +49,7 @@ export const contracts: readonly PreviewContract[] = [
     statusLabel: "Chờ bổ sung dữ liệu",
     runId: "UI-RUN-CON-002",
     date: "09/10/2026",
-    attention: "Thiếu số tiền yêu cầu precheck",
+    attention: "Thiếu số tiền yêu cầu kiểm tra sơ bộ",
   },
   {
     id: "CON-001",
@@ -71,7 +71,7 @@ export const contracts: readonly PreviewContract[] = [
     margin: 19,
     sourceStatus: "Negotiation",
     businessStatus: "FAILED_SAFE",
-    statusLabel: "Dừng an toàn",
+    statusLabel: "Đã dừng xử lý",
     runId: "UI-RUN-CON-005",
     date: "08/10/2026",
     attention: "Bằng chứng cần được kiểm tra lại",
@@ -84,7 +84,7 @@ export const contracts: readonly PreviewContract[] = [
     margin: 20,
     sourceStatus: "Pending expansion",
     businessStatus: "",
-    statusLabel: "Chưa có lượt đánh giá",
+    statusLabel: "Chưa có lần xử lý",
     runId: null,
     date: "—",
   },
@@ -94,7 +94,7 @@ export const actions: readonly PreviewAction[] = [
     id: "UI-APPROVAL-CON-004",
     kind: "approval",
     title: "Xem xét quyết định hợp đồng",
-    description: "Decision Card hiện hành đã sẵn sàng để đối chiếu.",
+    description: "Phiếu đề xuất quyết định hiện hành đã sẵn sàng để đối chiếu.",
     contractId: "CON-004",
     label: "Xem xét",
     link: "/contracts/CON-004?view=overview&request=UI-APPROVAL-CON-004",
@@ -102,8 +102,8 @@ export const actions: readonly PreviewAction[] = [
   {
     id: "UI-INPUT-CON-002",
     kind: "input",
-    title: "Bổ sung số tiền yêu cầu precheck",
-    description: "Quy trình đang chờ thông tin do Founder cung cấp.",
+    title: "Bổ sung số tiền yêu cầu kiểm tra sơ bộ",
+    description: "Quy trình đang chờ thông tin do người phê duyệt cung cấp.",
     contractId: "CON-002",
     label: "Bổ sung",
     link: "/contracts/CON-002?view=overview&request=UI-INPUT-CON-002",
@@ -112,7 +112,7 @@ export const actions: readonly PreviewAction[] = [
     id: "UI-FAIL-CON-005",
     kind: "failure",
     title: "Kiểm tra giới hạn bằng chứng",
-    description: "Lượt xử lý dừng an toàn; chưa tạo đề xuất có thể duyệt.",
+    description: "Lần xử lý dừng xử lý; chưa tạo đề xuất có thể duyệt.",
     contractId: "CON-005",
     label: "Xem quy trình",
     link: "/contracts/CON-005?view=workflow",
@@ -235,8 +235,8 @@ export const invoices: readonly InvoiceRow[] = [
 ];
 // Already-composed fixture read models. Components only format/filter; no financial aggregation.
 export const invoiceDistribution: readonly StatusPoint[] = [
-  { label: "Ghi nguồn Paid", value: 3700000000, status: "Paid" },
-  { label: "Ghi nguồn Open", value: 2200000000, status: "Open" },
+  { label: "Đã thanh toán", value: 3700000000, status: "Paid" },
+  { label: "Đang mở", value: 2200000000, status: "Open" },
   { label: "Chưa phát hành", value: 1700000000, status: "Not issued" },
 ];
 export const orders: readonly OrderRow[] = [
@@ -300,9 +300,9 @@ export const orderDistribution: readonly StatusPoint[] = [
 export const alerts: readonly SourceAlert[] = [
   {
     id: "UI-ALERT-001",
-    title: "Dự trữ dự kiến dưới ngưỡng nguồn",
+    title: "Tiền dự kiến thấp hơn mức dự trữ tối thiểu",
     detail:
-      "Tháng 9 trong kịch bản minh họa có projected closing cash thấp hơn minimum reserve. Đây là dự kiến, không phải số dư ngân hàng.",
+      "Tháng 9, tiền cuối kỳ dự kiến thấp hơn mức dự trữ tối thiểu. Đây chưa phải số dư thực tế tại ngân hàng.",
     severity: "High",
   },
   {
@@ -315,7 +315,7 @@ export const alerts: readonly SourceAlert[] = [
   {
     id: "UI-ALERT-003",
     title: "Bằng chứng chưa đủ cho quyết định",
-    detail: "Lượt xử lý cần kiểm tra lại bằng chứng trước khi tiếp tục.",
+    detail: "Lần xử lý cần kiểm tra lại bằng chứng trước khi tiếp tục.",
     severity: "High",
     contract: "CON-005",
   },
@@ -351,10 +351,10 @@ export function contractArtifacts(
           },
         ],
         narrative: {
-          headline: "Các chỉ số nguồn được đối chiếu trong cùng lượt xử lý.",
+          headline: "Các số liệu ghi nhận thuộc cùng lần xử lý.",
           statements: [
             {
-              text: "Giá trị và biên lợi nhuận là dữ liệu minh họa cho hợp đồng đang chọn.",
+              text: "Giá trị và biên lợi nhuận là dữ liệu mô phỏng cho hợp đồng đang chọn.",
               fact_ids: ["UI-F1", "UI-F2"],
             },
           ],
@@ -391,11 +391,11 @@ export function contractArtifacts(
         findings: [
           {
             title: "Giới hạn bằng chứng",
-            detail: "Kết quả cần được Founder đối chiếu trước khi quyết định.",
+            detail: "Kết quả cần được người phê duyệt đối chiếu trước khi quyết định.",
             severity: "MEDIUM",
           },
         ],
-        limitations: [{ detail: "Precheck là mô phỏng, không ràng buộc." }],
+        limitations: [{ detail: "Kiểm tra sơ bộ là mô phỏng, không ràng buộc." }],
       },
     },
   ];
@@ -412,13 +412,13 @@ export function fixtureCard(contract: PreviewContract): DecisionCardArtifact {
       recommendation: evaluable ? "ACCEPT" : "NOT_EVALUABLE",
       confidence: evaluable ? "MEDIUM" : "NOT_EVALUABLE",
       executive_summary: evaluable
-        ? "Đề xuất chấp nhận dựa trên hồ sơ đánh giá hiện hành. Founder cần xem lại các giới hạn bằng chứng trước khi quyết định."
+        ? "Đề xuất chấp nhận dựa trên hồ sơ đánh giá hiện hành. Người phê duyệt cần xem lại các giới hạn bằng chứng trước khi quyết định."
         : "Chưa đủ cơ sở để đưa ra đề xuất có thể phê duyệt.",
       reasons: [
         {
-          title: "Đối chiếu cùng lượt đánh giá",
+          title: "Đối chiếu cùng lần xử lý",
           detail:
-            "Finance, Operations và Risk được trình bày cùng identity của lượt xử lý minh họa.",
+            "Các đánh giá tài chính, vận hành và rủi ro thuộc cùng một lần xử lý mô phỏng.",
         },
       ],
       residual_risk_level: "MEDIUM",
@@ -427,11 +427,11 @@ export function fixtureCard(contract: PreviewContract): DecisionCardArtifact {
         {
           code: "UI_FIXTURE",
           detail:
-            "Toàn bộ phân tích, kể cả nhãn nguồn OpenAI, là fixture; không có lần gọi model thật.",
+            "Toàn bộ phân tích là mô phỏng, không phải kết quả đánh giá thực tế.",
         },
         {
           code: "SIMULATED_PRECHECK",
-          detail: "Precheck ngân hàng là mô phỏng, không ràng buộc.",
+          detail: "Kiểm tra sơ bộ ngân hàng là mô phỏng, không ràng buộc.",
         },
         {
           code: "SEPARATE_RELEASE",

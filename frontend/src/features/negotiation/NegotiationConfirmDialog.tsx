@@ -35,7 +35,7 @@ export function NegotiationConfirmDialog({ open, request, artifact, submitting =
     <div className="approval-dialog" role="dialog" aria-modal="true" aria-labelledby="negotiation-confirm-title">
       <article>
         <header>
-          <p>Cổng phê duyệt của Founder</p>
+          <p>Xem xét và phê duyệt</p>
           <h2 id="negotiation-confirm-title">Xác nhận kết quả đàm phán cuối</h2>
         </header>
         {outcomes.length ? (
@@ -49,7 +49,7 @@ export function NegotiationConfirmDialog({ open, request, artifact, submitting =
           </ul>
         ) : <p role="alert">Không tìm thấy bản tổng hợp kết quả đàm phán hiện hành.</p>}
         {rejected.length ? (
-          <p role="alert">Có {rejected.length} điều kiện bị từ chối. Nếu Founder xác nhận kết quả này, case sẽ được đóng.</p>
+          <p role="alert">Có {rejected.length} điều kiện bị từ chối. Nếu người phê duyệt xác nhận kết quả này, hồ sơ sẽ được đóng.</p>
         ) : (
           <p>Tất cả điều kiện đã được chấp thuận. Xác nhận để ghi nhận hợp đồng đáp ứng điều kiện.</p>
         )}

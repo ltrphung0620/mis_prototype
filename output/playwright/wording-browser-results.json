@@ -1,0 +1,432 @@
+{
+  "rows": [
+    {
+      "width": 390,
+      "route": "/dashboard",
+      "pageWidth": 390,
+      "overflow": false,
+      "technicalCopy": false,
+      "missingSimulation": false
+    },
+    {
+      "width": 390,
+      "route": "/company",
+      "pageWidth": 390,
+      "overflow": false,
+      "technicalCopy": false,
+      "missingSimulation": false
+    },
+    {
+      "width": 390,
+      "route": "/company?section=finance&period=recent",
+      "pageWidth": 390,
+      "overflow": false,
+      "technicalCopy": false,
+      "missingSimulation": false
+    },
+    {
+      "width": 390,
+      "route": "/company?section=business",
+      "pageWidth": 390,
+      "overflow": false,
+      "technicalCopy": false,
+      "missingSimulation": false
+    },
+    {
+      "width": 390,
+      "route": "/company?section=invoices",
+      "pageWidth": 390,
+      "overflow": false,
+      "technicalCopy": false,
+      "missingSimulation": false
+    },
+    {
+      "width": 390,
+      "route": "/company?section=alerts",
+      "pageWidth": 390,
+      "overflow": false,
+      "technicalCopy": false,
+      "missingSimulation": false
+    },
+    {
+      "width": 390,
+      "route": "/contracts",
+      "pageWidth": 390,
+      "overflow": false,
+      "technicalCopy": false,
+      "missingSimulation": false
+    },
+    {
+      "width": 390,
+      "route": "/contracts/CON-004",
+      "pageWidth": 390,
+      "overflow": false,
+      "technicalCopy": false,
+      "missingSimulation": false
+    },
+    {
+      "width": 390,
+      "route": "/contracts/CON-004?view=assessments",
+      "pageWidth": 390,
+      "overflow": false,
+      "technicalCopy": false,
+      "missingSimulation": false
+    },
+    {
+      "width": 390,
+      "route": "/contracts/CON-004?view=evidence",
+      "pageWidth": 390,
+      "overflow": false,
+      "technicalCopy": false,
+      "missingSimulation": false
+    },
+    {
+      "width": 390,
+      "route": "/contracts/CON-004?view=history",
+      "pageWidth": 390,
+      "overflow": false,
+      "technicalCopy": false,
+      "missingSimulation": false
+    },
+    {
+      "width": 390,
+      "route": "/contracts/CON-004?view=workflow",
+      "pageWidth": 390,
+      "overflow": false,
+      "technicalCopy": false,
+      "missingSimulation": false
+    },
+    {
+      "width": 390,
+      "route": "/contracts/CON-003?view=workflow",
+      "pageWidth": 390,
+      "overflow": false,
+      "technicalCopy": false,
+      "missingSimulation": false
+    },
+    {
+      "width": 768,
+      "route": "/dashboard",
+      "pageWidth": 768,
+      "overflow": false,
+      "technicalCopy": false,
+      "missingSimulation": false
+    },
+    {
+      "width": 768,
+      "route": "/company",
+      "pageWidth": 768,
+      "overflow": false,
+      "technicalCopy": false,
+      "missingSimulation": false
+    },
+    {
+      "width": 768,
+      "route": "/company?section=finance&period=recent",
+      "pageWidth": 768,
+      "overflow": false,
+      "technicalCopy": false,
+      "missingSimulation": false
+    },
+    {
+      "width": 768,
+      "route": "/company?section=business",
+      "pageWidth": 768,
+      "overflow": false,
+      "technicalCopy": false,
+      "missingSimulation": false
+    },
+    {
+      "width": 768,
+      "route": "/company?section=invoices",
+      "pageWidth": 768,
+      "overflow": false,
+      "technicalCopy": false,
+      "missingSimulation": false
+    },
+    {
+      "width": 768,
+      "route": "/company?section=alerts",
+      "pageWidth": 768,
+      "overflow": false,
+      "technicalCopy": false,
+      "missingSimulation": false
+    },
+    {
+      "width": 768,
+      "route": "/contracts",
+      "pageWidth": 768,
+      "overflow": false,
+      "technicalCopy": false,
+      "missingSimulation": false
+    },
+    {
+      "width": 768,
+      "route": "/contracts/CON-004",
+      "pageWidth": 768,
+      "overflow": false,
+      "technicalCopy": false,
+      "missingSimulation": false
+    },
+    {
+      "width": 768,
+      "route": "/contracts/CON-004?view=assessments",
+      "pageWidth": 768,
+      "overflow": false,
+      "technicalCopy": false,
+      "missingSimulation": false
+    },
+    {
+      "width": 768,
+      "route": "/contracts/CON-004?view=evidence",
+      "pageWidth": 768,
+      "overflow": false,
+      "technicalCopy": false,
+      "missingSimulation": false
+    },
+    {
+      "width": 768,
+      "route": "/contracts/CON-004?view=history",
+      "pageWidth": 768,
+      "overflow": false,
+      "technicalCopy": false,
+      "missingSimulation": false
+    },
+    {
+      "width": 768,
+      "route": "/contracts/CON-004?view=workflow",
+      "pageWidth": 768,
+      "overflow": false,
+      "technicalCopy": false,
+      "missingSimulation": false
+    },
+    {
+      "width": 768,
+      "route": "/contracts/CON-003?view=workflow",
+      "pageWidth": 768,
+      "overflow": false,
+      "technicalCopy": false,
+      "missingSimulation": false
+    },
+    {
+      "width": 1440,
+      "route": "/dashboard",
+      "pageWidth": 1440,
+      "overflow": false,
+      "technicalCopy": false,
+      "missingSimulation": false
+    },
+    {
+      "width": 1440,
+      "route": "/company",
+      "pageWidth": 1440,
+      "overflow": false,
+      "technicalCopy": false,
+      "missingSimulation": false
+    },
+    {
+      "width": 1440,
+      "route": "/company?section=finance&period=recent",
+      "pageWidth": 1440,
+      "overflow": false,
+      "technicalCopy": false,
+      "missingSimulation": false
+    },
+    {
+      "width": 1440,
+      "route": "/company?section=business",
+      "pageWidth": 1440,
+      "overflow": false,
+      "technicalCopy": false,
+      "missingSimulation": false
+    },
+    {
+      "width": 1440,
+      "route": "/company?section=invoices",
+      "pageWidth": 1440,
+      "overflow": false,
+      "technicalCopy": false,
+      "missingSimulation": false
+    },
+    {
+      "width": 1440,
+      "route": "/company?section=alerts",
+      "pageWidth": 1440,
+      "overflow": false,
+      "technicalCopy": false,
+      "missingSimulation": false
+    },
+    {
+      "width": 1440,
+      "route": "/contracts",
+      "pageWidth": 1440,
+      "overflow": false,
+      "technicalCopy": false,
+      "missingSimulation": false
+    },
+    {
+      "width": 1440,
+      "route": "/contracts/CON-004",
+      "pageWidth": 1440,
+      "overflow": false,
+      "technicalCopy": false,
+      "missingSimulation": false
+    },
+    {
+      "width": 1440,
+      "route": "/contracts/CON-004?view=assessments",
+      "pageWidth": 1440,
+      "overflow": false,
+      "technicalCopy": false,
+      "missingSimulation": false
+    },
+    {
+      "width": 1440,
+      "route": "/contracts/CON-004?view=evidence",
+      "pageWidth": 1440,
+      "overflow": false,
+      "technicalCopy": false,
+      "missingSimulation": false
+    },
+    {
+      "width": 1440,
+      "route": "/contracts/CON-004?view=history",
+      "pageWidth": 1440,
+      "overflow": false,
+      "technicalCopy": false,
+      "missingSimulation": false
+    },
+    {
+      "width": 1440,
+      "route": "/contracts/CON-004?view=workflow",
+      "pageWidth": 1440,
+      "overflow": false,
+      "technicalCopy": false,
+      "missingSimulation": false
+    },
+    {
+      "width": 1440,
+      "route": "/contracts/CON-003?view=workflow",
+      "pageWidth": 1440,
+      "overflow": false,
+      "technicalCopy": false,
+      "missingSimulation": false
+    },
+    {
+      "width": 1920,
+      "route": "/dashboard",
+      "pageWidth": 1920,
+      "overflow": false,
+      "technicalCopy": false,
+      "missingSimulation": false
+    },
+    {
+      "width": 1920,
+      "route": "/company",
+      "pageWidth": 1920,
+      "overflow": false,
+      "technicalCopy": false,
+      "missingSimulation": false
+    },
+    {
+      "width": 1920,
+      "route": "/company?section=finance&period=recent",
+      "pageWidth": 1920,
+      "overflow": false,
+      "technicalCopy": false,
+      "missingSimulation": false
+    },
+    {
+      "width": 1920,
+      "route": "/company?section=business",
+      "pageWidth": 1920,
+      "overflow": false,
+      "technicalCopy": false,
+      "missingSimulation": false
+    },
+    {
+      "width": 1920,
+      "route": "/company?section=invoices",
+      "pageWidth": 1920,
+      "overflow": false,
+      "technicalCopy": false,
+      "missingSimulation": false
+    },
+    {
+      "width": 1920,
+      "route": "/company?section=alerts",
+      "pageWidth": 1920,
+      "overflow": false,
+      "technicalCopy": false,
+      "missingSimulation": false
+    },
+    {
+      "width": 1920,
+      "route": "/contracts",
+      "pageWidth": 1920,
+      "overflow": false,
+      "technicalCopy": false,
+      "missingSimulation": false
+    },
+    {
+      "width": 1920,
+      "route": "/contracts/CON-004",
+      "pageWidth": 1920,
+      "overflow": false,
+      "technicalCopy": false,
+      "missingSimulation": false
+    },
+    {
+      "width": 1920,
+      "route": "/contracts/CON-004?view=assessments",
+      "pageWidth": 1920,
+      "overflow": false,
+      "technicalCopy": false,
+      "missingSimulation": false
+    },
+    {
+      "width": 1920,
+      "route": "/contracts/CON-004?view=evidence",
+      "pageWidth": 1920,
+      "overflow": false,
+      "technicalCopy": false,
+      "missingSimulation": false
+    },
+    {
+      "width": 1920,
+      "route": "/contracts/CON-004?view=history",
+      "pageWidth": 1920,
+      "overflow": false,
+      "technicalCopy": false,
+      "missingSimulation": false
+    },
+    {
+      "width": 1920,
+      "route": "/contracts/CON-004?view=workflow",
+      "pageWidth": 1920,
+      "overflow": false,
+      "technicalCopy": false,
+      "missingSimulation": false
+    },
+    {
+      "width": 1920,
+      "route": "/contracts/CON-003?view=workflow",
+      "pageWidth": 1920,
+      "overflow": false,
+      "technicalCopy": false,
+      "missingSimulation": false
+    },
+    {
+      "check": "mobile-dialog",
+      "overflow": false,
+      "dialogWidth": 390
+    },
+    {
+      "check": "mobile-inspector-escape",
+      "closed": true
+    }
+  ],
+  "errors": [],
+  "apiCalls": [],
+  "failures": []
+}

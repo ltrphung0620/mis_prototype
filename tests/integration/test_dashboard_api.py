@@ -73,7 +73,7 @@ def test_dashboard_bundle_connects_only_to_real_backend_workflow_apis(
         assert endpoint in script
     assert "Chọn hợp đồng" in script
     assert "Tiến trình xử lý" in script
-    assert "Decision Dashboard" in script
+    assert "Tổng quan quyết định" in script
     assert "decision-dashboard" in stylesheet
     assert "tiền kiểm" not in script.lower()
     assert "Đây là kiểm tra mức sẵn sàng dữ liệu" not in script
@@ -100,7 +100,7 @@ def test_dashboard_does_not_invent_decision_card_readiness_in_browser(
 ) -> None:
     script, _stylesheet = _dashboard_asset_text(dashboard_client)
 
-    assert "Decision Card của lượt chạy hiện tại chưa sẵn sàng" in script
+    assert "Phiếu đề xuất quyết định của lần xử lý hiện tại chưa sẵn sàng" in script
     assert "internal_decision_package_ready" not in script
     assert "hasArtifact" not in script
 

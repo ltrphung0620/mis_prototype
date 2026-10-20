@@ -18,15 +18,15 @@ interface StageAccordionProps {
 }
 
 const OWNER_LABELS: Readonly<Record<string, string>> = {
-  PLANNER: "Planner Skill",
-  FINANCE: "Finance Agent",
-  OPERATIONS: "Operations Skill",
-  RISK: "Risk & Compliance Agent",
-  DECISION: "Decision & Partner Agent",
-  BANKING: "Banking Integration Skill",
-  DOCUMENT: "Document Skill",
-  GOVERNANCE: "Governance Components",
-  ORCHESTRATOR: "Workflow Orchestrator",
+  PLANNER: "Tiếp nhận và lập kế hoạch",
+  FINANCE: "Đánh giá tài chính",
+  OPERATIONS: "Đánh giá vận hành",
+  RISK: "Đánh giá rủi ro",
+  DECISION: "Đề xuất quyết định",
+  BANKING: "Khảo sát ngân hàng",
+  DOCUMENT: "Chuẩn bị hồ sơ",
+  GOVERNANCE: "Kiểm soát và phê duyệt",
+  ORCHESTRATOR: "Điều phối quy trình",
 };
 
 export function ownerLabel(ownerId?: string): string {

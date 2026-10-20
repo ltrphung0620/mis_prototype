@@ -13,7 +13,7 @@ import { parsePreviewRoute } from "./navigation";
 
 function route(path: string) {
   act(() => {
-    window.history.replaceState({}, "", `/#${path}`);
+    window.history.replaceState({}, "", `/${window.location.search}#${path}`);
     window.dispatchEvent(new HashChangeEvent("hashchange"));
   });
 }
@@ -40,11 +40,74 @@ afterEach(() => {
 });
 
 describe("isolated executive preview", () => {
+  it("keeps the simulation notice visible and technical test controls hidden by default", () => {
+    render(<PreviewApp />);
+    expect(screen.getByText("Dữ liệu mô phỏng", { exact: true })).toBeVisible();
+    expect(
+      screen.queryByRole("combobox", { name: "Trạng thái kiểm thử" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByText(/Không kết nối backend|Bản xem trước giao diện/),
+    ).not.toBeInTheDocument();
+    route("/contracts/CON-004?request=UI-APPROVAL-CON-004");
+    expect(
+      screen.queryByRole("combobox", { name: "Tình huống xem xét" }),
+    ).not.toBeInTheDocument();
+    expect(fetch).not.toHaveBeenCalled();
+  });
+  it("uses the same invoice labels in filters, chart tables and invoice rows while retaining source filter values", async () => {
+    render(<PreviewApp />);
+    route("/company?section=invoices&status=Paid");
+    const filter = screen.getByRole("combobox", { name: "Trạng thái hóa đơn" });
+    expect(filter).toHaveValue("Paid");
+    expect(
+      within(filter).getByRole("option", { name: "Đã thanh toán" }),
+    ).toHaveAttribute("value", "Paid");
+    expect(screen.getByText("INV-001")).toBeInTheDocument();
+    expect(screen.queryByText("INV-002")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Bảng dữ liệu" }));
+    for (const table of screen.getAllByRole("table")) {
+      expect(table).toHaveTextContent("Đã thanh toán");
+      expect(table).not.toHaveTextContent(/Ghi nguồn|\bPaid\b|\bOpen\b/);
+    }
+    fireEvent.change(filter, { target: { value: "Open" } });
+    await waitFor(() => expect(window.location.hash).toContain("status=Open"));
+    expect(screen.getByText("INV-002")).toBeInTheDocument();
+    expect(fetch).not.toHaveBeenCalled();
+  });
+  it("preserves scroll for filters and resets it for page changes", async () => {
+    render(<PreviewApp />);
+    route("/company?section=invoices");
+    vi.mocked(window.scrollTo).mockClear();
+    route("/company?section=invoices&status=Open");
+    expect(window.scrollTo).not.toHaveBeenCalled();
+    route("/company?section=finance&period=recent");
+    expect(window.scrollTo).toHaveBeenCalledWith({
+      top: 0,
+      behavior: "instant",
+    });
+    expect(
+      screen.getByRole("link", { name: "Hóa đơn" }),
+    ).toHaveAttribute("href", "#/company?section=invoices&period=recent");
+    vi.mocked(window.scrollTo).mockClear();
+    route("/company?section=finance&period=all");
+    expect(window.scrollTo).not.toHaveBeenCalled();
+  });
+  it("searches evidence using its Vietnamese display name and preserves IDs", () => {
+    render(<PreviewApp />);
+    route("/contracts/CON-004?view=evidence");
+    fireEvent.change(screen.getByRole("textbox", { name: "Tìm bằng chứng" }), {
+      target: { value: "rủi ro" },
+    });
+    expect(screen.getByText("UI-RISK-CON-004")).toBeInTheDocument();
+    expect(screen.queryByText("UI-FINANCE-CON-004")).not.toBeInTheDocument();
+  });
   it("opens a contract from a non-link cell without changing the approval scope", async () => {
     render(<PreviewApp />);
     route("/contracts");
     const row = screen.getByText("CON-004").closest("tr")!;
-    expect(within(row).getByText("Negotiation")).toBeInTheDocument();
+    expect(within(row).getByText("Đang đàm phán")).toBeInTheDocument();
+    expect(within(row).queryByText("Negotiation")).not.toBeInTheDocument();
     expect(within(row).getByText("Chờ duyệt quyết định")).toBeInTheDocument();
     fireEvent.click(within(row).getByText("Đang đàm phán"));
     await screen.findByRole("heading", {
@@ -87,7 +150,7 @@ describe("isolated executive preview", () => {
     route("/contracts/CON-002?request=UI-INPUT-CON-002");
     const dialog = await screen.findByRole("dialog");
     fireEvent.click(
-      within(dialog).getByRole("button", { name: "Kiểm tra form minh họa" }),
+      within(dialog).getByRole("button", { name: "Kiểm tra thông tin" }),
     );
     expect(within(dialog).getByRole("alert")).toHaveTextContent(
       "Nhập số tiền lớn hơn 0",
@@ -97,10 +160,10 @@ describe("isolated executive preview", () => {
       { target: { value: "1000000" } },
     );
     fireEvent.click(
-      within(dialog).getByRole("button", { name: "Kiểm tra form minh họa" }),
+      within(dialog).getByRole("button", { name: "Kiểm tra thông tin" }),
     );
     expect(within(dialog).getByRole("status")).toHaveTextContent(
-      "Không tạo patch, không resume workflow",
+      "dữ liệu chưa được lưu và chưa gửi ngân hàng",
     );
     expect(fetch).not.toHaveBeenCalled();
   });
@@ -131,9 +194,9 @@ describe("isolated executive preview", () => {
     fireEvent.click(screen.getByRole("button", { name: "Phê duyệt" }));
     expect(screen.getByText("Xem xét quyết định hợp đồng")).toBeInTheDocument();
     expect(
-      screen.queryByText("Bổ sung số tiền yêu cầu precheck"),
+      screen.queryByText("Bổ sung số tiền yêu cầu kiểm tra sơ bộ"),
     ).not.toBeInTheDocument();
-    expect(screen.getByText("Hóa đơn ghi nguồn Open")).toBeInTheDocument();
+    expect(screen.getByText("Giá trị hóa đơn đang mở")).toBeInTheDocument();
     expect(fetch).not.toHaveBeenCalled();
   });
   it("drills down into invoice scope and filters the table", async () => {
@@ -181,6 +244,7 @@ describe("isolated executive preview", () => {
     ).toBeInTheDocument();
   });
   it("reviews exact ID/version and locks stale or resolved requests", async () => {
+    window.history.replaceState({}, "", "/?ui_test=1#/dashboard");
     render(<PreviewApp />);
     route("/contracts/CON-004?view=overview&request=UI-APPROVAL-CON-004");
     const modal = await screen.findByRole("dialog");
@@ -190,7 +254,7 @@ describe("isolated executive preview", () => {
     ).toBeEnabled();
     fireEvent.change(
       within(modal).getByRole("combobox", {
-        name: "Trạng thái review minh họa",
+        name: "Tình huống xem xét",
       }),
       { target: { value: "stale" } },
     );
@@ -199,7 +263,7 @@ describe("isolated executive preview", () => {
     ).not.toBeInTheDocument();
     fireEvent.change(
       within(modal).getByRole("combobox", {
-        name: "Trạng thái review minh họa",
+        name: "Tình huống xem xét",
       }),
       { target: { value: "resolved" } },
     );
@@ -213,9 +277,7 @@ describe("isolated executive preview", () => {
     route("/contracts/CON-004?request=UI-APPROVAL-CON-004");
     const modal = await screen.findByRole("dialog");
     fireEvent.click(within(modal).getByRole("button", { name: "Phê duyệt" }));
-    expect(modal).toHaveTextContent(
-      "Không gửi request và không thay đổi quyết định backend",
-    );
+    expect(modal).toHaveTextContent("Chưa ghi nhận quyết định thực tế");
     expect(
       within(modal).getByRole("button", { name: "Phê duyệt" }),
     ).toBeDisabled();
@@ -226,18 +288,20 @@ describe("isolated executive preview", () => {
     route("/contracts/CON-005?request=UI-APPROVAL-CON-004");
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
     expect(screen.getByRole("alert")).toHaveTextContent(
-      "không mở review của request khác",
+      "Không tìm thấy yêu cầu xem xét này",
     );
     route("/contracts/CON-003?view=evidence");
     expect(
-      screen.getByRole("heading", { name: "Chưa có artifact để đối chiếu" }),
+      screen.getByRole("heading", { name: "Chưa có kết quả để đối chiếu" }),
     ).toBeInTheDocument();
   });
   it("keeps NOT_EVALUABLE read-only", async () => {
     render(<PreviewApp />);
     route("/contracts/CON-001");
     fireEvent.click(
-      screen.getByRole("button", { name: "Xem giới hạn Decision Card" }),
+      screen.getByRole("button", {
+        name: "Xem giới hạn Phiếu đề xuất quyết định",
+      }),
     );
     const modal = await screen.findByRole("dialog");
     expect(
@@ -257,9 +321,10 @@ describe("isolated executive preview", () => {
     expect(modal).toHaveTextContent("UI-OPERATIONS-CON-004");
   });
   it("supports explicit loading, empty, error and retry without backend calls", () => {
+    window.history.replaceState({}, "", "/?ui_test=1#/dashboard");
     render(<PreviewApp />);
     const selector = screen.getByRole("combobox", {
-      name: "Trạng thái preview",
+      name: "Trạng thái kiểm thử",
     });
     fireEvent.change(selector, { target: { value: "loading" } });
     expect(screen.getByRole("status")).toHaveTextContent("Đang tải");
@@ -271,7 +336,7 @@ describe("isolated executive preview", () => {
     ).toBeInTheDocument();
     fireEvent.change(selector, { target: { value: "error" } });
     expect(screen.getByRole("alert")).toHaveTextContent(
-      "Lỗi kết nối được mô phỏng",
+      "Tình huống lỗi đang được mô phỏng",
     );
     fireEvent.click(screen.getByRole("button", { name: "Thử lại" }));
     expect(

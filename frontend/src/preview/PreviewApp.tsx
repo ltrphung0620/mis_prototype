@@ -5,6 +5,7 @@ import { Dashboard } from "./Dashboard";
 import { Badge, Icon, Link, StateView } from "./components";
 import type { PreviewMode } from "./models";
 import { usePreviewRoute } from "./navigation";
+import { previewTestingEnabled } from "./testing";
 import "./preview.css";
 
 const navigation = [
@@ -51,7 +52,7 @@ export default function PreviewApp() {
           <span className="pv-company-avatar">O</span>
           <div>
             <strong>OPC Technology</strong>
-            <small>Không gian Founder</small>
+            <small>Không gian làm việc</small>
           </div>
         </div>
         <nav aria-label="Điều hướng chính">
@@ -70,16 +71,12 @@ export default function PreviewApp() {
             </Link>
           ))}
         </nav>
-        <div className="pv-sidebar-footer">
-          <span className="pv-preview-dot" />
-          Bản xem trước <small>Không kết nối backend</small>
-        </div>
       </aside>
       <div className="pv-shell">
         <header className="pv-topbar">
           <button
             className="pv-menu-toggle"
-            aria-label="Mở navigation"
+            aria-label={menu ? "Đóng menu" : "Mở menu"}
             aria-expanded={menu}
             onClick={() => setMenu(!menu)}
           >
@@ -91,20 +88,22 @@ export default function PreviewApp() {
             <strong>{pageLabel}</strong>
           </div>
           <div className="pv-topbar-right">
-            <Badge tone="lavender">Dữ liệu minh họa</Badge>
-            <label className="pv-mode-label">
-              <span>Kiểm thử trạng thái</span>
-              <select
-                aria-label="Trạng thái preview"
-                value={mode}
-                onChange={(e) => setMode(e.target.value as PreviewMode)}
-              >
-                <option value="ready">Sẵn sàng</option>
-                <option value="loading">Đang tải</option>
-                <option value="empty">Trống</option>
-                <option value="error">Lỗi</option>
-              </select>
-            </label>
+            <Badge tone="lavender">Dữ liệu mô phỏng</Badge>
+            {previewTestingEnabled() && (
+              <label className="pv-mode-label">
+                <span>Kiểm thử trạng thái</span>
+                <select
+                  aria-label="Trạng thái kiểm thử"
+                  value={mode}
+                  onChange={(e) => setMode(e.target.value as PreviewMode)}
+                >
+                  <option value="ready">Sẵn sàng</option>
+                  <option value="loading">Đang tải</option>
+                  <option value="empty">Trống</option>
+                  <option value="error">Lỗi</option>
+                </select>
+              </label>
+            )}
           </div>
         </header>
         <main id="workspace-content" tabIndex={-1} className="pv-main">
@@ -123,10 +122,6 @@ export default function PreviewApp() {
             )}
           </StateView>
         </main>
-        <footer className="pv-page-footer">
-          <span>OPC MIS · Bản xem trước giao diện</span>
-          <span>Dữ liệu minh họa · Không kết nối backend</span>
-        </footer>
       </div>
     </div>
   );

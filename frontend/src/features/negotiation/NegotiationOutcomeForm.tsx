@@ -96,7 +96,7 @@ export function NegotiationOutcomeForm({
           })}
           <p><strong>{accepted}/{conditions.length}</strong> điều kiện được khách hàng chấp thuận.</p>
           <label>
-            Tóm tắt của Founder (không bắt buộc)
+            Tóm tắt của người phê duyệt (không bắt buộc)
             <textarea value={summary} maxLength={1000} onChange={(event) => setSummary(event.target.value)} />
           </label>
           <footer>

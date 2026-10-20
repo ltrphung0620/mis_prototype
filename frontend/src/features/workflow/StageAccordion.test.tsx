@@ -33,7 +33,7 @@ describe("StageAccordion playback", () => {
   it("shows the responsible skill or agent on the stage and its task", () => {
     render(<StageAccordion stage={completedStage} index={0} />);
 
-    expect(screen.getAllByText(/Phụ trách: Finance Agent/)).toHaveLength(2);
+    expect(screen.getAllByText(/Phụ trách: Đánh giá tài chính/)).toHaveLength(2);
   });
 
   it("does not reveal a completed task or its assessment before its paced turn", () => {
@@ -70,7 +70,7 @@ describe("StageAccordion playback", () => {
     expect(screen.getByText("Tác vụ đã hoàn tất theo backend")).toBeInTheDocument();
   });
 
-  it("treats an approved Founder task as resolved during playback", () => {
+  it("treats an approved người phê duyệt task as resolved during playback", () => {
     const approvedStage: WorkflowStage = {
       ...completedStage,
       id: "FINAL_DECISION_APPROVAL",
@@ -80,7 +80,7 @@ describe("StageAccordion playback", () => {
           ...completedStage.milestones[0],
           id: "FINAL_DECISION_APPROVAL_TASK",
           code: "FINAL_DECISION_APPROVAL_TASK",
-          statusLabel: "Founder đã phê duyệt",
+          statusLabel: "Người phê duyệt đã phê duyệt",
           resolutionStatus: "APPROVED",
         },
       ],
@@ -95,7 +95,7 @@ describe("StageAccordion playback", () => {
       />,
     );
 
-    expect(screen.queryByText("Founder đã phê duyệt")).not.toBeInTheDocument();
+    expect(screen.queryByText("Người phê duyệt đã phê duyệt")).not.toBeInTheDocument();
     expect(screen.getAllByText("Đang xử lý").length).toBeGreaterThan(0);
   });
 
@@ -105,7 +105,7 @@ describe("StageAccordion playback", () => {
       id: "FINAL_DECISION_APPROVAL",
       code: "FINAL_DECISION_APPROVAL",
       status: "REJECTED",
-      statusLabel: "Founder đã từ chối yêu cầu này",
+      statusLabel: "Người phê duyệt đã từ chối yêu cầu này",
       milestones: [
         {
           ...completedStage.milestones[0],
@@ -122,7 +122,7 @@ describe("StageAccordion playback", () => {
       <StageAccordion stage={rejectedStage} index={3} />,
     );
 
-    expect(screen.getByText("Founder đã từ chối yêu cầu này")).toBeInTheDocument();
+    expect(screen.getByText("Người phê duyệt đã từ chối yêu cầu này")).toBeInTheDocument();
     expect(screen.getByText("Yêu cầu quyết định đã bị từ chối")).toBeInTheDocument();
     expect(
       screen.getByText("Không tiếp tục vì quyết định hiện hành không được xác nhận."),

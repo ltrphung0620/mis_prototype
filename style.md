@@ -14,7 +14,17 @@ Hướng dẫn cho người và agents tiếp tục UI. Đọc [AGENTS.md](AGENT
 - Sidebar compact; nội dung rộng; section và bảng nhẹ thay vì nhiều card lồng nhau.
 - Decision Card là đối tượng cần đọc và xem xét. CTA ở workspace mở review; approval/rejection ở dialog khớp đúng yêu cầu hiện hành.
 - Sidebar và navigation mobile hiện dùng local views: Quyết định, Đánh giá, Bằng chứng, Quy trình, Dữ liệu đầu vào. Chưa có router, URL deep linking hoặc portal nhiều hợp đồng.
-- Copy tiếng Việt đủ dấu; giữ tên Finance, Operations, Risk, Decision Card khi hữu ích. Không dùng emoji làm icon.
+- Copy tiếng Việt tự nhiên, đủ dấu, dành cho người không có kiến thức chuyên môn. Dùng Tài chính, Vận hành, Rủi ro, Ngân hàng, Hồ sơ, Quy trình và Phiếu đề xuất quyết định. Không dùng emoji làm icon.
+
+### Wording được duyệt ngày 20/10/2026
+
+- Chỉ đổi nhãn hiển thị; giữ nguyên enum, trạng thái, action, payload, ID và phiên bản trong API/database.
+- Dùng **Giá trị ghi nhận**, **Tổng quan công ty**, **Lần xử lý**, **Nguồn gốc dữ liệu**, **Trạng thái xử lý**. Kỳ snapshot là **Kỳ dữ liệu**; chỉ dùng **Kỳ ghi nhận** nếu đã xác minh đúng nghiệp vụ.
+- Hóa đơn: `Paid` → **Đã thanh toán**, `Open` → **Đang mở**, `Not issued` → **Chưa phát hành**. Không suy diễn thanh toán thực tế, quá hạn hoặc doanh thu từ nhãn nguồn.
+- Các trạng thái nguồn dùng chung `shared/sourceLabels.ts` trong bảng, bộ lọc và biểu đồ. Giá trị bộ lọc và URL vẫn là mã gốc. Tìm bằng chứng hỗ trợ tên tiếng Việt cùng với mã tra cứu.
+- Gỡ giới thiệu “Bản xem trước giao diện” và diễn giải mock/fixtures/backend khỏi UI chính. Giữ nhãn ngắn **Dữ liệu mô phỏng** xuyên suốt, thêm thông báo **Kết quả mô phỏng** trong hộp thoại liên quan. Không gọi dữ liệu mô phỏng là dữ liệu thực hoặc thông báo đã lưu/phê duyệt/gửi thật.
+- Các bộ chọn tình huống kiểm thử chỉ hiện khi thêm `&ui_test=1` bên cạnh `?preview=1`, trước dấu `#`. Đây là công cụ kiểm thử trình bày, không phải phân quyền hoặc cơ chế bảo vệ hành động.
+- Đổi bộ lọc, kỳ dữ liệu, vùng sơ đồ hoặc mở/đóng yêu cầu không cuộn cả trang về đầu. Chuyển trang/tab/hợp đồng mới cuộn về đầu. Giữ kỳ dữ liệu giữa các tab công ty; tab đang chọn phải nằm trong vùng cuộn ngang của thanh tab mobile.
 
 ## Tokens và nhịp layout
 
@@ -50,7 +60,7 @@ Refinement Checkpoint 1: xem [visual review 14](docs/ui-design/14_visual_refinem
 - CSS `pv-*` scoped dưới `.pv-app`, reuse Mercury tokens trong `tokens.css`. Không dùng fixture styles để thay business guards. Chart colors/CTA bổ sung là presentation tokens trong `preview.css`, xem bảng ở checkpoint 13; màu nhạt dùng surface, màu series có contrast ≥3:1 trên trắng; CTA trắng/primary ≥4.5:1.
 - Recharts 3.10.1 là dependency đã được user cho phép cho preview; không thêm UI framework/router. Mỗi chart có tooltip/unit/source, table alternative và controls; không dựa vào màu để thao tác. Native bảng có caption và vùng cuộn focusable, giữ scrollbar trong container ở mobile.
 - Decision/artifact dialogs reuse components hiện hành với optional `context` slot để đặt disclaimer/preview controls **bên trong focus trap**. Exact artifact/version/current/request/source/NOT_EVALUABLE guards không đổi. Context không thay approval logic.
-- Mock submit chỉ hiện thông báo local, không resolve request như kết quả thật, không patch/resume/external release. Preview badge phải hiện xuyên suốt; mock labels không được bỏ khi chưa kết nối và xác minh API thật.
+- Mock submit chỉ hiện thông báo local, không resolve request như kết quả thật, không patch/resume/external release. Nhãn **Dữ liệu mô phỏng** phải hiện xuyên suốt; thông báo sau thao tác nói rõ chưa ghi nhận quyết định, chưa lưu hoặc chưa gửi thực tế.
 - Workflow tab có viewer chỉ đọc của Checkpoint 2 trong `frontend/src/preview/workflow/`: React Flow, typed topology/fixtures, phase navigation, inspector và mobile list. Xem [review 15](docs/ui-design/15_workflow_viewer_checkpoint.md). Không nối preview với API client, không dùng event order để dựng edges, không thêm editor/run-node/approval actions. Hai gate presentation dùng `APPROVAL_GATE` phải giữ nhãn instance, không trình bày như persisted node ID mới.
 - Workflow scenarios là snapshot minh họa riêng, ID chứa contract + scenario. Không ghi đè contract status, Decision Card hay approval request của workspace. `not-applicable` là applicability, không phải `WorkflowNodeStatus`; unknown không đồng nghĩa bị skip. Output chưa hoàn tất không được hiển thị như artifact đã validation. Giữ exact ID/version/action binding khi tích hợp sau duyệt.
 
@@ -82,7 +92,7 @@ Refinement Checkpoint 1: xem [visual review 14](docs/ui-design/14_visual_refinem
 5. Final decision approval khác external-release approval. Precheck là `SIMULATED_NON_BINDING`; prototype không gửi tài liệu hay tạo receipt. Không thêm nút chuyển tiền/gửi ngân hàng.
 6. Browser chỉ format số theo unit/scope hiện có, không tính lại margin/risk/finance; phân biệt null với zero. Không thêm Risk Score, confidence phần trăm, historical charts hoặc KPI không có nguồn.
 7. Không thêm auth/profile/notifications/settings như thể backend đã hỗ trợ. Không hard-code CON-004 hoặc kết quả demo vào `frontend/src/`.
-8. UI fixture và screenshots synthetic luôn ghi **Dữ liệu minh họa**. `source: OPENAI` trong fixture không chứng minh đã gọi OpenAI. Fixture chỉ nằm trong development tooling, không import vào production bundle.
+8. UI fixture và screenshots synthetic luôn ghi **Dữ liệu mô phỏng**. `source: OPENAI` trong fixture không chứng minh đã gọi OpenAI. Preview dùng fixture trong entry riêng theo `?preview=1`; connected UI không sử dụng fixture làm dữ liệu thực.
 
 ## Kiểm tra trước khi bàn giao
 

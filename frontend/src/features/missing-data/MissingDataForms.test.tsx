@@ -42,7 +42,7 @@ describe("typed missing-data forms", () => {
     }
   });
 
-  it("binds precheck evidence to the exact workflow request", () => {
+  it("binds kiểm tra sơ bộ evidence to the exact workflow request", () => {
     const submit = vi.fn();
     render(<PrecheckEvidenceForm workflow_run_id="RUN-2" missing_request_id="MDR-2" onSubmit={submit} />);
     fireEvent.change(screen.getByLabelText("Mã tham chiếu tài liệu bổ sung"), { target: { value: "DOC-REF-22" } });
@@ -55,7 +55,7 @@ describe("typed missing-data forms", () => {
     const submit = vi.fn();
     render(<BankingAmountForm workflow_run_id="RUN-3" missing_request_id="MDR-3" onSubmit={submit} />);
     fireEvent.change(screen.getByLabelText("Số tiền cần hỗ trợ (VND)"), { target: { value: "420.5" } });
-    fireEvent.change(screen.getByLabelText("Căn cứ nhập liệu"), { target: { value: "Founder cung cấp cho yêu cầu legacy." } });
+    fireEvent.change(screen.getByLabelText("Căn cứ nhập liệu"), { target: { value: "Người phê duyệt cung cấp cho yêu cầu legacy." } });
     fireEvent.submit(screen.getByRole("form", { name: "Bổ sung số tiền ngân hàng" }));
     const alert = screen.getByRole("alert");
     expect(alert).toHaveTextContent(/số nguyên VND dương/i);
@@ -65,7 +65,7 @@ describe("typed missing-data forms", () => {
     expect(submit).not.toHaveBeenCalled();
   });
 
-  it("marks only the missing precheck evidence field as invalid", () => {
+  it("marks only the missing kiểm tra sơ bộ evidence field as invalid", () => {
     const submit = vi.fn();
     render(<PrecheckEvidenceForm workflow_run_id="RUN-2" missing_request_id="MDR-2" onSubmit={submit} />);
     fireEvent.change(screen.getByLabelText("Mã tham chiếu tài liệu bổ sung"), { target: { value: "DOC-REF-22" } });

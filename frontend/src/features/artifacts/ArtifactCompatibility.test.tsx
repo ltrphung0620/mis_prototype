@@ -28,14 +28,14 @@ describe("artifact payload compatibility", () => {
   });
 
   it("uses overall_risk_level and shows only case confirmation points", () => {
-    render(<ArtifactAssessmentView artifact={artifact("INITIAL_RISK_ASSESSMENT", { assessment_status: "COMPLETE", overall_risk_level: "HIGH", findings: [], limitations: [], human_confirmation_points: [{ reason_code: "ALERT_REVIEW", question: "Founder cần xác nhận bối cảnh cảnh báo.", severity: "HIGH", evidence_ids: ["EVD-HIDDEN"] }] })} />);
+    render(<ArtifactAssessmentView artifact={artifact("INITIAL_RISK_ASSESSMENT", { assessment_status: "COMPLETE", overall_risk_level: "HIGH", findings: [], limitations: [], human_confirmation_points: [{ reason_code: "ALERT_REVIEW", question: "Người phê duyệt cần xác nhận bối cảnh cảnh báo.", severity: "HIGH", evidence_ids: ["EVD-HIDDEN"] }] })} />);
     expect(screen.getByText("Mức tổng thể: Cao")).toBeInTheDocument();
-    expect(screen.getByText("Founder cần xác nhận bối cảnh cảnh báo.")).toBeInTheDocument();
+    expect(screen.getByText("Người phê duyệt cần xác nhận bối cảnh cảnh báo.")).toBeInTheDocument();
     expect(screen.queryByText(/EVD-HIDDEN/)).not.toBeInTheDocument();
   });
 
   it("renders Risk pre-scan alerts including global alerts", () => {
-    render(<ArtifactAssessmentView artifact={artifact("RISK_PRE_SCAN", { source_rule_ids: ["RULE-SECRET"], source_record_counts: { alerts: 2 }, case_alerts: [{ alert_type: "CONTRACT_EXECUTION_RISK", severity: "HIGH", description: "Cảnh báo liên kết trực tiếp với hợp đồng.", recommended_action: "Founder kiểm tra bối cảnh.", evidence_ids: ["EVD-SECRET"] }], global_alerts: [{ alert_type: "FINANCIAL_ALERT", severity: "MEDIUM", description: "GLOBAL-HIDDEN" }], global_signals: [{ detail: "GLOBAL-SIGNAL-HIDDEN" }] })} />);
+    render(<ArtifactAssessmentView artifact={artifact("RISK_PRE_SCAN", { source_rule_ids: ["RULE-SECRET"], source_record_counts: { alerts: 2 }, case_alerts: [{ alert_type: "CONTRACT_EXECUTION_RISK", severity: "HIGH", description: "Cảnh báo liên kết trực tiếp với hợp đồng.", recommended_action: "Người phê duyệt kiểm tra bối cảnh.", evidence_ids: ["EVD-SECRET"] }], global_alerts: [{ alert_type: "FINANCIAL_ALERT", severity: "MEDIUM", description: "GLOBAL-HIDDEN" }], global_signals: [{ detail: "GLOBAL-SIGNAL-HIDDEN" }] })} />);
     expect(screen.getByText("Cảnh báo liên kết trực tiếp với hợp đồng.")).toBeInTheDocument();
     expect(screen.getByText("GLOBAL-HIDDEN")).toBeInTheDocument();
     expect(screen.queryByText(/RULE-SECRET|EVD-SECRET|GLOBAL-SIGNAL-HIDDEN/)).not.toBeInTheDocument();

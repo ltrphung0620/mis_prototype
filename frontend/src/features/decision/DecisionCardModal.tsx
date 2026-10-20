@@ -26,9 +26,9 @@ export interface DecisionCardModalProps {
 }
 
 const LABELS: Record<string, string> = {
-  ACCEPT: "ACCEPT · Chấp nhận",
-  NEGOTIATE_CONDITIONS_TO_ACCEPT: "ACCEPT_WITH_CONDITIONS · Chấp nhận có điều kiện",
-  DO_NOT_ACCEPT: "REJECT · Từ chối",
+  ACCEPT: "Chấp nhận",
+  NEGOTIATE_CONDITIONS_TO_ACCEPT: "Chấp nhận có điều kiện",
+  DO_NOT_ACCEPT: "Từ chối",
   NOT_EVALUABLE: "Chưa đủ cơ sở để đề xuất",
   HIGH: "Cao",
   MEDIUM: "Trung bình",
@@ -214,9 +214,9 @@ export function DecisionCardModal({
   if (!open) return null;
   if (!card) {
     return (
-      <div role="dialog" aria-modal="true" aria-label="Decision Card" className="decision-card-modal">
+      <div role="dialog" aria-modal="true" aria-label="Phiếu đề xuất quyết định" className="decision-card-modal">
         <article>
-          <p role="status">Decision Card của lượt chạy hiện tại chưa sẵn sàng.</p>
+          <p role="status">Phiếu đề xuất quyết định của lần xử lý hiện tại chưa sẵn sàng.</p>
           <footer>
             <button type="button" onClick={onClose}>Đóng</button>
           </footer>
@@ -242,18 +242,18 @@ export function DecisionCardModal({
       <article>
         <header>
           <p>Hợp đồng {payload.contract_id}</p>
-          <h2 id="decision-card-title">Decision Card · {label(payload.recommendation)}</h2>
+          <h2 id="decision-card-title">Phiếu đề xuất quyết định · {label(payload.recommendation)}</h2>
           <p>Độ tin cậy: {label(payload.confidence)}</p>
           <small className="review-artifact-identity">{card.artifact_id} · v{card.version}</small>
         </header>
         {context}
 
-        {!isCurrent && <p role="alert">Đây không phải Decision Card hiện hành; thao tác phê duyệt đã bị khóa.</p>}
+        {!isCurrent && <p role="alert">Đây không phải Phiếu đề xuất quyết định hiện hành; thao tác phê duyệt đã bị khóa.</p>}
 
         {isEvaluable ? (
         <fieldset aria-label="Đề xuất từ trí tuệ nhân tạo">
           <legend>
-            ĐỀ XUẤT TỪ TRÍ TUỆ NHÂN TẠO (AI RECOMMENDATION)
+            ĐỀ XUẤT TỪ TRÍ TUỆ NHÂN TẠO
           </legend>
           
           <p>
@@ -293,7 +293,7 @@ export function DecisionCardModal({
               {payload.analysis_source === "DETERMINISTIC_FALLBACK"
                 ? "Lượt phân tích này dùng kết quả dự phòng của hệ thống, không phải quyết định do OpenAI tạo."
                 : payload.analysis_source !== "OPENAI"
-                  ? "Không thể đối chiếu Decision Card với đúng kết quả phân tích do OpenAI tạo."
+                  ? "Không thể đối chiếu Phiếu đề xuất quyết định với đúng kết quả phân tích do OpenAI tạo."
                   : translateText(payload.executive_summary)}
             </p>
           </section>
@@ -302,10 +302,10 @@ export function DecisionCardModal({
         {/* CONTAINER 2: KẾT QUẢ TÍNH TOÁN & ĐỐI SOÁT HỆ THỐNG (Deterministic System Analysis) */}
         <fieldset>
           <legend>
-            KẾT QUẢ TÍNH TOÁN & ĐỐI SOÁT HỆ THỐNG (DETERMINISTIC SYSTEM ANALYSIS)
+            SỐ LIỆU VÀ KẾT QUẢ ĐỐI CHIẾU
           </legend>
 
-          <p>Số liệu và đối soát nghiệp vụ của hợp đồng trong lượt xử lý hiện hành.</p>
+          <p>Số liệu và đối soát nghiệp vụ của hợp đồng trong lần xử lý hiện hành.</p>
 
           <Metrics title="Tài chính của hợp đồng" metrics={payload.finance_metrics} />
           <Metrics title="Vận hành của hợp đồng" metrics={payload.operations_metrics} />
@@ -323,7 +323,7 @@ export function DecisionCardModal({
 
         {isEvaluable && <section aria-label="Tóm tắt quyết định"><h3>Tóm tắt đề xuất</h3><p>{translateText(payload.executive_summary)}</p></section>}
         {!!payload.limitations?.length && <section aria-label="Giới hạn bằng chứng"><h3>Giới hạn bằng chứng</h3><ul>{payload.limitations.map((item, index) => <li key={item.code ?? index}>{translateText(item.detail)}</li>)}</ul></section>}
-        <p className="review-boundary">Phê duyệt quyết định không đồng nghĩa cho phép gửi hồ sơ. Prototype không gửi hồ sơ ra ngoài.</p>
+        <p className="review-boundary">Gửi hồ sơ cần được phê duyệt riêng. Hệ thống chưa gửi hồ sơ ra ngoài.</p>
 
         {review_instruction && (
           <section aria-label="Phạm vi xem xét">
@@ -335,8 +335,8 @@ export function DecisionCardModal({
             </p>
           </section>
         )}
-        {!isEvaluable && <p role="status">Decision Card này vẫn được hiển thị để Founder xem giới hạn, nhưng không thể phê duyệt một đề xuất chưa đủ cơ sở.</p>}
-        {isEvaluable && isCurrent && !exactPendingApproval && <p role="status">Chưa có yêu cầu phê duyệt hiện hành khớp chính xác với Decision Card này.</p>}
+        {!isEvaluable && <p role="status">Phiếu đề xuất quyết định này vẫn được hiển thị để người phê duyệt xem giới hạn, nhưng không thể phê duyệt một đề xuất chưa đủ cơ sở.</p>}
+        {isEvaluable && isCurrent && !exactPendingApproval && <p role="status">Chưa có yêu cầu phê duyệt hiện hành khớp chính xác với Phiếu đề xuất quyết định này.</p>}
 
         <footer>
           {isCurrent && isEvaluable && approvalRequestId !== null && (
