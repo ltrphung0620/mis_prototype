@@ -32,8 +32,8 @@ export function Dashboard({ period = "all" }: { period?: string }) {
       />
       <div className="pv-dashboard-top">
         <Section
-          title="Cần Founder xử lý"
-          action={<Badge tone="lavender">3 việc</Badge>}
+          title="Việc cần bạn xử lý"
+          action={<Badge tone="lavender">{visibleActions.length} việc</Badge>}
         >
           <div className="pv-filter-tabs" aria-label="Lọc việc cần xử lý">
             {[
@@ -111,18 +111,18 @@ export function Dashboard({ period = "all" }: { period?: string }) {
       </div>
       <div className="pv-summary-heading">
         <h2>Tổng quan trong kỳ</h2>
-        <span>Snapshot công ty · {snapshot.period}</span>
+        <span>Tổng quan công ty · {snapshot.period}</span>
       </div>
       <dl className="pv-kpi-strip">
         <div>
-          <dt>Hợp đồng trong snapshot</dt>
+          <dt>Số hợp đồng</dt>
           <dd>
             <Link to="/contracts">
               {snapshot.kpis.contracts}
               <Icon />
             </Link>
           </dd>
-          <small>Toàn bộ trạng thái hợp đồng nguồn</small>
+          <small>Tất cả trạng thái hợp đồng</small>
         </div>
         <div>
           <dt>Tổng giá trị hợp đồng</dt>
@@ -132,10 +132,10 @@ export function Dashboard({ period = "all" }: { period?: string }) {
               <Icon />
             </Link>
           </dd>
-          <small>Giá trị nguồn · Không phải doanh thu</small>
+          <small>Giá trị ghi nhận · Không phải doanh thu</small>
         </div>
         <div>
-          <dt>Hóa đơn ghi nguồn Open</dt>
+          <dt>Giá trị hóa đơn đang mở</dt>
           <dd>
             <Link to="/company?section=invoices&status=Open">
               {money(snapshot.kpis.openInvoices)} <span>VND</span>
@@ -154,15 +154,14 @@ export function Dashboard({ period = "all" }: { period?: string }) {
         <Icon name="failure" />
         <div>
           <strong>{alerts[0].title}</strong>
-          <p>Tháng 9 · Dự kiến thấp hơn ngưỡng dự trữ trong nguồn minh họa.</p>
+          <p>Tháng 9 · Tiền cuối kỳ dự kiến thấp hơn mức dự trữ tối thiểu.</p>
         </div>
         <Link to="/company?section=alerts">
           Xem cảnh báo <Icon />
         </Link>
       </div>
       <SourceNote>
-        Snapshot minh họa · Chưa có thời điểm chốt dữ liệu nguồn · Không phải
-        realtime · Không cộng OPC_GLOBAL theo hợp đồng
+        Dữ liệu mô phỏng · Chưa có thời điểm cập nhật dữ liệu
       </SourceNote>
     </>
   );

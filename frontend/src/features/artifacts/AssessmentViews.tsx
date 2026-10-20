@@ -340,7 +340,7 @@ export function RiskAssessmentView({ payload, phase = "INITIAL" }: { payload: Ri
   const gates = payload.unresolved_approval_gates ?? [];
   const hasActions = !!confirmations.length || !!gates.length;
   const finalConclusion = payload.conclusion === "SAFE"
-    ? "An toàn: không còn rủi ro chưa được kiểm soát và không còn điểm nào chờ Founder xác nhận/phê duyệt."
+    ? "An toàn: không còn rủi ro chưa được kiểm soát và không còn điểm nào chờ người phê duyệt xác nhận/phê duyệt."
     : "Cần tiếp tục xử lý: vẫn còn rủi ro, giới hạn bằng chứng hoặc điểm xác nhận/phê duyệt chưa hoàn tất.";
 
   return (
@@ -512,9 +512,9 @@ const POST_PRECHECK_LABELS: Record<string, string> = {
   CONDITIONAL_OPTIONS_AVAILABLE: "Có phương án khả thi kèm điều kiện",
   ALL_OPTIONS_NOT_ELIGIBLE: "Không có phương án nào đủ điều kiện",
   NO_PROVIDER_RECOMMENDATION: "Không nhận được đề xuất từ ngân hàng",
-  PRECHECK_SERVICE_UNAVAILABLE: "Dịch vụ precheck không khả dụng",
+  PRECHECK_SERVICE_UNAVAILABLE: "Dịch vụ kiểm tra sơ bộ không khả dụng",
   MIXED_NON_ACTIONABLE_RESULTS: "Kết quả hỗn hợp không thể xử lý tiếp",
-  PRECHECK_UNAVAILABLE: "Không có dữ liệu precheck",
+  PRECHECK_UNAVAILABLE: "Không có dữ liệu kiểm tra sơ bộ",
   ELIGIBLE: "Đủ điều kiện",
   CONDITIONAL: "Có điều kiện",
   NOT_ELIGIBLE: "Không đủ điều kiện",
@@ -525,10 +525,10 @@ export function DecisionPostPrecheckReviewView({ payload }: { payload: DecisionP
   const outcomeText = payload.outcome ? (POST_PRECHECK_LABELS[payload.outcome] ?? humanize(payload.outcome)) : "Chưa xác định";
 
   return (
-    <article aria-label="Kết quả precheck" className="assessment-view">
+    <article aria-label="Kết quả kiểm tra sơ bộ" className="assessment-view">
       <header>
         <div className="assessment-view__title">
-          <h3>Kết quả đánh giá precheck</h3>
+          <h3>Kết quả đánh giá kiểm tra sơ bộ</h3>
           <span className={`status-badge status-badge--${precheckOutcomeTone(payload.outcome)}`}>
             Kết luận: {translateText(outcomeText)}
           </span>
@@ -536,7 +536,7 @@ export function DecisionPostPrecheckReviewView({ payload }: { payload: DecisionP
       </header>
 
       <p role="note">
-        Precheck là kết quả mô phỏng, không ràng buộc; chưa phải phản hồi hay phê duyệt thật từ ngân hàng.
+        Kiểm tra sơ bộ là kết quả mô phỏng, không ràng buộc; chưa phải phản hồi hay phê duyệt thật từ ngân hàng.
       </p>
 
       {reviews.length ? (
@@ -549,7 +549,7 @@ export function DecisionPostPrecheckReviewView({ payload }: { payload: DecisionP
               return (
                 <li key={`${item.option_id ?? "option"}-${index}`}>
                   <strong>{item.api_provider ?? "Ngân hàng"} — {humanize(item.bank_product_id)}</strong>
-                  <p className="assessment-item__secondary">Kết quả precheck mô phỏng: <strong>{translateText(srcOutcome)}</strong></p>
+                  <p className="assessment-item__secondary">Kết quả kiểm tra sơ bộ mô phỏng: <strong>{translateText(srcOutcome)}</strong></p>
                   <p className="assessment-item__secondary">Trạng thái xử lý nội bộ: <strong>{translateText(disp)}</strong></p>
                   {!!item.reason_codes?.length && (
                     <p className="assessment-item__meta assessment-item__meta--danger">
@@ -567,7 +567,7 @@ export function DecisionPostPrecheckReviewView({ payload }: { payload: DecisionP
           </ul>
         </section>
       ) : (
-        <p>Không có kết quả precheck nào được ghi nhận.</p>
+        <p>Không có kết quả kiểm tra sơ bộ nào được ghi nhận.</p>
       )}
     </article>
   );

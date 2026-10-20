@@ -23,7 +23,7 @@ export function DecisionDashboard({ data }: DecisionDashboardProps): ReactElemen
   return (
     <section aria-labelledby="decision-dashboard-title" className="decision-dashboard">
       <header className="decision-dashboard__status">
-        <h2 id="decision-dashboard-title" className="sr-only">Decision Dashboard</h2>
+        <h2 id="decision-dashboard-title" className="sr-only">Tổng quan quyết định</h2>
         <span>{data.business_status_label_vi}</span>
         <span>{data.execution_status_label_vi}</span>
       </header>
@@ -38,9 +38,9 @@ export function DecisionDashboard({ data }: DecisionDashboardProps): ReactElemen
         </article>
       ) : data.decision_card.reveal_pending ? (
         <p role="status">
-          Decision Card của lượt chạy này đã được tạo; đang hiển thị lần lượt các bước đã hoàn tất trước khi mở.
+          Phiếu đề xuất quyết định của lần xử lý này đã được tạo; đang hiển thị lần lượt các bước đã hoàn tất trước khi mở.
         </p>
-      ) : <p>Decision Card của lượt chạy hiện tại chưa sẵn sàng.</p>}
+      ) : <p>Phiếu đề xuất quyết định của lần xử lý hiện tại chưa sẵn sàng.</p>}
 
       {data.post_decision_outcome && <p>Kết quả sau quyết định: {businessValueLabel(data.post_decision_outcome)}.</p>}
       {externalStatus && <p role="status">{externalStatus}</p>}

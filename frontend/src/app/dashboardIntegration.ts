@@ -266,7 +266,7 @@ export function decisionDashboardData(
         reveal_pending: true,
         artifact_id: dashboard.decisionCard.artifact_id,
         decision_card_id: dashboard.decisionCard.decision_card_id,
-        recommendation_label_vi: "Decision Card đang chờ hiển thị theo tiến trình",
+        recommendation_label_vi: "Phiếu đề xuất quyết định đang chờ hiển thị theo tiến trình",
       }
     : {
         available: dashboard.decisionCard.available,
@@ -286,7 +286,7 @@ export function decisionDashboardData(
           | DecisionCardPayload["confidence"]
           | undefined,
         executive_summary: hasUnverifiedRecommendation
-          ? "Nguồn phân tích AI của Decision Card không phải OpenAI hoặc không thể đối chiếu chính xác."
+          ? "Nguồn phân tích AI của Phiếu đề xuất quyết định không phải OpenAI hoặc không thể đối chiếu chính xác."
           : dashboard.decisionCard.executive_summary,
       };
   return {
@@ -365,14 +365,14 @@ export function approvalSubjectSummary(
     : [];
   const firstOption = selectedOptions[0] ?? {};
   const releasePackage = record(payload.document_release_package);
-  const title = interaction?.title_vi || "Yêu cầu Founder xác nhận";
+  const title = interaction?.title_vi || "Yêu cầu người phê duyệt xác nhận";
   const descriptionByAction: Record<string, string> = {
     SUBMIT_BANKING_PRECHECK:
       "Cho phép quy trình gửi yêu cầu kiểm tra sơ bộ với ngân hàng; đây không phải phê duyệt cấp tín dụng hay bảo lãnh.",
     CONFIRM_FINAL_CONTRACT_DECISION:
       typeof payload.executive_summary === "string"
         ? payload.executive_summary
-        : "Xác nhận quyết định cuối cùng trên đúng Decision Card hiện hành.",
+        : "Xác nhận quyết định cuối cùng trên đúng Phiếu đề xuất quyết định hiện hành.",
     CONFIRM_NEGOTIATION_OUTCOME:
       "Xác nhận bản tổng hợp phản hồi của khách hàng cho toàn bộ điều kiện đàm phán.",
     SEND_DOCUMENT_TO_EXTERNAL_PARTNER:
@@ -385,7 +385,7 @@ export function approvalSubjectSummary(
     description:
       descriptionByAction[action] ??
       interaction?.instruction_vi ??
-      "Quy trình đang tạm dừng để Founder xem xét hành động được bảo vệ.",
+      "Quy trình đang tạm dừng để người phê duyệt xem xét hành động được bảo vệ.",
     recommendation:
       typeof payload.recommendation === "string"
         ? payload.recommendation

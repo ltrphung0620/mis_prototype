@@ -13,7 +13,7 @@ const completedDashboard: NormalizedWorkflowDashboard = {
   status: "COMPLETED",
   statusLabel: "Hoàn tất",
   currentStage: "FINAL_DECISION_RECORDED",
-  currentStageLabel: "Hoàn tất lượt đánh giá",
+  currentStageLabel: "Hoàn tất lần xử lý",
   pendingApprovalCount: 0,
   pendingMissingDataCount: 0,
   businessStatus: "COMPLETED",
@@ -66,7 +66,7 @@ describe("InputPanel", () => {
     ).toBeInTheDocument();
     expect(screen.queryByText("Dấu vân tay dữ liệu")).not.toBeInTheDocument();
     expect(screen.queryByText("Hồ sơ đánh giá")).not.toBeInTheDocument();
-    expect(screen.queryByText("Lượt xử lý")).not.toBeInTheDocument();
+    expect(screen.queryByText("Lần xử lý")).not.toBeInTheDocument();
   });
 
   it("labels the action on an existing dashboard as a new evaluation cycle", () => {
@@ -87,14 +87,14 @@ describe("InputPanel", () => {
     );
 
     expect(
-      screen.getByRole("button", { name: /Bắt đầu lượt đánh giá mới/i }),
+      screen.getByRole("button", { name: /Bắt đầu lần xử lý mới/i }),
     ).toBeEnabled();
     expect(
       screen.queryByRole("button", { name: /Chạy lại với hợp đồng này/i }),
     ).not.toBeInTheDocument();
   });
 
-  it("does not start another cycle while Founder approval is pending", () => {
+  it("does not start another cycle while người phê duyệt approval is pending", () => {
     render(
       <InputPanel
         catalog={{
@@ -106,9 +106,9 @@ describe("InputPanel", () => {
         dashboard={{
           ...completedDashboard,
           status: "WAITING_FOR_APPROVAL",
-          statusLabel: "Chờ Founder phê duyệt",
+          statusLabel: "Chờ phê duyệt",
           currentStage: "WAITING_FOR_APPROVAL",
-          currentStageLabel: "Chờ Founder phê duyệt",
+          currentStageLabel: "Chờ phê duyệt",
           pendingApprovalCount: 1,
         }}
         bootstrapping={false}
@@ -119,7 +119,7 @@ describe("InputPanel", () => {
     );
 
     expect(
-      screen.getByRole("button", { name: /Bắt đầu lượt đánh giá mới/i }),
+      screen.getByRole("button", { name: /Bắt đầu lần xử lý mới/i }),
     ).toBeDisabled();
   });
 });

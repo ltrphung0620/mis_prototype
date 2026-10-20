@@ -64,7 +64,7 @@ function dashboard(resolved: number, total = 4): NormalizedWorkflowDashboard {
     metrics: [],
     decisionCard: {
       available: resolved === total,
-      recommendation_label_vi: "Chưa có Decision Card",
+      recommendation_label_vi: "Chưa có Phiếu đề xuất quyết định",
     },
   };
 }
@@ -98,7 +98,7 @@ describe("workflow playback", () => {
     expect(advancePlayback(1, 4)).toBe(2);
   });
 
-  it("paces visual progress and reveals Decision Card only after catching up", () => {
+  it("paces visual progress and reveals Phiếu đề xuất quyết định only after catching up", () => {
     vi.useFakeTimers();
     const { result } = renderHook(() => useWorkflowPlayback(dashboard(3), 200));
 

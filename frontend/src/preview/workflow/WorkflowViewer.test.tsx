@@ -29,6 +29,7 @@ function viewer(scenario = "approval") {
   );
 }
 beforeEach(() => {
+  window.history.replaceState({}, "", "/?ui_test=1");
   vi.stubGlobal(
     "ResizeObserver",
     class {
@@ -166,23 +167,30 @@ describe("orchestration-grounded workflow snapshots", () => {
 });
 
 describe("read-only inspector and navigation", () => {
+  it("hides scenario controls in the normal view while retaining the simulation notice", () => {
+    window.history.replaceState({}, "", "/?preview=1");
+    viewer();
+    expect(screen.queryByRole("combobox", { name: "Kịch bản quy trình" })).not.toBeInTheDocument();
+    expect(screen.getByText("QUY TRÌNH MÔ PHỎNG · CHỈ XEM")).toBeVisible();
+    expect(fetch).not.toHaveBeenCalled();
+  });
   it("opens inspection from keyboard-operable list controls, restores focus, and never calls API", () => {
     viewer();
     fireEvent.click(screen.getByRole("button", { name: "Danh sách" }));
     const listButton = screen
-      .getAllByRole("button", { name: /Gate · Quyết định/ })
+      .getAllByRole("button", { name: /Duyệt quyết định/ })
       .find((b) => b.closest(".wf-list"))!;
     listButton.focus();
     fireEvent.click(listButton);
     const inspector = screen.getByRole("complementary", {
-      name: "Chi tiết node Gate · Quyết định",
+      name: "Chi tiết bước Duyệt quyết định",
     });
     expect(inspector).toHaveFocus();
     expect(
-      within(inspector).getByText("CONFIRM_FINAL_CONTRACT_DECISION"),
+      within(inspector).getByText("Xác nhận quyết định hợp đồng"),
     ).toBeInTheDocument();
     expect(
-      within(inspector).getByText(/Subject:.*DECISION_CARD.*v1/),
+      within(inspector).getByText(/Kết quả cần xem xét:.*DECISION_CARD.*v1/),
     ).toBeInTheDocument();
     expect(
       screen.queryByRole("button", { name: /Phê duyệt|Resume|Run node/ }),
@@ -195,17 +203,17 @@ describe("read-only inspector and navigation", () => {
     viewer("banking");
     fireEvent.click(screen.getByRole("button", { name: "Danh sách" }));
     const button = screen
-      .getAllByRole("button", { name: /Gate · Precheck/ })
+      .getAllByRole("button", { name: /Duyệt kiểm tra sơ bộ/ })
       .find((b) => b.closest(".wf-list"))!;
     fireEvent.click(button);
     const panel = screen.getByRole("complementary");
-    expect(within(panel).getByText("DECLINED")).toBeInTheDocument();
+    expect(within(panel).getByText("Không được chấp thuận")).toBeInTheDocument();
     fireEvent.click(
       within(panel).getByRole("button", { name: "→ Hồ sơ quyết định" }),
     );
     expect(
       screen.getByRole("complementary", {
-        name: "Chi tiết node Hồ sơ quyết định",
+        name: "Chi tiết bước Hồ sơ quyết định",
       }),
     ).toBeInTheDocument();
     expect(fetch).not.toHaveBeenCalled();
@@ -227,14 +235,14 @@ describe("read-only inspector and navigation", () => {
       />,
     );
     expect(
-      screen.getByRole("combobox", { name: "Kịch bản workflow" }),
+      screen.getByRole("combobox", { name: "Kịch bản quy trình" }),
     ).toHaveValue("approval");
     expect(screen.getByRole("button", { name: "Quyết định" })).toHaveAttribute(
       "aria-current",
       "true",
     );
     fireEvent.change(
-      screen.getByRole("combobox", { name: "Kịch bản workflow" }),
+      screen.getByRole("combobox", { name: "Kịch bản quy trình" }),
       { target: { value: "document" } },
     );
     expect(window.location.hash).toBe(
@@ -250,10 +258,10 @@ describe("read-only inspector and navigation", () => {
       />,
     );
     expect(
-      screen.getByRole("heading", { name: "Chưa có lượt xử lý" }),
+      screen.getByRole("heading", { name: "Chưa có lần xử lý" }),
     ).toBeInTheDocument();
     expect(
-      screen.queryByRole("combobox", { name: "Kịch bản workflow" }),
+      screen.queryByRole("combobox", { name: "Kịch bản quy trình" }),
     ).not.toBeInTheDocument();
     expect(fetch).not.toHaveBeenCalled();
   });
@@ -262,14 +270,14 @@ describe("read-only inspector and navigation", () => {
     fireEvent.click(screen.getByRole("button", { name: "Danh sách" }));
     fireEvent.click(
       screen
-        .getAllByRole("button", { name: /Risk · Kiểm tra cuối/ })
+        .getAllByRole("button", { name: /Rủi ro · Kiểm tra cuối/ })
         .find((b) => b.closest(".wf-list"))!,
     );
     const panel = screen.getByRole("complementary");
-    expect(within(panel).getByText("FAILED_SAFE")).toBeInTheDocument();
-    expect(within(panel).getByText("Failure boundary")).toBeInTheDocument();
+    expect(within(panel).getByText("Trạng thái xử lý").closest("div")).toHaveTextContent("Đã dừng xử lý");
+    expect(within(panel).getByText("Lý do dừng xử lý")).toBeInTheDocument();
     expect(
-      within(panel).queryByText("Pending interaction"),
+      within(panel).queryByText("Việc đang chờ xử lý"),
     ).not.toBeInTheDocument();
     expect(fetch).not.toHaveBeenCalled();
   });

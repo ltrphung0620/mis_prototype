@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { usePreviewData } from "./data";
 import {
   Badge,
@@ -9,6 +9,7 @@ import {
   SearchField,
   Section,
   Tabs,
+  sourceStatusLabel,
 } from "./components";
 import { CashChart, DistributionChart } from "./Charts";
 import type { PreviewRoute } from "./models";
@@ -38,6 +39,7 @@ export function Company({ route }: { route: PreviewRoute }) {
   } = usePreviewData();
   const [search, setSearch] = useState("");
   const section = route.section ?? "overview";
+  useEffect(() => setSearch(""), [section]);
   const status = route.status ?? "all";
   const query = (next: Record<string, string>) =>
     navigatePreview(
@@ -58,21 +60,23 @@ export function Company({ route }: { route: PreviewRoute }) {
       <PageHeading
         eyebrow="Phân tích doanh nghiệp"
         title="Tình hình công ty"
-        description="Tài chính và hoạt động trong cùng một snapshot công ty."
-        action={<Badge>Snapshot · {snapshot.period}</Badge>}
+        description="Theo dõi tài chính, hợp đồng, đơn hàng và hóa đơn."
+        action={<Badge>Kỳ dữ liệu · {snapshot.period}</Badge>}
       />
       <Tabs
         label="Phân tích công ty"
         current={section}
-        items={sections.map((s) => ({ ...s, to: `/company?section=${s.key}` }))}
+        items={sections.map((s) => ({
+          ...s,
+          to: `/company?${new URLSearchParams({ section: s.key, period: route.period ?? "all" })}`,
+        }))}
       />
       <div className="pv-snapshot-context">
         <span>
           <strong>{snapshot.company}</strong> · Phạm vi công ty
         </span>
-        <span>Kỳ nguồn: {snapshot.period}</span>
-        <span>Nguồn: bộ dữ liệu giao diện minh họa</span>
-        <span>Chưa có thời điểm chốt · Không phải realtime</span>
+        <span>Kỳ dữ liệu: {snapshot.period}</span>
+        <span>Chưa có thời điểm cập nhật dữ liệu</span>
       </div>
       {section === "overview" && (
         <>
@@ -88,7 +92,7 @@ export function Company({ route }: { route: PreviewRoute }) {
           </div>
           <dl className="pv-kpi-strip">
             <div>
-              <dt>Giá trị hợp đồng nguồn</dt>
+              <dt>Giá trị hợp đồng</dt>
               <dd>
                 <Link to="/company?section=business">
                   {money(snapshot.kpis.contractValue)} <span>VND</span>
@@ -101,13 +105,14 @@ export function Company({ route }: { route: PreviewRoute }) {
               <dt>Hợp đồng</dt>
               <dd>
                 <Link to="/contracts">
-                  5<Icon />
+                  {contracts.length}
+                  <Icon />
                 </Link>
               </dd>
-              <small>Tất cả trạng thái trong snapshot</small>
+              <small>Tất cả trạng thái hợp đồng</small>
             </div>
             <div>
-              <dt>Hóa đơn ghi nguồn Open</dt>
+              <dt>Giá trị hóa đơn đang mở</dt>
               <dd>
                 <Link to="/company?section=invoices&status=Open">
                   {money(snapshot.kpis.openInvoices)} <span>VND</span>
@@ -123,8 +128,8 @@ export function Company({ route }: { route: PreviewRoute }) {
               onPeriodChange={(v) => query({ period: v })}
             />
             <DistributionChart
-              title="Hóa đơn theo trạng thái nguồn"
-              description="Giá trị hóa đơn · Toàn bộ snapshot"
+              title="Hóa đơn theo trạng thái"
+              description="Giá trị hóa đơn trong bộ dữ liệu"
               data={invoiceDistribution}
               unit="VND"
               onSelect={(v) =>
@@ -166,9 +171,8 @@ export function Company({ route }: { route: PreviewRoute }) {
           <div className="pv-inline-note">
             <Icon name="failure" />
             <p>
-              Các điểm thuộc cùng một company snapshot. Không cộng lặp các facts
-              OPC_GLOBAL từ Finance của nhiều hợp đồng. Dự kiến không đồng nghĩa
-              tiền đã thu hoặc chi.
+              Dòng tiền thuộc phạm vi toàn công ty. Thu và chi dự kiến chưa phải
+              số tiền thực tế đã thu hoặc chi.
             </p>
           </div>
         </>
@@ -178,7 +182,7 @@ export function Company({ route }: { route: PreviewRoute }) {
           <div className="pv-two-up">
             <DistributionChart
               title="Giá trị theo hợp đồng"
-              description="Giá trị hợp đồng nguồn · Không phải doanh thu"
+              description="Giá trị hợp đồng · Không phải doanh thu"
               unit="VND"
               data={contracts.map((c) => ({
                 label: c.id,
@@ -190,7 +194,7 @@ export function Company({ route }: { route: PreviewRoute }) {
               }
             />
             <DistributionChart
-              title="Đơn hàng theo trạng thái nguồn"
+              title="Đơn hàng theo trạng thái"
               description="Số đơn hàng có liên kết rõ ràng"
               unit="đơn hàng"
               kind="donut"
@@ -201,7 +205,7 @@ export function Company({ route }: { route: PreviewRoute }) {
           </div>
           <Section
             title="Đơn hàng"
-            description="Đơn hàng có liên kết hợp đồng tường minh"
+            description="Các đơn hàng có liên kết rõ ràng với hợp đồng"
             action={
               <select
                 aria-label="Trạng thái đơn hàng"
@@ -211,7 +215,7 @@ export function Company({ route }: { route: PreviewRoute }) {
                 <option value="all">Tất cả trạng thái</option>
                 {orderDistribution.map((d) => (
                   <option key={d.status} value={d.status}>
-                    {d.label}
+                    {sourceStatusLabel(d.status)}
                   </option>
                 ))}
               </select>
@@ -232,8 +236,8 @@ export function Company({ route }: { route: PreviewRoute }) {
                     <th>Đơn hàng</th>
                     <th>Dịch vụ</th>
                     <th>Hợp đồng</th>
-                    <th>Trạng thái nguồn</th>
-                    <th>Hạn nguồn</th>
+                    <th>Trạng thái đơn hàng</th>
+                    <th>Thời hạn ghi nhận</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -250,7 +254,7 @@ export function Company({ route }: { route: PreviewRoute }) {
                         <Badge
                           tone={o.status === "At risk" ? "warning" : "neutral"}
                         >
-                          {o.status}
+                          {sourceStatusLabel(o.status)}
                         </Badge>
                       </td>
                       <td>{o.due}</td>
@@ -268,8 +272,8 @@ export function Company({ route }: { route: PreviewRoute }) {
       {section === "invoices" && (
         <>
           <DistributionChart
-            title="Giá trị hóa đơn theo trạng thái nguồn"
-            description="Mỗi hóa đơn được ghi nhận một lần trong snapshot"
+            title="Giá trị hóa đơn theo trạng thái"
+            description="Mỗi hóa đơn chỉ được tính một lần"
             data={invoiceDistribution}
             unit="VND"
             selected={status}
@@ -292,9 +296,11 @@ export function Company({ route }: { route: PreviewRoute }) {
                   onChange={(e) => query({ status: e.target.value })}
                 >
                   <option value="all">Tất cả trạng thái</option>
-                  <option>Open</option>
-                  <option>Paid</option>
-                  <option>Not issued</option>
+                  <option value="Open">{sourceStatusLabel("Open")}</option>
+                  <option value="Paid">{sourceStatusLabel("Paid")}</option>
+                  <option value="Not issued">
+                    {sourceStatusLabel("Not issued")}
+                  </option>
                 </select>
               </div>
             }
@@ -312,8 +318,8 @@ export function Company({ route }: { route: PreviewRoute }) {
                     <th>Hóa đơn</th>
                     <th>Khách hàng / hợp đồng</th>
                     <th>Đơn hàng</th>
-                    <th>Trạng thái nguồn</th>
-                    <th>Ngày nguồn</th>
+                    <th>Trạng thái hóa đơn</th>
+                    <th>Ngày ghi nhận</th>
                     <th className="pv-numeric">Giá trị (VND)</th>
                   </tr>
                 </thead>
@@ -331,7 +337,7 @@ export function Company({ route }: { route: PreviewRoute }) {
                       </td>
                       <td className="pv-id">{i.order}</td>
                       <td>
-                        <Badge>{i.status}</Badge>
+                        <Badge>{sourceStatusLabel(i.status)}</Badge>
                       </td>
                       <td>{i.date ?? "Chưa có"}</td>
                       <td className="pv-numeric">
@@ -361,8 +367,8 @@ export function Company({ route }: { route: PreviewRoute }) {
       {section === "alerts" && (
         <>
           <Section
-            title="Cảnh báo trong nguồn"
-            description="Các cảnh báo minh họa có phạm vi riêng; không tạo Risk Score"
+            title="Cảnh báo cần chú ý"
+            description="Xem phạm vi và dữ liệu liên quan của từng cảnh báo"
           >
             <div className="pv-alert-list">
               {alerts.map((a) => (
@@ -373,8 +379,8 @@ export function Company({ route }: { route: PreviewRoute }) {
                     <p>{displayAlertDetail(a.detail)}</p>
                     <small>
                       {a.contract
-                        ? `Contract scope · ${a.contract}`
-                        : "Company scope"}
+                        ? `Hợp đồng · ${a.contract}`
+                        : "Phạm vi công ty"}
                     </small>
                   </div>
                   {a.contract && (
@@ -390,30 +396,33 @@ export function Company({ route }: { route: PreviewRoute }) {
             <dl className="pv-facts">
               <div>
                 <dt>Nguồn</dt>
-                <dd>Fixtures giao diện, không phải TeamPack hoặc backend</dd>
+                <dd>
+                  Dữ liệu mô phỏng, không phải số liệu thực tế của công ty
+                </dd>
               </div>
               <div>
                 <dt>Kỳ / thời điểm chốt</dt>
-                <dd>{snapshot.period} / chưa có · Không phải realtime</dd>
+                <dd>{snapshot.period} / chưa có thời điểm cập nhật</dd>
               </div>
               <div>
-                <dt>Company</dt>
+                <dt>Công ty</dt>
                 <dd>
-                  Một snapshot duy nhất; không cộng facts OPC_GLOBAL theo
-                  contract hoặc run
+                  Dữ liệu tổng hợp cho toàn công ty, không cộng lặp theo từng
+                  hợp đồng
                 </dd>
               </div>
               <div>
-                <dt>Contract / Order / Invoice</dt>
+                <dt>Hợp đồng / Đơn hàng / Hóa đơn</dt>
                 <dd>
-                  Định danh riêng, liên kết rõ ràng; không join ngầm theo khách
-                  hàng
+                  Mỗi mục có mã riêng và liên kết rõ ràng; không tự ghép theo
+                  tên khách hàng
                 </dd>
               </div>
               <div>
-                <dt>Run</dt>
+                <dt>Lần xử lý</dt>
                 <dd>
-                  Mỗi yêu cầu xem xét gắn đúng lượt xử lý, artifact và version
+                  Mỗi yêu cầu xem xét gắn với đúng lần xử lý, kết quả và phiên
+                  bản
                 </dd>
               </div>
               <div>

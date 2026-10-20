@@ -1,6 +1,6 @@
 /** Presentation topology, audited against case_workflow_orchestrator.py at 0329574.
  * Control-flow edges, not a claim that all inputs are supplied by the preceding node.
- * Gates are presentation instances of Governance; milestones are not executable nodes.
+ * Gates are presentation instances of Kiểm soát và phê duyệt; milestones are not executable nodes.
  */
 export type Phase = "assessment" | "banking" | "decision" | "followup";
 export type View = Phase | "all";
@@ -9,25 +9,25 @@ export const phases: { id: Phase; label: string; description: string }[] = [
     id: "assessment",
     label: "Đánh giá",
     description:
-      "Finance và Operations chạy song song. Risk đợi cả hai nguồn facts.",
+      "Đánh giá tài chính và vận hành cùng lúc, sau đó tổng hợp rủi ro.",
   },
   {
     id: "banking",
-    label: "Banking & hồ sơ",
+    label: "Ngân hàng và hồ sơ",
     description:
-      "Nhánh có điều kiện. Precheck cần gate riêng; Document chỉ đi tiếp khi có conditional options.",
+      "Kiểm tra sơ bộ cần được phê duyệt riêng. Chuẩn bị hồ sơ khi có phương án đáp ứng điều kiện.",
   },
   {
     id: "decision",
     label: "Quyết định",
     description:
-      "Hồ sơ nội bộ → Final Risk → Decision Card → phê duyệt đúng artifact và version.",
+      "Tổng hợp hồ sơ, kiểm tra rủi ro cuối cùng, lập phiếu đề xuất và chờ phê duyệt.",
   },
   {
     id: "followup",
     label: "Sau quyết định",
     description:
-      "Đàm phán hoặc đề xuất chia sẻ tùy kết quả. Readiness không có nghĩa đã gửi hồ sơ.",
+      "Đàm phán hoặc đề xuất gửi hồ sơ tùy quyết định. Sẵn sàng gửi không có nghĩa đã gửi hồ sơ.",
   },
 ];
 export interface NodeDefinition {
@@ -70,8 +70,8 @@ function node(
 export const topology: readonly NodeDefinition[] = [
   node(
     "PLANNER_INTAKE",
-    "Planner · Tiếp nhận",
-    "Xác minh intake, quan hệ thực thể và dữ liệu cần cho đánh giá. Không tính toán tài chính.",
+    "Tiếp nhận hồ sơ",
+    "Kiểm tra hồ sơ đầu vào, các liên kết và dữ liệu cần cho đánh giá.",
     "assessment",
     0,
     100,
@@ -80,8 +80,8 @@ export const topology: readonly NodeDefinition[] = [
   ),
   node(
     "INITIAL_RISK_PRE_SCAN",
-    "Risk · Pre-scan",
-    "Đăng ký rules và approval checkpoints trước khi đánh giá facts.",
+    "Rà soát rủi ro ban đầu",
+    "Xác định các quy tắc kiểm tra rủi ro và những bước cần phê duyệt.",
     "assessment",
     230,
     100,
@@ -90,8 +90,8 @@ export const topology: readonly NodeDefinition[] = [
   ),
   node(
     "FINANCE_ASSESSMENT",
-    "Finance",
-    "Tính các facts và đánh giá tài chính từ dữ liệu được liên kết rõ ràng.",
+    "Tài chính",
+    "Tổng hợp số liệu và đánh giá tài chính từ dữ liệu có liên kết rõ ràng.",
     "assessment",
     460,
     0,
@@ -100,7 +100,7 @@ export const topology: readonly NodeDefinition[] = [
   ),
   node(
     "OPERATIONS_ASSESSMENT",
-    "Operations",
+    "Vận hành",
     "Đánh giá lịch triển khai và các giới hạn của đơn hàng liên kết.",
     "assessment",
     460,
@@ -110,8 +110,8 @@ export const topology: readonly NodeDefinition[] = [
   ),
   node(
     "INITIAL_RISK_FINALIZATION",
-    "Risk · Tổng hợp",
-    "Chờ FinanceFacts và OperationsFacts; hoàn tất kiểm tra rules ban đầu.",
+    "Rủi ro · Tổng hợp",
+    "Tổng hợp số liệu tài chính và vận hành để đánh giá rủi ro ban đầu.",
     "assessment",
     690,
     100,
@@ -120,8 +120,8 @@ export const topology: readonly NodeDefinition[] = [
   ),
   node(
     "DECISION_ROUTE_PLANNING",
-    "Decision · Chọn nhánh",
-    "Chọn route dựa trên initial assessment. Không phải quyết định đã được Founder duyệt.",
+    "Chọn bước tiếp theo",
+    "Chọn hướng xử lý dựa trên đánh giá ban đầu. Đây chưa phải quyết định đã được phê duyệt.",
     "assessment",
     920,
     100,
@@ -130,8 +130,8 @@ export const topology: readonly NodeDefinition[] = [
   ),
   node(
     "BANKING_DISCOVERY_HANDOFF",
-    "Yêu cầu Banking",
-    "Chuyển yêu cầu discovery dựa trên route plan hiện hành.",
+    "Yêu cầu khảo sát ngân hàng",
+    "Lập yêu cầu khảo sát phương án ngân hàng theo hướng xử lý hiện hành.",
     "banking",
     0,
     0,
@@ -140,7 +140,7 @@ export const topology: readonly NodeDefinition[] = [
   ),
   node(
     "BANKING_INTERNAL_DISCOVERY",
-    "Banking · Discovery",
+    "Khảo sát ngân hàng",
     "Tìm các lựa chọn nội bộ; chưa phải phê duyệt từ ngân hàng.",
     "banking",
     230,
@@ -150,8 +150,8 @@ export const topology: readonly NodeDefinition[] = [
   ),
   node(
     "BANKING_PRECHECK_READINESS",
-    "Kiểm tra readiness",
-    "Kiểm tra dữ liệu cần thiết cho precheck, không tự bổ sung giá trị thiếu.",
+    "Kiểm tra dữ liệu cần thiết",
+    "Kiểm tra dữ liệu cần thiết cho kiểm tra sơ bộ, không tự bổ sung giá trị thiếu.",
     "banking",
     460,
     0,
@@ -160,8 +160,8 @@ export const topology: readonly NodeDefinition[] = [
   ),
   node(
     "DECISION_POST_BANKING_REVIEW",
-    "Decision · Sau Banking",
-    "Xét readiness, thiếu dữ liệu hoặc lựa chọn không khả dụng trước khi đề xuất precheck.",
+    "Xem xét phương án ngân hàng",
+    "Xem dữ liệu và phương án ngân hàng trước khi đề xuất kiểm tra sơ bộ.",
     "banking",
     690,
     0,
@@ -170,8 +170,8 @@ export const topology: readonly NodeDefinition[] = [
   ),
   node(
     "BANKING_PRECHECK_SUBMISSION_PROPOSAL",
-    "Đề xuất precheck",
-    "Tạo proposal chưa thực thi, làm subject cho approval request.",
+    "Đề xuất kiểm tra sơ bộ",
+    "Chuẩn bị đề xuất kiểm tra sơ bộ để người có thẩm quyền xem xét.",
     "banking",
     920,
     0,
@@ -180,8 +180,8 @@ export const topology: readonly NodeDefinition[] = [
   ),
   node(
     "PRECHECK_GATE",
-    "Gate · Precheck",
-    "Governance kiểm tra authorization cho SUBMIT_BANKING_PRECHECK trước khi execution.",
+    "Duyệt kiểm tra sơ bộ",
+    "Chỉ thực hiện kiểm tra sơ bộ sau khi được phê duyệt đúng yêu cầu.",
     "banking",
     920,
     220,
@@ -192,8 +192,8 @@ export const topology: readonly NodeDefinition[] = [
   ),
   node(
     "BANKING_PRECHECK_EXECUTION",
-    "Precheck · Mô phỏng",
-    "Thực thi precheck sau authorization chính xác. Kết quả mô phỏng, không ràng buộc.",
+    "Kiểm tra sơ bộ · Mô phỏng",
+    "Thực hiện sau khi được phê duyệt. Kết quả là mô phỏng, chưa phải chấp thuận của ngân hàng.",
     "banking",
     690,
     220,
@@ -202,8 +202,8 @@ export const topology: readonly NodeDefinition[] = [
   ),
   node(
     "DECISION_POST_PRECHECK_REVIEW",
-    "Decision · Sau precheck",
-    "Xét kết quả: conditional options đi tới Document; các kết quả không actionable đi tới hồ sơ nội bộ.",
+    "Xem kết quả kiểm tra sơ bộ",
+    "Chuẩn bị hồ sơ nếu có phương án đáp ứng điều kiện; trường hợp còn lại được tổng hợp để xem xét nội bộ.",
     "banking",
     460,
     220,
@@ -213,7 +213,7 @@ export const topology: readonly NodeDefinition[] = [
   node(
     "DECISION_DOCUMENT_HANDOFF",
     "Yêu cầu hồ sơ",
-    "Tạo đúng một DocumentPreparationRequest từ review và result set hiện hành.",
+    "Lập yêu cầu chuẩn bị hồ sơ từ kết quả kiểm tra hiện hành.",
     "banking",
     230,
     220,
@@ -222,8 +222,8 @@ export const topology: readonly NodeDefinition[] = [
   ),
   node(
     "DOCUMENT_PREPARATION",
-    "Document · Chuẩn bị",
-    "Chuẩn bị release package nội bộ hoặc dừng chờ bổ sung. Chưa cho phép external release.",
+    "Chuẩn bị hồ sơ",
+    "Chuẩn bị bộ hồ sơ nội bộ hoặc chờ bổ sung dữ liệu. Chưa được phép gửi ra ngoài.",
     "banking",
     0,
     220,
@@ -233,7 +233,7 @@ export const topology: readonly NodeDefinition[] = [
   node(
     "INTERNAL_DECISION_PACKAGE_ASSEMBLY",
     "Hồ sơ quyết định",
-    "Hợp nhất đúng các upstream artifacts của assembly path, có version và validation.",
+    "Tổng hợp đúng kết quả đầu vào, phiên bản và thông tin kiểm tra dữ liệu.",
     "decision",
     0,
     60,
@@ -243,8 +243,8 @@ export const topology: readonly NodeDefinition[] = [
   ),
   node(
     "FINAL_RISK_CHECK",
-    "Risk · Kiểm tra cuối",
-    "Đánh giá trên đúng Internal Decision Package; giữ giới hạn bằng chứng và governance gates.",
+    "Rủi ro · Kiểm tra cuối",
+    "Kiểm tra rủi ro dựa trên hồ sơ nội bộ, dữ liệu hiện có và các yêu cầu phê duyệt.",
     "decision",
     230,
     60,
@@ -253,8 +253,8 @@ export const topology: readonly NodeDefinition[] = [
   ),
   node(
     "DECISION_CARD_COMPOSITION",
-    "Decision Card",
-    "Soạn đề xuất có guardrails. NOT_EVALUABLE kết thúc lượt xử lý mà không mở gate phê duyệt.",
+    "Phiếu đề xuất quyết định",
+    "Lập đề xuất từ kết quả đánh giá. Nếu chưa đủ cơ sở, không cho phép phê duyệt đề xuất.",
     "decision",
     460,
     60,
@@ -263,8 +263,8 @@ export const topology: readonly NodeDefinition[] = [
   ),
   node(
     "FINAL_DECISION_APPROVAL",
-    "Gate · Quyết định",
-    "Chờ Founder xác nhận đúng Decision Card. Phê duyệt quyết định tách biệt với cho phép chia sẻ hồ sơ.",
+    "Duyệt quyết định",
+    "Chờ người phê duyệt xác nhận đúng Phiếu đề xuất quyết định. Phê duyệt quyết định tách biệt với cho phép chia sẻ hồ sơ.",
     "decision",
     690,
     60,
@@ -275,7 +275,7 @@ export const topology: readonly NodeDefinition[] = [
   node(
     "POST_DECISION_UPDATE",
     "Ghi nhận quyết định",
-    "Ghi outcome sau authorization và chọn nhánh đàm phán, đóng case hoặc đề xuất chia sẻ.",
+    "Ghi nhận quyết định đã được phê duyệt và chọn bước đàm phán, đóng hồ sơ hoặc đề xuất gửi hồ sơ.",
     "followup",
     0,
     120,
@@ -286,7 +286,7 @@ export const topology: readonly NodeDefinition[] = [
   node(
     "NEGOTIATION_TERMS_SENT",
     "Điều khoản đàm phán",
-    "Chờ ghi nhận điều khoản đã gửi qua workflow hiện có. Viewer không gửi điều khoản.",
+    "Chờ ghi nhận các điều khoản đã gửi qua quy trình đàm phán.",
     "followup",
     230,
     0,
@@ -297,7 +297,7 @@ export const topology: readonly NodeDefinition[] = [
   node(
     "NEGOTIATION_OUTCOME_RECEIVED",
     "Kết quả đàm phán",
-    "Chờ NegotiationOutcome khớp artifact ID, version và input hash của Card.",
+    "Chờ kết quả đàm phán khớp với đúng phiếu đề xuất và phiên bản đã được xem xét.",
     "followup",
     460,
     0,
@@ -307,8 +307,8 @@ export const topology: readonly NodeDefinition[] = [
   ),
   node(
     "NEGOTIATION_FINAL_CONFIRMATION",
-    "Gate · Đàm phán",
-    "Xác nhận kết quả đàm phán bằng CONFIRM_NEGOTIATION_OUTCOME; không tái dùng approval của Card.",
+    "Duyệt kết quả đàm phán",
+    "Kết quả đàm phán cần được xác nhận riêng, không dùng lại phê duyệt của phiếu đề xuất.",
     "followup",
     690,
     0,
@@ -319,7 +319,7 @@ export const topology: readonly NodeDefinition[] = [
   node(
     "EXTERNAL_DOCUMENT_SUBMISSION_PROPOSAL",
     "Đề xuất chia sẻ hồ sơ",
-    "Proposal riêng khi outcome yêu cầu external release. Chưa gửi tài liệu.",
+    "Lập đề xuất riêng khi cần gửi hồ sơ ra ngoài. Chưa gửi tài liệu.",
     "followup",
     230,
     240,
@@ -328,8 +328,8 @@ export const topology: readonly NodeDefinition[] = [
   ),
   node(
     "EXTERNAL_GATE",
-    "Gate · Chia sẻ hồ sơ",
-    "Authorization riêng cho proposal đúng artifact/version; không suy từ approval quyết định.",
+    "Duyệt gửi hồ sơ",
+    "Chỉ cho phép gửi khi đúng đề xuất và phiên bản được phê duyệt riêng.",
     "followup",
     460,
     240,
@@ -340,8 +340,8 @@ export const topology: readonly NodeDefinition[] = [
   ),
   node(
     "READY_FOR_EXTERNAL_SUBMISSION",
-    "Sẵn sàng kết nối",
-    "Connector-safe readiness: adapter_invoked, receipt_created và external_submission_performed đều false.",
+    "Sẵn sàng gửi hồ sơ",
+    "Hồ sơ đã sẵn sàng, nhưng chưa được gửi ra ngoài và chưa có xác nhận tiếp nhận.",
     "followup",
     690,
     240,

@@ -1,3 +1,5 @@
+import { displayText } from "./displayText";
+
 const TRANSLATIONS: Record<string, string> = {
   "Source margin is below the OPC target": "Biên lợi nhuận của hợp đồng thấp hơn mục tiêu OPC",
   "The contract margin field is lower than the OPC profile target.": "Biên lợi nhuận ghi nhận của hợp đồng thấp hơn mức mục tiêu trong hồ sơ OPC.",
@@ -86,13 +88,13 @@ const TRANSLATIONS: Record<string, string> = {
   "Allows Final Risk to replace an unknown with an evidence-based conclusion; no risk reduction is pre-claimed.": "Cho phép phòng Rủi ro thay thế dữ liệu còn thiếu bằng kết luận dựa trên bằng chứng xác thực; không tự nhận trước việc giảm thiểu rủi ro.",
   "Final Risk evidence packet is available": "Đã có bộ dữ liệu bằng chứng của đánh giá Rủi ro cuối",
   "The proposal must remain within the exact Final Risk conclusion and its evidence limitations.": "Đề xuất quyết định phải tuân thủ nghiêm ngặt kết luận rủi ro cuối cùng và các giới hạn về dữ liệu/bằng chứng liên quan.",
-  "One or more explicit case-specific CRITICAL findings remain open; a later Governance/Decision phase must not silently bypass them.": "Phát hiện một hoặc nhiều rủi ro nghiêm trọng (CRITICAL) đặc thù của hồ sơ chưa được xử lý; các bước Quyết định/Kiểm soát sau này không được bỏ qua.",
+  "One or more explicit case-specific CRITICAL findings remain open; a later Governance/Decision phase must not silently bypass them.": "Có rủi ro nghiêm trọng của hồ sơ chưa được xử lý; các bước quyết định và phê duyệt sau này không được bỏ qua.",
 
   // 4. Required Controls & Other
-  "If the protected action is later proposed, Governance must evaluate this registered checkpoint before execution.": "Nếu hành động được bảo vệ được đề xuất sau này, ban Kiểm soát (Governance) phải đánh giá điểm kiểm soát đã đăng ký này trước khi thực hiện.",
-  "The resolved Founder rejection remains binding for the exact protected-action subject and cannot be reused or bypassed.": "Quyết định từ chối trước đó của Founder luôn có giá trị ràng buộc đối với hành động được bảo vệ tương ứng và không được phép sử dụng lại hay bỏ qua.",
+  "If the protected action is later proposed, Governance must evaluate this registered checkpoint before execution.": "Nếu có đề xuất thực hiện hành động này, hệ thống phải kiểm tra yêu cầu phê duyệt đã đăng ký trước khi thực hiện.",
+  "The resolved Founder rejection remains binding for the exact protected-action subject and cannot be reused or bypassed.": "Quyết định từ chối trước đó của người phê duyệt luôn có giá trị ràng buộc đối với hành động được bảo vệ tương ứng và không được phép sử dụng lại hay bỏ qua.",
   "The Banking precheck result is simulated and non-binding; it must not be represented as a bank offer or approval.": "Kết quả kiểm tra sơ bộ với ngân hàng chỉ là mô phỏng và không ràng buộc; không được coi đây là văn bản phê duyệt hay cam kết cấp tín dụng của ngân hàng.",
-  "The masked Document package is an internal candidate only; a separate evidence-bound proposal and Governance authorization are required before external release.": "Gói tài liệu đã che ẩn thông tin nhạy cảm chỉ là bản dự thảo nội bộ; cần có đề xuất dựa trên bằng chứng và sự phê duyệt của ban Kiểm soát trước khi gửi ra ngoài.",
+  "The masked Document package is an internal candidate only; a separate evidence-bound proposal and Governance authorization are required before external release.": "Bộ hồ sơ đã che thông tin nhạy cảm mới là bản dự thảo nội bộ; cần có đề xuất kèm dữ liệu chứng minh và được phê duyệt riêng trước khi gửi ra ngoài.",
 
   // 5. Planner Warnings
   "No credit profile satisfies the exact contract-ID token, OPC company, and request-type relationship rules.": "Không có hồ sơ tín dụng nào đáp ứng chính xác điều kiện mã hợp đồng, đơn vị OPC và quy tắc mối quan hệ theo loại yêu cầu.",
@@ -102,7 +104,7 @@ const TRANSLATIONS: Record<string, string> = {
 
   // 6. Decision Card Summaries & Extra Statements
   "Deterministic fallback when LLM is unavailable.": "Phương án phân tích dự phòng xác định khi dịch vụ LLM không khả dụng.",
-  "Decision Card generated from internal decision package and AI decision analysis.": "Decision Card được tạo ra từ bộ hồ sơ quyết định nội bộ và phân tích quyết định.",
+  "Decision Card generated from internal decision package and AI decision analysis.": "Phiếu đề xuất quyết định được tạo ra từ bộ hồ sơ quyết định nội bộ và phân tích quyết định.",
   "Evaluation case is ready for decision analysis.": "Hồ sơ đánh giá đã sẵn sàng cho phân tích quyết định.",
 
   // 7. Document Checklist Reasons & Limitations
@@ -152,12 +154,12 @@ export function translateText(text?: string | null): string {
   if (!text) return "";
   const trimmed = text.trim();
   if (TRANSLATIONS[trimmed]) {
-    return TRANSLATIONS[trimmed];
+    return displayText(TRANSLATIONS[trimmed]);
   }
   for (const item of REGEX_TRANSLATIONS) {
     if (item.pattern.test(trimmed)) {
-      return trimmed.replace(item.pattern, item.replace);
+      return displayText(trimmed.replace(item.pattern, item.replace));
     }
   }
-  return text;
+  return displayText(text);
 }

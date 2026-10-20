@@ -85,7 +85,7 @@ describe("workflow timeline model", () => {
         {
           interaction_type: "APPROVAL",
           title_vi: "Phê duyệt",
-          instruction_vi: "Founder xem xét.",
+          instruction_vi: "Người phê duyệt xem xét.",
           request_ids: [],
           approval_request_ids: ["APR-1"],
           required_fields: [],
@@ -130,7 +130,7 @@ describe("workflow timeline model", () => {
     expect(normalized.pendingApprovalCount).toBe(1);
   });
 
-  it("biểu diễn Finance và Operations thành hai nhánh song song", () => {
+  it("biểu diễn Tài chính và Vận hành thành hai nhánh song song", () => {
     const normalized = normalizeWorkflowDashboard({
       workflow_run_id: "RUN-001",
       contract_id: "CON-004",
@@ -180,12 +180,12 @@ describe("workflow timeline model", () => {
           sequence: 11,
           title_vi: "Quyết định cuối",
           status: "REJECTED",
-          status_label_vi: "Founder đã từ chối quyết định",
+          status_label_vi: "Người phê duyệt đã từ chối quyết định",
           tasks: [
             {
               task_id: "FINAL_DECISION_APPROVAL",
               owner_id: "GOVERNANCE",
-              title_vi: "Founder xem xét",
+              title_vi: "Người phê duyệt xem xét",
               applicability: "NOT_APPLICABLE",
               applicability_reason_vi:
                 "Phiếu quyết định chưa đủ cơ sở để mở quyết định cuối.",
@@ -198,7 +198,7 @@ describe("workflow timeline model", () => {
       ],
     });
 
-    expect(normalized.stages[0].statusLabel).toBe("Founder đã từ chối quyết định");
+    expect(normalized.stages[0].statusLabel).toBe("Người phê duyệt đã từ chối quyết định");
     expect(normalized.stages[0].milestones[0]).toMatchObject({
       statusLabel: "Yêu cầu phê duyệt đã hết hiệu lực",
       applicabilityReason: "Phiếu quyết định chưa đủ cơ sở để mở quyết định cuối.",

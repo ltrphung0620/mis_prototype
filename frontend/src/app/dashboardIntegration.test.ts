@@ -85,7 +85,7 @@ describe("dashboard integration", () => {
   });
 
   it("still refuses artifact types without a typed renderer", () => {
-    // Decision Card keeps its own guarded review; evidence bundles and unknown codes have no view.
+    // Phiếu đề xuất quyết định keeps its own guarded review; evidence bundles and unknown codes have no view.
     for (const type of ["DECISION_CARD", "EVIDENCE_BUNDLE", "SOMETHING_NEW"]) {
       expect(hasAssessmentArtifact(["ART-X"], [artifact("ART-X", type, {})])).toBe(false);
     }
@@ -122,7 +122,7 @@ describe("dashboard integration", () => {
       pendingInteractions: [
         {
           interaction_type: "APPROVAL",
-          title_vi: "Founder xác nhận",
+          title_vi: "Người phê duyệt xác nhận",
           instruction_vi: "Xem nội dung",
           request_ids: [],
           approval_request_ids: ["APR-CURRENT"],
@@ -169,7 +169,7 @@ describe("dashboard integration", () => {
       pendingInteractions: [
         {
           interaction_type: "NOT_EVALUABLE_REVIEW",
-          title_vi: "Founder xem giới hạn đánh giá",
+          title_vi: "Người phê duyệt xem giới hạn đánh giá",
           instruction_vi:
             "Quyết định cuối và hậu quyết định chưa được mở.",
           request_ids: [],
@@ -192,10 +192,10 @@ describe("dashboard integration", () => {
   it("reports a projected card as pending reveal during playback, not as missing", () => {
     const projected = {
       contractId: "CON-1",
-      statusLabel: "Chờ Founder",
+      statusLabel: "Chờ người phê duyệt",
       businessStatus: "WAITING_FOR_FINAL_DECISION",
       businessStatusLabel: "Chờ duyệt quyết định cuối",
-      currentStageLabel: "Founder xem xét",
+      currentStageLabel: "Người phê duyệt xem xét",
       progressPercent: 40,
       metrics: [],
       decisionCard: {

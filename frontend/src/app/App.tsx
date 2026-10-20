@@ -393,7 +393,7 @@ export function App() {
         <div className="sidebar-footer">
           <span className="sidebar-footer__mark">OPC</span>
           <div>
-            <strong>Founder workspace</strong>
+            <strong>người phê duyệt workspace</strong>
             <small>Quyết định có kiểm soát</small>
           </div>
         </div>
@@ -432,7 +432,7 @@ export function App() {
               </h1>
               <span>
                 {dashboard?.input.customerName ||
-                  "Từ dữ liệu và bằng chứng đến quyết định của Founder."}
+                  "Từ dữ liệu và bằng chứng đến quyết định của người phê duyệt."}
               </span>
             </div>
             <div className="page-heading__actions">
@@ -491,7 +491,7 @@ export function App() {
               <div>
                 <strong>
                   {activeApproval
-                    ? "Quy trình đang chờ Founder xác nhận hoặc phê duyệt"
+                    ? "Quy trình đang chờ người phê duyệt xác nhận hoặc phê duyệt"
                     : notEvaluableReview
                       ? notEvaluableReview.title_vi
                       : negotiationInteraction
@@ -520,7 +520,7 @@ export function App() {
                   }
                 >
                   {isFinalDecisionAction && !isFinalDecisionApproval
-                    ? "Đang hoàn thiện Decision Card…"
+                    ? "Đang hoàn thiện Phiếu đề xuất quyết định…"
                     : "Mở yêu cầu xác nhận/phê duyệt"}
                 </button>
               ) : notEvaluableReview ? (
@@ -530,8 +530,8 @@ export function App() {
                   onClick={() => setDecisionCardOpen(true)}
                 >
                   {isExactNotEvaluableReview
-                    ? "Mở Decision Card để xem xét"
-                    : "Decision Card hiện hành không khớp yêu cầu xem xét"}
+                    ? "Mở Phiếu đề xuất quyết định để xem xét"
+                    : "Phiếu đề xuất quyết định hiện hành không khớp yêu cầu xem xét"}
                 </button>
               ) : negotiationInteraction ? (
                 <button type="button" onClick={() => setNegotiationOpen(true)}>
@@ -565,7 +565,7 @@ export function App() {
               >
                 <div className="section-heading">
                   <h2 id="decision-workspace-title">Đề xuất quyết định</h2>
-                  <span>Decision Card · lượt xử lý hiện hành</span>
+                  <span>Phiếu đề xuất quyết định · lần xử lý hiện hành</span>
                 </div>
                 {decisionData ? (
                   <DecisionDashboard data={decisionData} />
@@ -588,7 +588,7 @@ export function App() {
                       }
                       onClick={() => setDecisionCardOpen(true)}
                     >
-                      Xem Decision Card hiện hành{" "}
+                      Xem Phiếu đề xuất quyết định hiện hành{" "}
                       <span aria-hidden="true">↗</span>
                     </button>
                   )}
@@ -596,7 +596,7 @@ export function App() {
                     Xem bằng chứng
                   </button>
                   <p>
-                    Đề xuất của hệ thống không thay thế quyết định của Founder.
+                    Đề xuất của hệ thống không thay thế quyết định của người phê duyệt.
                   </p>
                 </div>
               </section>
@@ -610,7 +610,7 @@ export function App() {
               <div className="workspace-footnote">
                 <WorkspaceIcon name="evidence" />
                 <p>
-                  Precheck ngân hàng là mô phỏng, không ràng buộc. Phê duyệt
+                  Kiểm tra sơ bộ ngân hàng là mô phỏng, không ràng buộc. Phê duyệt
                   quyết định không đồng nghĩa cho phép gửi hồ sơ.
                 </p>
               </div>
@@ -657,7 +657,7 @@ export function App() {
             </>
           )}
           {dashboard?.failureReason && view !== "workflow" && (
-            <Notice tone="danger" title="Quy trình đã dừng an toàn">
+            <Notice tone="danger" title="Quy trình đã dừng xử lý">
               {dashboard.failureReason}
             </Notice>
           )}
@@ -665,7 +665,7 @@ export function App() {
             <span>
               {dashboard
                 ? `Giai đoạn hiện tại: ${dashboard.currentStageLabel}`
-                : "Chọn hợp đồng để bắt đầu lượt đánh giá."}
+                : "Chọn hợp đồng để bắt đầu lần xử lý."}
             </span>
             <span>TeamPack · nguồn dữ liệu tại máy chủ</span>
           </footer>
@@ -718,7 +718,7 @@ export function App() {
               <h2 id="terms-sent-title">Xác nhận đã gửi điều kiện đàm phán</h2>
             </header>
             <p>
-              Hãy xem lại các điều kiện trên Decision Card trước khi xác nhận.
+              Hãy xem lại các điều kiện trên Phiếu đề xuất quyết định trước khi xác nhận.
               Thao tác này chỉ ghi nhận việc đã gửi; hệ thống không tự gửi email
               hoặc cập nhật CRM.
             </p>

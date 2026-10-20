@@ -10,7 +10,7 @@ function envelope(artifact_type: string, payload: Record<string, unknown>, extra
 }
 
 describe("post-decision, proposal and supplement renderers", () => {
-  it("states that a banking precheck proposal has not been run or approved by a bank", () => {
+  it("states that a banking kiểm tra sơ bộ proposal has not been run or approved by a bank", () => {
     render(
       <ArtifactAssessmentView
         artifact={envelope("BANKING_PRECHECK_SUBMISSION_PROPOSAL", {
@@ -26,14 +26,14 @@ describe("post-decision, proposal and supplement renderers", () => {
         })}
       />,
     );
-    expect(screen.getByText("Chưa chạy precheck")).toBeInTheDocument();
+    expect(screen.getByText("Chưa chạy kiểm tra sơ bộ")).toBeInTheDocument();
     expect(screen.getByText(/420\.000\.000/)).toBeInTheDocument();
     expect(screen.getByText(/Bảo lãnh A — Bank A/)).toBeInTheDocument();
     expect(screen.getByRole("note")).toHaveTextContent(/mô phỏng, không ràng buộc/);
     expect(screen.queryByText(/EVD-HIDDEN|internal\.example/)).not.toBeInTheDocument();
   });
 
-  it("separates the recorded Founder decision from any external action", () => {
+  it("separates the recorded người phê duyệt decision from any external action", () => {
     render(
       <ArtifactAssessmentView
         artifact={envelope("POST_DECISION_UPDATE", {
@@ -48,7 +48,7 @@ describe("post-decision, proposal and supplement renderers", () => {
       />,
     );
     expect(screen.getByText("Đã cho phép tiến hành đàm phán")).toBeInTheDocument();
-    expect(screen.getByText(/Decision Card v3/)).toBeInTheDocument();
+    expect(screen.getByText(/Phiếu đề xuất quyết định v3/)).toBeInTheDocument();
     expect(screen.getByRole("note")).toHaveTextContent(/chưa thực hiện hành động nào ra bên ngoài/);
     expect(screen.getByRole("note")).toHaveTextContent(/cần đề xuất và phê duyệt riêng/);
   });
@@ -142,10 +142,10 @@ describe("artifact detail dialog", () => {
     render(<ArtifactDetailDialog artifact={outcome} runArtifacts={[card, outcome]} onClose={() => undefined} />);
 
     expect(screen.getByText(/ART-NEG · v2 · Đã kiểm tra bằng chứng/)).toBeInTheDocument();
-    const lineage = screen.getByRole("region", { name: "Nguồn đầu vào" });
-    expect(lineage).toHaveTextContent(/Decision Card · v3/);
+    const lineage = screen.getByRole("region", { name: "Nguồn gốc dữ liệu" });
+    expect(lineage).toHaveTextContent(/Phiếu đề xuất quyết định · v3/);
     expect(lineage).toHaveTextContent("ART-CARD");
-    expect(lineage).toHaveTextContent(/Không thuộc danh sách của lượt xử lý này/);
+    expect(lineage).toHaveTextContent(/Không thuộc danh sách của lần xử lý này/);
     expect(lineage).toHaveTextContent("ART-OTHER-RUN");
   });
 
@@ -158,6 +158,6 @@ describe("artifact detail dialog", () => {
         onClose={() => undefined}
       />,
     );
-    expect(screen.getByText("Finance · Số liệu tài chính")).toBeInTheDocument();
+    expect(screen.getByText("Tài chính · Số liệu tài chính")).toBeInTheDocument();
   });
 });

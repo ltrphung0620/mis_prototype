@@ -125,7 +125,7 @@ describe("Workflow event view", () => {
     const lastCall = requestedUrl(fetchMock, fetchMock.mock.calls.length - 1);
     expect(lastCall.pathname).toBe("/api/workflows/RUN-B/events");
     expect(lastCall.searchParams.get("after_sequence")).toBe("0");
-    expect(screen.getByText("Tạo lượt xử lý")).toBeInTheDocument();
+    expect(screen.getByText("Tạo lần xử lý")).toBeInTheDocument();
     expect(screen.queryByText("Tạo yêu cầu phê duyệt")).not.toBeInTheDocument();
   });
 
@@ -151,7 +151,7 @@ describe("Workflow event view", () => {
     expect(fetchMock).toHaveBeenCalledTimes(3);
     expect(requestedUrl(fetchMock, 2).searchParams.get("after_sequence")).toBe("1");
     expect(screen.queryByRole("status")).not.toBeInTheDocument();
-    expect(screen.getByText("Tạm dừng chờ Founder")).toBeInTheDocument();
+    expect(screen.getByText("Tạm dừng chờ người phê duyệt")).toBeInTheDocument();
   });
 
   it("shows an honest initial error and keeps retrying a terminal run until it loads", async () => {
@@ -166,7 +166,7 @@ describe("Workflow event view", () => {
 
     await advance(EVENT_POLL_INTERVAL_MS * 2);
     expect(fetchMock).toHaveBeenCalledTimes(2);
-    expect(screen.getByText("Chưa có sự kiện cho lượt xử lý này.")).toBeInTheDocument();
+    expect(screen.getByText("Chưa có sự kiện cho lần xử lý này.")).toBeInTheDocument();
 
     await advance(EVENT_POLL_INTERVAL_MS * 5);
     expect(fetchMock).toHaveBeenCalledTimes(2);

@@ -34,7 +34,7 @@ describe("audit and handoff renderers", () => {
     );
     expect(screen.getByText("Gửi tài liệu ra đối tác bên ngoài")).toBeInTheDocument();
     expect(screen.getByText(/contract_value ≥ 5\.000\.000\.000/)).toBeInTheDocument();
-    expect(screen.getByText("Cần Founder phê duyệt")).toBeInTheDocument();
+    expect(screen.getByText("Cần phê duyệt")).toBeInTheDocument();
     expect(screen.getByRole("note")).toHaveTextContent("không tự dừng quy trình");
     expect(screen.queryByText(/EVD-HIDDEN/)).not.toBeInTheDocument();
   });
@@ -76,7 +76,7 @@ describe("audit and handoff renderers", () => {
     expect(screen.getByRole("note")).toHaveTextContent("Chưa có yêu cầu nào gửi tới ngân hàng");
   });
 
-  it("states that the post-banking review neither runs precheck nor selects an option", () => {
+  it("states that the post-banking review neither runs kiểm tra sơ bộ nor selects an option", () => {
     render(
       <ArtifactAssessmentView
         artifact={envelope("DECISION_POST_BANKING_REVIEW", {
@@ -85,14 +85,14 @@ describe("audit and handoff renderers", () => {
           precheck_ready_option_ids: [],
           pending_option_ids: ["O1", "O2"],
           required_input_fields: ["requested_amount"],
-          missing_data_requests: [{ request_id: "MDR-1", field: "requested_amount", reason: "Founder must supply the amount." }],
+          missing_data_requests: [{ request_id: "MDR-1", field: "requested_amount", reason: "Người phê duyệt must supply the amount." }],
           precheck_executed: false,
         })}
       />,
     );
-    expect(screen.getByText("Cần bổ sung dữ liệu trước khi chạy precheck")).toHaveClass("status-badge--warning");
+    expect(screen.getByText("Cần bổ sung dữ liệu trước khi chạy kiểm tra sơ bộ")).toHaveClass("status-badge--warning");
     expect(screen.getAllByText("Số tiền yêu cầu")).toHaveLength(2);
-    expect(screen.getByRole("note")).toHaveTextContent("Chưa chạy precheck");
+    expect(screen.getByRole("note")).toHaveTextContent("Chưa chạy kiểm tra sơ bộ");
   });
 
   it("keeps the document preparation request non-binding and unsent", () => {
@@ -119,7 +119,7 @@ describe("audit and handoff renderers", () => {
     expect(screen.getByRole("note")).toHaveTextContent("không gửi hồ sơ ra ngoài");
   });
 
-  it("labels a fallback analysis and keeps it separate from the Founder decision", () => {
+  it("labels a fallback analysis and keeps it separate from the người phê duyệt decision", () => {
     render(
       <ArtifactDetailDialog
         artifact={envelope(
@@ -145,7 +145,7 @@ describe("audit and handoff renderers", () => {
     expect(screen.getByText(/Lý do dùng dự phòng/)).toBeInTheDocument();
     expect(screen.getAllByText("Chưa đủ cơ sở đánh giá")).toHaveLength(2);
     expect(screen.getByText("ART-PKG", { selector: ".assessment-item__meta .artifact-id" })).toBeInTheDocument();
-    expect(screen.getByRole("note")).toHaveTextContent("chưa phải quyết định của Founder");
+    expect(screen.getByRole("note")).toHaveTextContent("chưa phải quyết định của người phê duyệt");
     expect(screen.getByText(/ART-AI_DECISION_ANALYSIS · v4/)).toBeInTheDocument();
   });
 });

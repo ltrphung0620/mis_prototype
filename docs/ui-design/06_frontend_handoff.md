@@ -1,5 +1,7 @@
 # Bàn giao frontend — OPC MIS Contract Decision Workspace
 
+> **Wording và polish ngày 20/10/2026:** xem [review 18](18_wording_localization_review.md). Nhãn UI dùng tiếng Việt; dữ liệu/kết quả mô phỏng vẫn có thông báo rõ ràng. Quy ước copy hiện hành nằm trong `style.md`; các thuật ngữ và số kiểm thử phía dưới là lịch sử bàn giao.
+
 > Bản tiếp quản tổng hợp sau Checkpoint 2: [handoff 16](16_frontend_handoff_checkpoint2.md) — source map, setup, Git inventory và kết quả audit 11/10/2026. Phần dưới giữ baseline connected UI; các số kiểm thử/servers lịch sử không thay thế kết quả hiện hành ở 16.
 
 > Checkpoint 1 và polish đã được Founder duyệt. **Checkpoint 2 Workflow Viewer đã triển khai trong preview, chờ review browser**: [review 15](15_workflow_viewer_checkpoint.md). Canvas chỉ đọc, topology đối chiếu orchestration, 9 kịch bản fixture độc lập, inspector và mobile list. Chưa tích hợp live API hoặc thay đổi backend.

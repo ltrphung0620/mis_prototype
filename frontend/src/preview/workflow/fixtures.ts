@@ -29,66 +29,66 @@ export interface NodeSnapshot {
 export const scenarios = [
   {
     id: "approval",
-    label: "Chờ duyệt Decision Card",
+    label: "Chờ duyệt Phiếu đề xuất quyết định",
     phase: "decision",
     description:
-      "Nhánh trực tiếp đã tạo Card. Dừng tại gate xác nhận cuối; chưa ghi quyết định.",
+      "Đã lập phiếu đề xuất và đang chờ duyệt quyết định. Chưa ghi nhận quyết định cuối cùng.",
   },
   {
     id: "assessment",
     label: "Đánh giá song song",
     phase: "assessment",
     description:
-      "Finance đang chạy, Operations hoàn tất. Risk còn chờ FinanceFacts.",
+      "Đang đánh giá tài chính; đánh giá vận hành đã xong. Bước đánh giá rủi ro đang chờ số liệu tài chính.",
   },
   {
     id: "banking",
-    label: "Chờ duyệt precheck",
+    label: "Chờ duyệt kiểm tra sơ bộ",
     phase: "banking",
     description:
-      "Route cần Banking, proposal sẵn sàng. Precheck chưa được thực thi.",
+      "Đã chuẩn bị đề xuất kiểm tra sơ bộ với ngân hàng, đang chờ phê duyệt.",
   },
   {
     id: "document",
-    label: "Document · Chờ dữ liệu",
+    label: "Hồ sơ · Chờ dữ liệu",
     phase: "banking",
     description:
-      "Precheck mô phỏng đã có authorization minh họa và conditional options. Document cần bổ sung.",
+      "Đã mô phỏng kiểm tra sơ bộ và có phương án kèm điều kiện. Hồ sơ cần được bổ sung.",
   },
   {
     id: "input",
-    label: "Intake · Chờ dữ liệu",
+    label: "Tiếp nhận · Chờ dữ liệu",
     phase: "assessment",
     description:
-      "Planner tạm dừng trước đánh giá. Chưa biết applicability của nhánh Banking.",
+      "Đang chờ bổ sung hồ sơ đầu vào. Chưa xác định có cần khảo sát ngân hàng hay không.",
   },
   {
     id: "failed",
-    label: "Failed-safe",
+    label: "Đã dừng xử lý",
     phase: "decision",
     description:
-      "Hồ sơ nội bộ sẵn sàng, Final Risk dừng an toàn. Chưa tạo Card hay approval request.",
+      "Bước kiểm tra rủi ro cuối cùng đã dừng. Chưa lập phiếu đề xuất hoặc yêu cầu phê duyệt.",
   },
   {
     id: "completed",
-    label: "Hoàn tất · NOT_EVALUABLE",
+    label: "Đã xử lý xong · Chưa đủ cơ sở đánh giá",
     phase: "decision",
     description:
-      "Lượt xử lý kết thúc tại Card NOT_EVALUABLE. Không có đề xuất để phê duyệt; không đồng nghĩa chấp nhận hợp đồng.",
+      "Đã xử lý xong nhưng chưa đủ cơ sở đề xuất quyết định. Hợp đồng chưa được chấp nhận.",
   },
   {
     id: "negotiation",
     label: "Chờ kết quả đàm phán",
     phase: "followup",
     description:
-      "Ví dụ riêng: Card có điều kiện đã được xác nhận; đang chờ kết quả khớp Card. Không gửi điều khoản từ viewer.",
+      "Tình huống mô phỏng: đã duyệt đề xuất có điều kiện, đang chờ kết quả đàm phán tương ứng.",
   },
   {
     id: "release",
-    label: "Chờ gate chia sẻ hồ sơ",
+    label: "Chờ duyệt gửi hồ sơ",
     phase: "followup",
     description:
-      "Ví dụ riêng: đã xác nhận quyết định nhưng chưa được phép chia sẻ. External release chưa xảy ra.",
+      "Tình huống mô phỏng: đã xác nhận quyết định, đang chờ phê duyệt riêng để gửi hồ sơ ra ngoài.",
   },
 ] as const satisfies readonly {
   id: string;
@@ -149,10 +149,10 @@ export function workflowFixture(scenario: ScenarioId, contractId: string) {
     current = "PLANNER_INTAKE";
     active(current, "WAITING_FOR_INPUT");
     states[current].blocker =
-      "Thiếu dữ liệu intake cần thiết. Không suy quan hệ giữa hợp đồng và đơn hàng.";
+      "Thiếu dữ liệu đầu vào cần thiết. Chưa đủ cơ sở liên kết hợp đồng với đơn hàng.";
     states[current].pending = {
       requestId: `UI-WF-INPUT-${contractId}`,
-      action: "Bổ sung intake qua workflow hiện có",
+      action: "Bổ sung hồ sơ đầu vào",
     };
   } else if (scenario === "assessment") {
     complete(initial.slice(0, 2));
@@ -161,7 +161,7 @@ export function workflowFixture(scenario: ScenarioId, contractId: string) {
     active(current, "RUNNING");
     active("INITIAL_RISK_FINALIZATION", "WAITING_FOR_DEPENDENCIES");
     states.INITIAL_RISK_FINALIZATION.blocker =
-      "Đợi FinanceFacts. OperationsFacts đã sẵn sàng.";
+      "Đang chờ số liệu tài chính. Số liệu vận hành đã sẵn sàng.";
   } else {
     complete(initial);
     const usesBank = ["banking", "document", "release"].includes(scenario);
@@ -175,7 +175,7 @@ export function workflowFixture(scenario: ScenarioId, contractId: string) {
     if (scenario === "banking") {
       current = "PRECHECK_GATE";
       states[current].blocker =
-        "Chờ authorization cho proposal precheck hiện hành. Chưa chạy precheck.";
+        "Đang chờ duyệt đề xuất kiểm tra sơ bộ. Chưa thực hiện kiểm tra.";
       states[current].pending = {
         requestId: `UI-WF-PRECHECK-${contractId}`,
         action: "SUBMIT_BANKING_PRECHECK",
@@ -188,7 +188,7 @@ export function workflowFixture(scenario: ScenarioId, contractId: string) {
         "Thiếu thành phần hồ sơ được yêu cầu. Không tự tạo hoặc gửi tài liệu.";
       states[current].pending = {
         requestId: `UI-WF-DOCUMENT-${contractId}`,
-        action: "Bổ sung hồ sơ qua Document input flow",
+        action: "Bổ sung hồ sơ theo yêu cầu",
       };
     } else {
       if (usesBank) complete(bank);
@@ -197,7 +197,7 @@ export function workflowFixture(scenario: ScenarioId, contractId: string) {
         current = "FINAL_RISK_CHECK";
         active(current, "FAILED_SAFE");
         states[current].blocker =
-          "Minh họa: output Final Risk không khớp exact Internal Decision Package input. Workflow dừng an toàn; chưa có output được chấp nhận.";
+          "Kết quả kiểm tra rủi ro không khớp hồ sơ đầu vào. Quy trình đã dừng; chưa có kết quả được chấp nhận.";
       } else {
         complete(decision.slice(0, 3));
         if (scenario === "completed") {
@@ -210,7 +210,7 @@ export function workflowFixture(scenario: ScenarioId, contractId: string) {
           current = "FINAL_DECISION_APPROVAL";
           active(current, "WAITING_FOR_APPROVAL");
           states[current].blocker =
-            "Chờ Founder xác nhận đúng Card v1. Xem workflow không phê duyệt hoặc resume.";
+            "Đang chờ duyệt đúng phiếu đề xuất phiên bản 1. Xem quy trình chưa phải thao tác phê duyệt.";
           states[current].pending = {
             requestId: `UI-WF-DECISION-${contractId}`,
             action: "CONFIRM_FINAL_CONTRACT_DECISION",
@@ -223,10 +223,10 @@ export function workflowFixture(scenario: ScenarioId, contractId: string) {
             active(current, "WAITING_FOR_INPUT");
             states[current].pending = {
               requestId: `UI-WF-NEGOTIATION-${contractId}`,
-              action: "Ghi nhận NegotiationOutcome khớp Card",
+              action: "Ghi nhận kết quả đàm phán theo đúng phiếu đề xuất",
             };
             states[current].blocker =
-              "Đang chờ kết quả đàm phán. Gate xác nhận kết quả là một bước riêng.";
+              "Đang chờ kết quả đàm phán. Việc xác nhận kết quả cần được phê duyệt riêng.";
           } else {
             exclude([
               "NEGOTIATION_TERMS_SENT",
@@ -241,7 +241,7 @@ export function workflowFixture(scenario: ScenarioId, contractId: string) {
               action: "SEND_DOCUMENT_TO_EXTERNAL_PARTNER",
             };
             states[current].blocker =
-              "Chờ authorization riêng. external_submission_performed = false; chưa có biên nhận.";
+              "Đang chờ phê duyệt riêng để gửi hồ sơ. Chưa gửi hồ sơ và chưa có biên nhận.";
           }
         }
       }
@@ -261,7 +261,7 @@ export function workflowFixture(scenario: ScenarioId, contractId: string) {
       if (state.outputs.length)
         state.evidence = [
           {
-            label: "Lineage artifact minh họa",
+            label: "Nguồn gốc dữ liệu mô phỏng",
             reference: `${runId} / ${n.sourceNode}`,
           },
         ];
@@ -275,21 +275,21 @@ export function workflowFixture(scenario: ScenarioId, contractId: string) {
           ? [
               {
                 label: done(state.status)
-                  ? "Authorization minh họa đã ghi nhận"
-                  : "Chờ Governance xử lý",
+                  ? "Đã mô phỏng ghi nhận phê duyệt"
+                  : "Chờ Kiểm soát và phê duyệt xử lý",
                 code: done(state.status)
                   ? "PROTECTED_ACTION_AUTHORIZED"
                   : "WORKFLOW_WAITING_FOR_APPROVAL",
               },
             ]
           : [
-              { label: "Bắt đầu node", code: "NODE_STARTED" },
+              { label: "Bắt đầu bước xử lý", code: "NODE_STARTED" },
               ...(done(state.status)
-                ? [{ label: "Hoàn tất node", code: "NODE_COMPLETED" }]
+                ? [{ label: "Hoàn tất bước xử lý", code: "NODE_COMPLETED" }]
                 : state.status === "FAILED_SAFE"
-                  ? [{ label: "Dừng an toàn", code: "NODE_FAILED_SAFE" }]
+                  ? [{ label: "Đã dừng xử lý", code: "NODE_FAILED_SAFE" }]
                   : state.status !== "RUNNING"
-                    ? [{ label: "Node đang chờ", code: "NODE_WAITING" }]
+                    ? [{ label: "Bước xử lý đang chờ", code: "NODE_WAITING" }]
                     : []),
             ];
     }
@@ -372,9 +372,9 @@ export function statusPresentation(state: NodeSnapshot) {
     case "WAITING_FOR_APPROVAL":
       return { label: "Chờ phê duyệt", tone: "waiting", symbol: "!" };
     case "WAITING_FOR_DEPENDENCIES":
-      return { label: "Chờ dependencies", tone: "waiting", symbol: "·" };
+      return { label: "Chờ bước liên quan", tone: "waiting", symbol: "·" };
     case "FAILED_SAFE":
-      return { label: "Dừng an toàn", tone: "failed", symbol: "!" };
+      return { label: "Đã dừng xử lý", tone: "failed", symbol: "!" };
     default:
       return { label: "Chưa bắt đầu", tone: "neutral", symbol: "·" };
   }

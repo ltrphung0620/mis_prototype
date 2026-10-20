@@ -66,7 +66,7 @@ export function WorkflowTimeline({
       ) : !dashboard ? (
         <div className="workflow-empty">
           <span className="workflow-empty__glyph" aria-hidden="true">↳</span>
-          <h3>Chưa có lượt đánh giá</h3>
+          <h3>Chưa có lần xử lý</h3>
           <p>Chọn một hợp đồng ở bảng bên trái để bắt đầu quy trình.</p>
         </div>
       ) : (
@@ -89,7 +89,7 @@ export function WorkflowTimeline({
           {playback?.isPlaying ? (
             <div className="workflow-playback" role="status" aria-live="polite">
               <span aria-hidden="true" />
-              Đang hiển thị tuần tự các bước đã được backend xác nhận.
+              Đang hiển thị lần lượt các bước xử lý đã được xác nhận.
             </div>
           ) : null}
 
@@ -101,14 +101,14 @@ export function WorkflowTimeline({
           ) : null}
 
           {dashboard.failureReason ? (
-            <Notice tone="danger" title="Quy trình đã dừng an toàn">
+            <Notice tone="danger" title="Quy trình đã dừng xử lý">
               {dashboard.failureReason}
             </Notice>
           ) : null}
 
           {dashboard.status.toUpperCase() === "WAITING_FOR_DEPENDENCIES" ? (
             <Notice tone="info" title="Hệ thống đang tự chờ tác vụ liên quan">
-              Không cần Founder thao tác ở thời điểm này.
+              Không cần người phê duyệt thao tác ở thời điểm này.
             </Notice>
           ) : null}
 
@@ -128,7 +128,7 @@ export function WorkflowTimeline({
 
           <footer className="workflow-footer">
             <span>Trạng thái thực thi: {dashboard.statusLabel || statusLabel(dashboard.status)}</span>
-            <span>Mã lượt xử lý: {dashboard.workflowRunId}</span>
+            <span>Mã lần xử lý: {dashboard.workflowRunId}</span>
           </footer>
         </>
       )}

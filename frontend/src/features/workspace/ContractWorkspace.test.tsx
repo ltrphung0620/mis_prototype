@@ -41,7 +41,7 @@ describe("Contract decision workspace", () => {
             {
               id: "OPS",
               code: "OPERATIONS_ASSESSMENT",
-              label: "Operations",
+              label: "Vận hành",
               status: "COMPLETED",
               artifactIds: ["FACTS", "ASSESSMENT"],
             },

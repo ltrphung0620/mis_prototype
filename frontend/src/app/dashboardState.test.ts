@@ -75,7 +75,7 @@ describe("dashboardReducer", () => {
     expect(next.lastUpdatedAt).toBeNull();
   });
 
-  it("xóa dữ liệu cũ trước khi tạo lượt workflow mới", () => {
+  it("xóa dữ liệu cũ trước khi tạo lượt quy trình mới", () => {
     const state = {
       ...initialDashboardState,
       phase: "ready" as const,
@@ -94,7 +94,7 @@ describe("dashboardReducer", () => {
     expect(next.dashboard).toBeNull();
   });
 
-  it("không giữ workflow khi snapshot TeamPack thay đổi", () => {
+  it("không giữ quy trình khi snapshot TeamPack thay đổi", () => {
     const state = {
       ...initialDashboardState,
       phase: "ready" as const,

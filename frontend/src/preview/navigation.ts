@@ -49,12 +49,22 @@ export function parsePreviewRoute(hash: string): PreviewRoute {
 export function navigatePreview(path: string) {
   window.location.hash = path;
 }
+export function previewPageKey(hash: string): string {
+  const route = parsePreviewRoute(hash);
+  return [route.page, route.contractId, route.view, route.section].join(":");
+}
 export function usePreviewRoute(): PreviewRoute {
   const [hash, setHash] = useState(() => window.location.hash);
   useEffect(() => {
+    let previousPage = previewPageKey(window.location.hash);
     const change = () => {
-      setHash(window.location.hash);
-      window.scrollTo({ top: 0, behavior: "instant" });
+      const nextHash = window.location.hash;
+      const nextPage = previewPageKey(nextHash);
+      setHash(nextHash);
+      if (previousPage !== nextPage) {
+        window.scrollTo({ top: 0, behavior: "instant" });
+      }
+      previousPage = nextPage;
     };
     window.addEventListener("hashchange", change);
     return () => window.removeEventListener("hashchange", change);

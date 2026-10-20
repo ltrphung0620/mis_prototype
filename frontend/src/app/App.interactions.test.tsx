@@ -10,7 +10,7 @@ import { App } from "./App";
 
 const dashboardHookMock = vi.hoisted(() => vi.fn());
 const NOT_EVALUABLE_INSTRUCTION =
-  "Decision Card chỉ để xem; quyết định cuối và hậu quyết định chưa được mở.";
+  "Phiếu đề xuất quyết định chỉ để xem; quyết định cuối và hậu quyết định chưa được mở.";
 
 vi.mock("../hooks/useWorkflowDashboard", () => ({
   useWorkflowDashboard: dashboardHookMock,
@@ -26,7 +26,7 @@ function dashboard(
     evaluationCaseId: "CASE-1",
     contractId: "CON-004",
     status: "WAITING_FOR_APPROVAL",
-    statusLabel: "Đang chờ Founder",
+    statusLabel: "Đang chờ người phê duyệt",
     currentStage: "WAITING_FOR_APPROVAL",
     currentStageLabel: "Điểm dừng có kiểm soát",
     pendingApprovalCount: pendingInteractions.some(
@@ -40,7 +40,7 @@ function dashboard(
       ? 1
       : 0,
     businessStatus: "AWAITING_FOUNDER_ACTION",
-    businessStatusLabel: "Đang chờ Founder xử lý",
+    businessStatusLabel: "Đang chờ người phê duyệt xử lý",
     resolvedMilestoneCount: 0,
     totalMilestoneCount: 1,
     progressPercent: 0,
@@ -69,7 +69,7 @@ function dashboard(
     metrics: [],
     decisionCard: {
       available: false,
-      recommendation_label_vi: "Chưa có Decision Card",
+      recommendation_label_vi: "Chưa có Phiếu đề xuất quyết định",
     },
   };
 }
@@ -188,7 +188,7 @@ function finalDecisionDashboard(
     {
       interaction_type: "APPROVAL",
       title_vi: "Xem xét quyết định cuối cùng",
-      instruction_vi: "Xem Decision Card hiện hành trước khi quyết định.",
+      instruction_vi: "Xem Phiếu đề xuất quyết định hiện hành trước khi quyết định.",
       request_ids: [],
       approval_request_ids: ["APR-FINAL"],
       protected_action: "CONFIRM_FINAL_CONTRACT_DECISION",
@@ -253,7 +253,7 @@ function notEvaluableReviewDashboard(
     pendingInteractions: [
       {
         interaction_type: "NOT_EVALUABLE_REVIEW",
-        title_vi: "Founder xem giới hạn đánh giá",
+        title_vi: "Người phê duyệt xem giới hạn đánh giá",
         instruction_vi: NOT_EVALUABLE_INSTRUCTION,
         request_ids: [],
         approval_request_ids: [],
@@ -271,7 +271,7 @@ beforeEach(() => {
   dashboardHookMock.mockReset();
 });
 
-describe("Founder interaction popups", () => {
+describe("Người phê duyệt interaction popups", () => {
   it("automatically opens and keeps a launcher for a real pending approval", async () => {
     const currentDashboard = dashboard([
       {
@@ -310,7 +310,7 @@ describe("Founder interaction popups", () => {
     ).toBeInTheDocument();
   });
 
-  it("keeps the dashboard visible until Founder opens the missing-data form", async () => {
+  it("keeps the dashboard visible until người phê duyệt opens the missing-data form", async () => {
     const currentDashboard = {
       ...dashboard([
         {
@@ -341,7 +341,7 @@ describe("Founder interaction popups", () => {
 
     render(<App />);
 
-    const dialog = await screen.findByRole("dialog", { name: /Decision Card/ });
+    const dialog = await screen.findByRole("dialog", { name: /Phiếu đề xuất quyết định/ });
     expect(
       within(dialog).getByRole("button", { name: "Ph\u00ea duy\u1ec7t" }),
     ).toBeEnabled();
@@ -364,9 +364,9 @@ describe("Founder interaction popups", () => {
 
     render(<App />);
 
-    expect(screen.queryByRole("dialog", { name: /Decision Card/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole("dialog", { name: /Phiếu đề xuất quyết định/ })).not.toBeInTheDocument();
     const lockedControls = screen.getAllByRole("button", {
-      name: /Decision Card/,
+      name: /Phiếu đề xuất quyết định/,
     });
     expect(lockedControls.length).toBeGreaterThan(0);
     for (const control of lockedControls) {
@@ -388,8 +388,8 @@ describe("Founder interaction popups", () => {
 
     render(<App />);
 
-    expect(screen.queryByRole("dialog", { name: /Decision Card/ })).not.toBeInTheDocument();
-    for (const control of screen.getAllByRole("button", { name: /Decision Card/ })) {
+    expect(screen.queryByRole("dialog", { name: /Phiếu đề xuất quyết định/ })).not.toBeInTheDocument();
+    for (const control of screen.getAllByRole("button", { name: /Phiếu đề xuất quyết định/ })) {
       expect(control).toBeDisabled();
     }
   });
@@ -407,7 +407,7 @@ describe("Founder interaction popups", () => {
 
     render(<App />);
 
-    const dialog = await screen.findByRole("dialog", { name: /Decision Card/ });
+    const dialog = await screen.findByRole("dialog", { name: /Phiếu đề xuất quyết định/ });
     expect(within(dialog).getByText(NOT_EVALUABLE_INSTRUCTION)).toBeInTheDocument();
     expect(
       within(dialog).getByText(
@@ -428,12 +428,12 @@ describe("Founder interaction popups", () => {
       within(dialog).getByRole("button", { name: "\u0110\u00f3ng" }),
     );
     await waitFor(() =>
-      expect(screen.queryByRole("dialog", { name: /Decision Card/ })).not.toBeInTheDocument(),
+      expect(screen.queryByRole("dialog", { name: /Phiếu đề xuất quyết định/ })).not.toBeInTheDocument(),
     );
-    const launchers = screen.getAllByRole("button", { name: /Mở Decision Card/ });
+    const launchers = screen.getAllByRole("button", { name: /Mở Phiếu đề xuất quyết định/ });
     expect(launchers.length).toBeGreaterThan(0);
     fireEvent.click(launchers[0]);
-    expect(await screen.findByRole("dialog", { name: /Decision Card/ })).toBeInTheDocument();
+    expect(await screen.findByRole("dialog", { name: /Phiếu đề xuất quyết định/ })).toBeInTheDocument();
     expect(decideApproval).not.toHaveBeenCalled();
   });
 
@@ -450,9 +450,9 @@ describe("Founder interaction popups", () => {
 
     render(<App />);
 
-    expect(screen.queryByRole("dialog", { name: /Decision Card/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole("dialog", { name: /Phiếu đề xuất quyết định/ })).not.toBeInTheDocument();
     const lockedLaunchers = screen.getAllByRole("button", {
-      name: /Decision Card hiện hành không khớp/,
+      name: /Phiếu đề xuất quyết định hiện hành không khớp/,
     });
     expect(lockedLaunchers.length).toBeGreaterThan(0);
     for (const launcher of lockedLaunchers) {

@@ -11,9 +11,9 @@ import type {
 
 const LABELS: Record<string, string> = {
   PERFORMANCE_BOND: "Bảo lãnh thực hiện hợp đồng",
-  SUBMIT_BANKING_PRECHECK: "Chạy precheck với ngân hàng",
+  SUBMIT_BANKING_PRECHECK: "Chạy kiểm tra sơ bộ với ngân hàng",
   AUTHORIZED_STAFF: "Người dùng được ủy quyền",
-  FOUNDER: "Founder",
+  FOUNDER: "Người phê duyệt",
   REQUESTED_DOCUMENT_REFERENCE_SUPPLIED: "Đã cung cấp mã tham chiếu tài liệu được yêu cầu",
   SIGNED_CONTRACT: "Hợp đồng đã ký",
   COMPANY_PROFILE: "Hồ sơ doanh nghiệp",
@@ -50,12 +50,12 @@ export function BankingPrecheckSubmissionProposalView({
   const candidates = payload.candidates ?? [];
   const executed = payload.precheck_executed || payload.submission_executed;
   return (
-    <article className="assessment-view" aria-label="Đề xuất chạy precheck với ngân hàng">
+    <article className="assessment-view" aria-label="Đề xuất chạy kiểm tra sơ bộ với ngân hàng">
       <header>
         <div className="assessment-view__title">
-          <h3>Đề xuất chạy precheck với ngân hàng</h3>
+          <h3>Đề xuất chạy kiểm tra sơ bộ với ngân hàng</h3>
           <span className="status-badge status-badge--neutral">
-            {executed ? "Đã ghi nhận lượt chạy" : "Chưa chạy precheck"}
+            {executed ? "Đã ghi nhận lần xử lý" : "Chưa chạy kiểm tra sơ bộ"}
           </span>
         </div>
       </header>
@@ -113,7 +113,7 @@ export function BankingPrecheckSubmissionProposalView({
         <p>Đề xuất không có phương án nào đủ dữ liệu để gửi.</p>
       )}
       <p role="note" className="assessment-view__footnote">
-        Đề xuất cần Founder phê duyệt trước khi chạy. Precheck trong prototype là mô phỏng, không ràng buộc và
+        Đề xuất cần phê duyệt trước khi chạy. Kiểm tra sơ bộ là mô phỏng, không ràng buộc và
         không phải phê duyệt của ngân hàng.
       </p>
     </article>
@@ -155,9 +155,9 @@ export function BankingPrecheckEvidenceSupplementView({
   payload: BankingPrecheckEvidenceSupplementPayload;
 }): ReactElement {
   return (
-    <article className="assessment-view" aria-label="Bằng chứng bổ sung cho precheck">
+    <article className="assessment-view" aria-label="Bằng chứng bổ sung cho kiểm tra sơ bộ">
       <header>
-        <h3>Bằng chứng bổ sung cho precheck</h3>
+        <h3>Bằng chứng bổ sung cho kiểm tra sơ bộ</h3>
       </header>
       <dl>
         <div>
@@ -169,7 +169,7 @@ export function BankingPrecheckEvidenceSupplementView({
           <dd>{label(payload.required_field)}</dd>
         </div>
         <div>
-          <dt>Kết quả precheck mô phỏng trước đó</dt>
+          <dt>Kết quả kiểm tra sơ bộ mô phỏng trước đó</dt>
           <dd>{label(payload.source_outcome)}</dd>
         </div>
         <div>
@@ -188,8 +188,8 @@ export function BankingPrecheckEvidenceSupplementView({
         </section>
       )}
       <p role="note" className="assessment-view__footnote">
-        Chỉ ghi nhận mã tham chiếu; kết quả precheck trước đó giữ nguyên.
-        {payload.fresh_governed_precheck_required !== false && " Cần chạy lại precheck mô phỏng và được phê duyệt."}
+        Chỉ ghi nhận mã tham chiếu; kết quả kiểm tra sơ bộ trước đó giữ nguyên.
+        {payload.fresh_governed_precheck_required !== false && " Cần chạy lại kiểm tra sơ bộ mô phỏng và được phê duyệt."}
         {payload.bank_approval_obtained ? "" : " Chưa có phê duyệt từ ngân hàng."}
       </p>
     </article>

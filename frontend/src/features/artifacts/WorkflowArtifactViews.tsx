@@ -56,7 +56,7 @@ const LABELS: Record<string, string> = {
   RISK: "Quét rủi ro ban đầu",
   SEND_DOCUMENT_TO_EXTERNAL_PARTNER: "Gửi tài liệu ra đối tác bên ngoài",
   COMMIT_LARGE_FINANCIAL_DECISION: "Cam kết quyết định tài chính lớn",
-  SUBMIT_BANKING_PRECHECK: "Chạy precheck với ngân hàng",
+  SUBMIT_BANKING_PRECHECK: "Chạy kiểm tra sơ bộ với ngân hàng",
   // TeamPack sheet names (source_record_counts)
   "06_Risk_Rules": "Quy tắc rủi ro (Sheet 06)",
   "07_Alerts": "Cảnh báo rủi ro (Sheet 07)",
@@ -264,7 +264,7 @@ export function RiskPreScanView({
           <ul className="assessment-list">
             {checkpoints.map((checkpoint, index) => (
               <li key={`${checkpoint.source_rule_id ?? "approval"}-${index}`}>
-                <strong>{checkpoint.source_rule_id ?? "Quy tắc kiểm soát"}</strong>: Founder cần phê duyệt trước khi{" "}
+                <strong>{checkpoint.source_rule_id ?? "Quy tắc kiểm soát"}</strong>: cần phê duyệt trước khi{" "}
                 {translateText(label(checkpoint.protected_action)).toLowerCase()}.
               </li>
             ))}
@@ -369,10 +369,10 @@ export function BankingReadinessView({
 
 export function DocumentChecklistView({ payload }: { payload: DocumentChecklistPayload }): ReactElement {
   const guidance: Record<string, string> = {
-    SIGNED_CONTRACT: "Hệ thống tạo bản nháp từ dữ liệu TeamPack và chỉ hoàn tất sau khi Founder chấp nhận hợp đồng.",
+    SIGNED_CONTRACT: "Hệ thống tạo bản nháp từ dữ liệu TeamPack và chỉ hoàn tất sau khi người phê duyệt chấp nhận hợp đồng.",
     COMPANY_PROFILE: "Hệ thống lấy từ hồ sơ OPC trong TeamPack và áp dụng masking trước khi phát hành.",
-    PERFORMANCE_BOND_REQUEST_FORM: "Founder cần tải lên tệp PDF hoặc DOCX của đơn đề nghị bảo lãnh thực hiện.",
-    CASHFLOW_BUFFER_EVIDENCE: "Founder cần tải lên tệp PDF hoặc DOCX chứng minh nguồn bù dòng tiền.",
+    PERFORMANCE_BOND_REQUEST_FORM: "Người phê duyệt cần tải lên tệp PDF hoặc DOCX của đơn đề nghị bảo lãnh thực hiện.",
+    CASHFLOW_BUFFER_EVIDENCE: "Người phê duyệt cần tải lên tệp PDF hoặc DOCX chứng minh nguồn bù dòng tiền.",
   };
   return (
     <article className="assessment-view" aria-label="Danh mục hồ sơ">

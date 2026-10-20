@@ -15,6 +15,7 @@ import {
 } from "recharts";
 import { usePreviewData } from "./data";
 import type { StatusPoint } from "./models";
+import { sourceStatusLabel } from "../shared/sourceLabels";
 import {
   billionTick,
   Link,
@@ -48,8 +49,8 @@ function ChartTooltip({
       <p>
         {typeof label === "string" || typeof label === "number"
           ? label
-          : "Phân bố nguồn"}{" "}
-        · Dữ liệu minh họa
+          : "Phân bố giá trị"}{" "}
+        · Dữ liệu mô phỏng
       </p>
       {payload.map((item, index) => (
         <div key={index}>
@@ -86,7 +87,7 @@ export function CashChart({
   const series = closing
     ? [
         { key: "closing", label: "Tiền cuối kỳ dự kiến", color: COLORS[0] },
-        { key: "reserve", label: "Ngưỡng dự trữ nguồn", color: "#9D896A" },
+        { key: "reserve", label: "Mức dự trữ tối thiểu", color: "#9D896A" },
       ]
     : [
         { key: "cashIn", label: "Thu dự kiến", color: COLORS[0] },
@@ -108,7 +109,7 @@ export function CashChart({
       description={
         closing
           ? "Giá trị dự kiến, không phải số dư ngân hàng"
-          : "Snapshot công ty · Thu và chi theo kỳ nguồn"
+          : "Tổng quan công ty · Thu và chi theo kỳ dữ liệu"
       }
       className="pv-chart-section"
       action={
@@ -252,9 +253,13 @@ export function CashChart({
         </div>
       )}
       <footer className="pv-chart-footer">
-        <SourceNote>Nguồn minh họa · Toàn bộ giá trị là dự kiến</SourceNote>
+        <SourceNote>
+          Dữ liệu mô phỏng · Các khoản thu và chi là dự kiến
+        </SourceNote>
         {compact && (
-          <Link to="/company?section=finance">Phân tích dòng tiền →</Link>
+          <Link to={`/company?section=finance&period=${period}`}>
+            Phân tích dòng tiền →
+          </Link>
         )}
       </footer>
     </Section>
@@ -278,7 +283,13 @@ export function DistributionChart({
   selected?: string;
 }) {
   const [table, setTable] = useState(false);
-  const chartData = [...data];
+  const chartData = data.map((point) => ({
+    ...point,
+    label:
+      sourceStatusLabel(point.status) === point.status
+        ? point.label
+        : sourceStatusLabel(point.status),
+  }));
   return (
     <Section
       title={title}
@@ -301,15 +312,15 @@ export function DistributionChart({
           aria-label="Bảng dữ liệu có thể cuộn ngang"
         >
           <table>
-            <caption className="pv-sr-only">{title} · Dữ liệu minh họa</caption>
+            <caption className="pv-sr-only">{title} · Dữ liệu mô phỏng</caption>
             <thead>
               <tr>
-                <th>Nhóm nguồn</th>
+                <th>Nhóm</th>
                 <th className="pv-numeric">Giá trị ({unit})</th>
               </tr>
             </thead>
             <tbody>
-              {data.map((d) => (
+              {chartData.map((d) => (
                 <tr key={d.status}>
                   <td>{d.label}</td>
                   <td className="pv-numeric">
@@ -324,7 +335,7 @@ export function DistributionChart({
         <div
           className="pv-chart pv-chart--distribution"
           role="img"
-          aria-label={`${title}. Dữ liệu minh họa; có bảng thay thế.`}
+          aria-label={`${title}. Dữ liệu mô phỏng; có bảng thay thế.`}
         >
           <ResponsiveContainer
             width="100%"
@@ -397,7 +408,7 @@ export function DistributionChart({
         </div>
       )}
       <div className="pv-distribution-legend">
-        {data.map((d, i) => (
+        {chartData.map((d, i) => (
           <button
             key={d.status}
             aria-pressed={selected === d.status}
@@ -411,7 +422,7 @@ export function DistributionChart({
         ))}
       </div>
       <SourceNote>
-        Trạng thái giữ theo nguồn · Không suy ra thanh toán hoặc doanh thu
+        Theo dữ liệu ghi nhận; chưa đối soát thanh toán hoặc ghi nhận doanh thu.
       </SourceNote>
     </Section>
   );

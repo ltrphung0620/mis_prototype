@@ -22,7 +22,7 @@ const LABELS: Record<string, string> = {
   NOT_SIGNED: "Không ký",
   ALL_CONDITIONS_ACCEPTED: "Khách hàng chấp nhận tất cả điều kiện",
   ONE_OR_MORE_CONDITIONS_REJECTED: "Có điều kiện khách hàng không chấp nhận",
-  FOUNDER: "Founder",
+  FOUNDER: "Người phê duyệt",
   CONFIRM_FINAL_CONTRACT_DECISION: "Xác nhận quyết định hợp đồng cuối cùng",
   CONFIRM_NEGOTIATION_OUTCOME: "Xác nhận kết quả đàm phán",
   SEND_DOCUMENT_TO_EXTERNAL_PARTNER: "Gửi tài liệu ra đối tác bên ngoài",
@@ -50,7 +50,7 @@ function CardReference({ reference }: { reference?: ExactArtifactRefPayload | nu
   if (!reference?.artifact_id) return null;
   return (
     <p className="assessment-item__meta">
-      Căn cứ: Decision Card {reference.version != null ? `v${reference.version}` : ""} ·{" "}
+      Căn cứ: Phiếu đề xuất quyết định {reference.version != null ? `v${reference.version}` : ""} ·{" "}
       <span className="artifact-id">{reference.artifact_id}</span>
     </p>
   );
@@ -75,12 +75,12 @@ export function PostDecisionUpdateView({ payload }: { payload: PostDecisionUpdat
   return (
     <article className="assessment-view" aria-label="Cập nhật sau quyết định">
       <header>
-        <h3>Cập nhật sau quyết định của Founder</h3>
+        <h3>Cập nhật sau quyết định của người phê duyệt</h3>
         <CardReference reference={payload.decision_card_artifact} />
       </header>
       <dl>
         <div>
-          <dt>Đề xuất trên Decision Card</dt>
+          <dt>Đề xuất trên Phiếu đề xuất quyết định</dt>
           <dd>{label(payload.recommendation)}</dd>
         </div>
         <div>
@@ -102,7 +102,7 @@ export function PostDecisionUpdateView({ payload }: { payload: PostDecisionUpdat
       </dl>
       {approval?.decision_reason && (
         <section>
-          <h4>Lý do Founder ghi nhận</h4>
+          <h4>Lý do người phê duyệt ghi nhận</h4>
           <p>{approval.decision_reason}</p>
         </section>
       )}
@@ -158,13 +158,13 @@ export function NegotiationOutcomeView({ payload }: { payload: NegotiationOutcom
       )}
       {payload.founder_summary && (
         <section>
-          <h4>Tóm tắt của Founder</h4>
+          <h4>Tóm tắt của người phê duyệt</h4>
           <p>{payload.founder_summary}</p>
         </section>
       )}
       <p role="note" className="assessment-view__footnote">
-        Kết quả do Founder nhập lại từ trao đổi với khách hàng; hệ thống không tự liên hệ khách hàng.
-        {payload.confirmation_requested && " Kết quả này cần Founder xác nhận lần cuối."}
+        Kết quả do người phê duyệt nhập lại từ trao đổi với khách hàng; hệ thống không tự liên hệ khách hàng.
+        {payload.confirmation_requested && " Kết quả này cần người phê duyệt xác nhận lần cuối."}
       </p>
     </article>
   );
@@ -206,8 +206,8 @@ export function ExternalDocumentSubmissionProposalView({
         {payload.external_submission_performed
           ? "Hệ thống ghi nhận hồ sơ đã được gửi ra ngoài."
           : payload.release_authorized
-            ? "Đã được phép gửi; prototype không gửi hồ sơ và không tạo biên nhận."
-            : "Đây chỉ là đề xuất: chưa được phép gửi. Prototype không gửi hồ sơ và không tạo biên nhận."}
+            ? "Đã được phép gửi. Hệ thống chưa gửi hồ sơ và chưa có biên nhận."
+            : "Đây là đề xuất chưa được phép gửi. Hệ thống chưa gửi hồ sơ và chưa có biên nhận."}
       </p>
     </article>
   );

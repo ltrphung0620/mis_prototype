@@ -1,5 +1,6 @@
-import type { ReactNode } from "react";
+import { useEffect, useRef, type ReactNode } from "react";
 import type { PreviewMode } from "./models";
+export { sourceStatusLabel } from "../shared/sourceLabels";
 
 export function Icon({
   name = "arrow",
@@ -95,13 +96,6 @@ export const billionTick = (value: number) =>
   new Intl.NumberFormat("vi-VN", { maximumFractionDigits: 2 }).format(
     value / 1e9,
   );
-const sourceStatuses: Record<string, string> = {
-  Negotiation: "Đang đàm phán",
-  Active: "Đang hoạt động",
-  "Pending expansion": "Chờ mở rộng",
-};
-export const sourceStatusLabel = (status: string) =>
-  sourceStatuses[status] ?? status;
 export function Link({
   to,
   children,
@@ -187,11 +181,7 @@ export function Section({
   );
 }
 export function SourceNote({ children }: { children?: ReactNode }) {
-  return (
-    <p className="pv-source">
-      {children ?? "Nguồn: bộ dữ liệu giao diện minh họa"}
-    </p>
-  );
+  return <p className="pv-source">{children ?? "Dữ liệu mô phỏng"}</p>;
 }
 export function Tabs({
   items,
@@ -202,8 +192,27 @@ export function Tabs({
   current: string;
   label: string;
 }) {
+  const navigation = useRef<HTMLElement>(null);
+  useEffect(() => {
+    const revealActiveTab = () => {
+      const container = navigation.current;
+      const active = container?.querySelector<HTMLAnchorElement>(
+        'a[aria-current="page"]',
+      );
+      if (!container || !active) return;
+      const bounds = container.getBoundingClientRect();
+      const item = active.getBoundingClientRect();
+      if (item.left < bounds.left)
+        container.scrollLeft += item.left - bounds.left;
+      else if (item.right > bounds.right)
+        container.scrollLeft += item.right - bounds.right;
+    };
+    revealActiveTab();
+    window.addEventListener("resize", revealActiveTab);
+    return () => window.removeEventListener("resize", revealActiveTab);
+  }, [current]);
   return (
-    <nav className="pv-tabs" aria-label={label}>
+    <nav ref={navigation} className="pv-tabs" aria-label={label}>
       {items.map((item) => (
         <Link
           key={item.key}
@@ -232,7 +241,7 @@ export function StateView({
   if (mode === "loading")
     return (
       <div className="pv-loading" role="status" aria-live="polite">
-        <p>Đang tải bản xem trước…</p>
+        <p>Đang tải dữ liệu…</p>
         <div />
         <div />
         <div />
@@ -248,11 +257,11 @@ export function StateView({
       </h2>
       <p>
         {mode === "error"
-          ? "Lỗi kết nối được mô phỏng để kiểm thử giao diện. Không có request backend nào thất bại."
-          : "Trạng thái trống được mô phỏng. Không thay thế giá trị chưa biết bằng số 0."}
+          ? "Tình huống lỗi đang được mô phỏng. Bạn có thể thử lại."
+          : "Chưa có dữ liệu để hiển thị trong tình huống mô phỏng này."}
       </p>
       <button onClick={onRetry}>
-        {mode === "error" ? "Thử lại" : "Quay về dữ liệu minh họa"}
+        {mode === "error" ? "Thử lại" : "Xem dữ liệu"}
       </button>
     </section>
   );

@@ -18,6 +18,7 @@ import type {
   WorkflowSummaryDto,
 } from "./types";
 import { milestoneLabel, stageLabel } from "../shared/workflowLabels";
+import { displayText } from "../shared/displayText";
 
 const LINKED_RECORD_LABELS: Readonly<Record<string, string>> = {
   customer: "Khách hàng",
@@ -113,7 +114,7 @@ function milestoneFromRecord(
 ): WorkflowMilestone {
   const code = stringValue(item.code, item.node, item.milestone_id, item.id) || `${stageCode}-${index + 1}`;
   const taskCode = stringValue(item.task_id, item.code, item.node, item.milestone_id, item.id) || code;
-  const label = stringValue(item.title_vi, item.label, item.title, item.name) || milestoneLabel(taskCode);
+  const label = displayText(stringValue(item.title_vi, item.label, item.title, item.name) || milestoneLabel(taskCode));
   const laneHint = `${taskCode} ${stringValue(item.owner_id)}`.toUpperCase();
   const lane = laneHint.includes("FINANCE")
     ? "finance"
@@ -127,7 +128,7 @@ function milestoneFromRecord(
     label,
     description: stringValue(item.description, item.detail) || undefined,
     status: stringValue(item.status, item.resolution_status) || "PENDING",
-    statusLabel: stringValue(item.status_label_vi) || undefined,
+    statusLabel: displayText(stringValue(item.status_label_vi)) || undefined,
     waitingFor: stringList(item.waiting_for),
     lane,
     applicability: stringValue(item.applicability) || "APPLICABLE",
@@ -155,10 +156,10 @@ function normalizeStage(item: DashboardStageDto, index: number): WorkflowStage {
   return {
     id: stringValue(item.stage_id, item.id) || code,
     code,
-    label: stringValue(item.title_vi, item.label, item.title) || stageLabel(code),
+    label: displayText(stringValue(item.title_vi, item.label, item.title) || stageLabel(code)),
     description: stringValue(item.description) || undefined,
     status: stringValue(item.status) || inferStageStatus(milestones),
-    statusLabel: stringValue(item.status_label_vi) || undefined,
+    statusLabel: displayText(stringValue(item.status_label_vi)) || undefined,
     order: numberValue(item.sequence, item.order) ?? index + 1,
     parallel: item.parallel === true || Boolean(item.parallel_group) || inferredParallel,
     applicability: stringValue(item.applicability) || "APPLICABLE",
@@ -369,8 +370,8 @@ export function normalizeWorkflowDashboard(
       interaction_type: stringValue(
         item.interaction_type,
       ) as DashboardPendingInteractionDto["interaction_type"],
-      title_vi: stringValue(item.title_vi),
-      instruction_vi: stringValue(item.instruction_vi),
+      title_vi: displayText(stringValue(item.title_vi)),
+      instruction_vi: displayText(stringValue(item.instruction_vi)),
       request_ids: stringList(item.request_ids),
       approval_request_ids: stringList(item.approval_request_ids),
       protected_action: stringValue(item.protected_action) || null,
@@ -383,7 +384,7 @@ export function normalizeWorkflowDashboard(
   const metrics: readonly DashboardMetricDto[] = recordList(payload.metrics).map(
     (item) => ({
       code: stringValue(item.code),
-      label_vi: stringValue(item.label_vi),
+      label_vi: displayText(stringValue(item.label_vi)),
       value:
         typeof item.value === "string" ||
         typeof item.value === "number" ||
@@ -407,7 +408,7 @@ export function normalizeWorkflowDashboard(
     recommendation: stringValue(rawDecisionCard.recommendation) || null,
     recommendation_label_vi:
       stringValue(rawDecisionCard.recommendation_label_vi) ||
-      "Chưa có Decision Card cho lượt xử lý này",
+      "Chưa có phiếu đề xuất quyết định cho lần xử lý này",
     confidence: stringValue(rawDecisionCard.confidence) || null,
     executive_summary: stringValue(rawDecisionCard.executive_summary) || null,
   };
@@ -420,9 +421,9 @@ export function normalizeWorkflowDashboard(
     evaluationCaseId: stringValue(workflow.evaluation_case_id) || undefined,
     contractId: stringValue(workflow.contract_id, payload.contract_id),
     status: stringValue(payload.execution_status, workflow.status, payload.status) || "PENDING",
-    statusLabel: stringValue(payload.execution_status_label_vi),
+    statusLabel: displayText(stringValue(payload.execution_status_label_vi)),
     currentStage: stringValue(workflow.current_stage, payload.current_stage),
-    currentStageLabel: stringValue(payload.current_stage_label_vi),
+    currentStageLabel: displayText(stringValue(payload.current_stage_label_vi)),
     failureReason: stringValue(workflow.failure_reason, payload.failure_reason) || undefined,
     pendingApprovalCount: hasProjectedInteractions
       ? approvalInteractions.length
@@ -435,7 +436,7 @@ export function normalizeWorkflowDashboard(
         ? workflow.pending_missing_data_ids.length
         : numberValue(payload.pending_missing_data_count) ?? missingInteractions.length,
     businessStatus: stringValue(payload.business_status),
-    businessStatusLabel: stringValue(payload.business_status_label_vi),
+    businessStatusLabel: displayText(stringValue(payload.business_status_label_vi)),
     resolvedMilestoneCount: numberValue(progress.resolved_task_count),
     totalMilestoneCount: numberValue(progress.total_task_count),
     progressPercent: numberValue(progress.percent),

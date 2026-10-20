@@ -18,6 +18,10 @@ import "@xyflow/react/dist/style.css";
 import { Icon, SourceNote } from "../components";
 import { navigatePreview } from "../navigation";
 import type { PreviewContract, PreviewRoute } from "../models";
+import { artifactTypeLabel } from "../../shared/artifactLabels";
+import { statusLabel } from "../../shared/workflowLabels";
+import { previewTestingEnabled } from "../testing";
+import { workflowDetailLabel } from "./labels";
 import {
   defaultScenario,
   isScenario,
@@ -43,10 +47,10 @@ type FlowData = {
 };
 type FlowNode = Node<FlowData, "workflow">;
 const kindLabel = {
-  agent: "Business component",
-  gate: "Governance gate",
-  system: "Orchestrator",
-  interaction: "Workflow interaction",
+  agent: "Bước đánh giá",
+  gate: "Bước phê duyệt",
+  system: "Xử lý tự động",
+  interaction: "Thao tác trong quy trình",
 };
 function Status({ state }: { state: NodeSnapshot }) {
   const status = statusPresentation(state);
@@ -126,9 +130,9 @@ function WorkflowNode({ data, selected }: NodeProps<FlowNode>) {
         <span className="wf-node-title">{n.title}</span>
         <span className="wf-node-kind">
           {n.kind === "gate"
-            ? "Gate riêng"
+            ? "Duyệt riêng"
             : n.phase === "banking"
-              ? "Banking & hồ sơ"
+              ? "Ngân hàng và hồ sơ"
               : kindLabel[n.kind]}
         </span>
         <Status state={state} />
@@ -231,7 +235,7 @@ function Canvas({
     <div
       className="wf-canvas"
       role="region"
-      aria-label="Canvas workflow chỉ đọc"
+      aria-label="Sơ đồ quy trình chỉ xem"
       tabIndex={0}
       onKeyDown={(event) => {
         if (event.target !== event.currentTarget) return;
@@ -281,7 +285,7 @@ function Canvas({
         panOnDrag
         ariaLabelConfig={{
           "node.a11yDescription.default":
-            "Workflow chỉ đọc; dùng nút node để mở chi tiết.",
+            "Chỉ xem quy trình; chọn một bước để mở chi tiết.",
         }}
       >
         <Background
@@ -309,38 +313,39 @@ function Canvas({
               : phases.find((p) => p.id === view)?.label}
           </strong>
           <span>
-            {visible.length} nodes · {edges.length} connections
+            {visible.length} bước · {edges.length} liên kết
             {view === "all"
               ? " · Tổng quan, phóng to để đọc"
-              : " · Các nối ngoài vùng xem nằm trong inspector"}
+              : " · Xem các bước liên quan trong phần chi tiết"}
           </span>
         </div>
       </div>
-      <div className="wf-canvas-controls" aria-label="Điều khiển canvas">
+      <div className="wf-canvas-controls" aria-label="Điều khiển sơ đồ">
         <button
-          aria-label="Thu nhỏ workflow"
+          aria-label="Thu nhỏ quy trình"
           disabled={viewport.zoom <= 0.151}
           onClick={() => void flow.zoomOut({ duration: 0 })}
         >
           −
         </button>
-        <output aria-label="Mức zoom">
+        <output aria-label="Mức phóng to">
           {Math.round(viewport.zoom * 100)}%
         </output>
         <button
-          aria-label="Phóng to workflow"
+          aria-label="Phóng to quy trình"
           disabled={viewport.zoom >= 1.599}
           onClick={() => void flow.zoomIn({ duration: 0 })}
         >
           +
         </button>
         <span className="wf-control-divider" />
-        <button onClick={fit} aria-label="Fit workflow vào khung">
-          Fit view <span aria-hidden="true">⌗</span>
+        <button onClick={fit} aria-label="Vừa khung">
+          Vừa khung <span aria-hidden="true">⌗</span>
         </button>
       </div>
       <span className="wf-canvas-hint">
-        Kéo để di chuyển · Pinch hoặc + / − để zoom · Focus canvas: ↑↓←→, F
+        Kéo để di chuyển · Dùng + / − để thu phóng · Khi chọn sơ đồ: ↑↓←→ để di
+        chuyển, F để vừa khung
       </span>
     </div>
   );
@@ -356,13 +361,13 @@ function References({
     <ul className="wf-artifacts">
       {items.map((item) => (
         <li key={item.artifactId}>
-          <strong>{item.type.replaceAll("_", " ")}</strong>
+          <strong>{artifactTypeLabel(item.type)}</strong>
           <code>{item.artifactId}</code>
           <span>
             v{item.version} ·{" "}
             {item.validation === "VALID"
-              ? "Bằng chứng hợp lệ (minh họa)"
-              : "Hợp lệ kèm cảnh báo (minh họa)"}
+              ? "Hợp lệ (mô phỏng)"
+              : "Hợp lệ, có cảnh báo (mô phỏng)"}
           </span>
         </li>
       ))}
@@ -396,7 +401,7 @@ function Inspector({
       ref={panel}
       tabIndex={-1}
       className="wf-inspector"
-      aria-label={`Chi tiết node ${n.title}`}
+      aria-label={`Chi tiết bước ${n.title}`}
       onKeyDown={(e) => {
         if (e.key === "Escape") {
           e.stopPropagation();
@@ -406,10 +411,10 @@ function Inspector({
     >
       <header>
         <div>
-          <span className="wf-eyebrow">NODE INSPECTOR · MINH HỌA</span>
+          <span className="wf-eyebrow">CHI TIẾT BƯỚC XỬ LÝ</span>
           <h3>{n.title}</h3>
         </div>
-        <button aria-label="Đóng Node Inspector" onClick={onClose}>
+        <button aria-label="Đóng chi tiết bước" onClick={onClose}>
           <Icon name="close" size={18} />
         </button>
       </header>
@@ -418,25 +423,29 @@ function Inspector({
         <p className="wf-description">{n.description}</p>
         <dl className="wf-node-meta">
           <div>
-            <dt>Execution status</dt>
-            <dd>{state.status ?? "Không có execution status"}</dd>
+            <dt>Trạng thái xử lý</dt>
+            <dd>
+              {state.status
+                ? statusLabel(state.status)
+                : "Không có trạng thái xử lý"}
+            </dd>
           </div>
           <div>
-            <dt>Applicability</dt>
+            <dt>Có áp dụng không?</dt>
             <dd>
               {state.applicability === "undetermined"
                 ? "Chưa xác định trong kịch bản"
                 : state.applicability === "not-applicable"
-                  ? "Không áp dụng cho route minh họa"
+                  ? "Không áp dụng trong tình huống này"
                   : "Áp dụng trong kịch bản"}
             </dd>
           </div>
           <div>
-            <dt>Validation</dt>
+            <dt>Kiểm tra dữ liệu</dt>
             <dd>
               {state.outputs.length
-                ? "VALID · Minh họa, chưa gọi validator"
-                : "Chưa có output được validation"}
+                ? "Đã kiểm tra · mô phỏng"
+                : "Chưa có kết quả được kiểm tra"}
             </dd>
           </div>
         </dl>
@@ -445,49 +454,49 @@ function Inspector({
             className={`wf-blocker ${state.status === "FAILED_SAFE" ? "is-failed" : ""}`}
           >
             <strong>
-              {state.status === "FAILED_SAFE" ? "Failure boundary" : "Đang chờ"}
+              {state.status === "FAILED_SAFE" ? "Lý do dừng xử lý" : "Đang chờ"}
             </strong>
             <p>{state.blocker}</p>
           </div>
         )}
         {state.pending && (
           <section>
-            <h4>Pending interaction</h4>
+            <h4>Việc đang chờ xử lý</h4>
             <code>{state.pending.requestId}</code>
-            <p>{state.pending.action}</p>
+            <p>{workflowDetailLabel(state.pending.action)}</p>
             {state.pending.subject && (
               <p className="wf-binding">
-                Subject: {state.pending.subject.artifactId} · v
+                Kết quả cần xem xét: {state.pending.subject.artifactId} · v
                 {state.pending.subject.version}
               </p>
             )}
-            <small>Xem tại đây không resolve request hoặc resume.</small>
+            <small>Chỉ xem thông tin tại đây, chưa xử lý yêu cầu.</small>
           </section>
         )}
         <section>
           <h4>
-            Artifacts đầu vào <span>{state.inputs.length}</span>
+            Dữ liệu đầu vào <span>{state.inputs.length}</span>
           </h4>
           <References
             items={state.inputs}
-            empty="Chưa có tham chiếu đầu vào trong snapshot minh họa."
+            empty="Chưa có dữ liệu đầu vào để hiển thị."
           />
         </section>
         <section>
           <h4>
-            Artifacts đầu ra <span>{state.outputs.length}</span>
+            Kết quả đầu ra <span>{state.outputs.length}</span>
           </h4>
           <References
             items={state.outputs}
             empty={
               n.kind === "gate"
-                ? "Gate là checkpoint Governance, không sinh business artifact."
-                : "Chưa có output được chấp nhận trong snapshot."
+                ? "Bước phê duyệt không tạo kết quả đánh giá mới."
+                : "Chưa có kết quả được chấp nhận."
             }
           />
         </section>
         <section>
-          <h4>Evidence references</h4>
+          <h4>Dữ liệu tham chiếu</h4>
           {state.evidence.length ? (
             state.evidence.map((e) => (
               <p key={e.reference}>
@@ -497,12 +506,12 @@ function Inspector({
             ))
           ) : (
             <p className="wf-empty-detail">
-              Chưa có evidence reference ở node này.
+              Bước này chưa có dữ liệu tham chiếu.
             </p>
           )}
           <small>
-            Lineage minh họa ở cấp artifact; chưa liên kết record-level evidence
-            từ backend.
+            Nguồn gốc dữ liệu đang được mô phỏng, chưa đối chiếu từng bản ghi
+            thực tế.
           </small>
         </section>
         <section>
@@ -520,14 +529,12 @@ function Inspector({
               ))}
             </ol>
           ) : (
-            <p className="wf-empty-detail">
-              Chưa có sự kiện. Không suy edges từ thứ tự log.
-            </p>
+            <p className="wf-empty-detail">Chưa có sự kiện để hiển thị.</p>
           )}
-          <small>Không có timestamp hoặc thời lượng thực thi thật.</small>
+          <small>Chưa có thời điểm hoặc thời gian xử lý thực tế.</small>
         </section>
         <section>
-          <h4>Connections & điều kiện</h4>
+          <h4>Các bước liên quan và điều kiện</h4>
           <ul className="wf-connections">
             {connections.map((d) => {
               const other = d.to === nodeId ? d.from : d.to;
@@ -537,27 +544,24 @@ function Inspector({
                     {d.to === nodeId ? "←" : "→"}{" "}
                     {topology.find((t) => t.id === other)!.title}
                   </button>
-                  {d.condition && <code>{d.condition}</code>}
+                  {d.condition && (
+                    <span>{workflowDetailLabel(d.condition)}</span>
+                  )}
                 </li>
               );
             })}
           </ul>
           <small>
-            Arrows mô tả control flow; input artifacts có thể đến từ nhiều
-            upstream nodes.
+            Mũi tên thể hiện thứ tự xử lý. Dữ liệu đầu vào có thể đến từ nhiều
+            bước.
           </small>
         </section>
         <details className="wf-source">
-          <summary>Đối chiếu orchestration</summary>
+          <summary>Mã bước để tra cứu</summary>
           <code>{n.sourceNode}</code>
-          <p>{n.source}</p>
           {["PRECHECK_GATE", "EXTERNAL_GATE"].includes(n.id) && (
-            <p>
-              Gate là instance presentation của APPROVAL_GATE, không phải node
-              ID persisted riêng.
-            </p>
+            <p>Đây là bước phê duyệt trong quy trình.</p>
           )}
-          <small>case_workflow_orchestrator.py · baseline 0329574</small>
         </details>
       </div>
     </aside>
@@ -627,14 +631,9 @@ export default function WorkflowViewer({
     return (
       <section className="wf-no-run">
         <Icon name="operations" size={28} />
-        <h2>Chưa có lượt xử lý</h2>
-        <p>
-          Hợp đồng này chưa có workflow trong bộ dữ liệu preview. Không hiển thị
-          run của hợp đồng khác.
-        </p>
-        <SourceNote>
-          Viewer chỉ dùng fixtures cô lập, không tự tạo run hoặc gọi API.
-        </SourceNote>
+        <h2>Chưa có lần xử lý</h2>
+        <p>Hợp đồng này chưa có lần xử lý để hiển thị.</p>
+        <SourceNote>Dữ liệu mô phỏng</SourceNote>
       </section>
     );
   const visible = topology.filter((n) => view === "all" || n.phase === view);
@@ -643,31 +642,33 @@ export default function WorkflowViewer({
   ).length;
   const current = topology.find((n) => n.id === snapshot.current)!;
   return (
-    <section className="wf-viewer" aria-label="Interactive Workflow Viewer">
+    <section className="wf-viewer" aria-label="Quy trình xử lý">
       <div className="wf-heading">
         <div>
           <h2>Quy trình xử lý</h2>
-          <p>Quan sát dependencies, kết quả và điểm chờ quyết định.</p>
+          <p>Theo dõi các bước xử lý, kết quả và việc đang chờ quyết định.</p>
         </div>
-        <label className="wf-scenario">
-          <span>Kịch bản minh họa</span>
-          <select
-            aria-label="Kịch bản workflow"
-            value={scenario}
-            onChange={(e) =>
-              update(
-                e.target.value,
-                scenarios.find((s) => s.id === e.target.value)!.phase,
-              )
-            }
-          >
-            {scenarios.map((s) => (
-              <option key={s.id} value={s.id}>
-                {s.label}
-              </option>
-            ))}
-          </select>
-        </label>
+        {previewTestingEnabled() && (
+          <label className="wf-scenario">
+            <span>Tình huống mô phỏng</span>
+            <select
+              aria-label="Kịch bản quy trình"
+              value={scenario}
+              onChange={(e) =>
+                update(
+                  e.target.value,
+                  scenarios.find((s) => s.id === e.target.value)!.phase,
+                )
+              }
+            >
+              {scenarios.map((s) => (
+                <option key={s.id} value={s.id}>
+                  {s.label}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
       </div>
       <div className="wf-run-summary" role="status">
         <span
@@ -687,22 +688,22 @@ export default function WorkflowViewer({
         <div>
           <strong>
             {snapshot.completed
-              ? "Hoàn tất lượt xử lý · Chưa có quyết định Founder"
+              ? "Đã xử lý xong · Chưa có quyết định được phê duyệt"
               : `${statusPresentation(snapshot.states[snapshot.current]).label} · ${current.title}`}
           </strong>
           <p>{snapshot.scenario.description}</p>
         </div>
         <span className="wf-run-count">
           {completed}
-          <small>nodes hoàn tất</small>
+          <small>bước hoàn tất</small>
         </span>
       </div>
       <p className="wf-fixture-note">
-        <span>MINH HỌA · CHỈ ĐỌC</span> Snapshot riêng {snapshot.runId}. Không
-        thay đổi trạng thái hợp đồng đang hiển thị, không kết nối API.
+        <span>QUY TRÌNH MÔ PHỎNG · CHỈ XEM</span> Lần xử lý: {snapshot.runId}.
+        Thông tin tại đây không thay đổi quyết định của hợp đồng.
       </p>
       <div className="wf-toolbar">
-        <nav aria-label="Vùng xem workflow">
+        <nav aria-label="Vùng xem quy trình">
           <button
             aria-current={view === "all" ? "true" : undefined}
             onClick={() => update(scenario, "all")}
@@ -724,7 +725,7 @@ export default function WorkflowViewer({
             aria-pressed={display === "canvas"}
             onClick={() => setDisplay("canvas")}
           >
-            Canvas
+            Sơ đồ
           </button>
           <button
             aria-pressed={display === "list"}
@@ -749,8 +750,7 @@ export default function WorkflowViewer({
         </div>
         <div className={`wf-list ${display === "list" ? "is-visible" : ""}`}>
           <p className="wf-mobile-note">
-            Danh sách theo vùng xem · Chọn node để kiểm tra dependencies và
-            artifacts.
+            Chọn một bước để xem dữ liệu, kết quả và các bước liên quan.
           </p>
           <ol>
             {visible.map((n) => (
@@ -790,7 +790,7 @@ export default function WorkflowViewer({
           { text: "Hoàn tất", tone: "complete" },
           { text: "Đang chạy", tone: "running" },
           { text: "Đang chờ", tone: "waiting" },
-          { text: "Dừng an toàn", tone: "failed" },
+          { text: "Đã dừng xử lý", tone: "failed" },
           { text: "Chưa bắt đầu / không áp dụng", tone: "neutral" },
         ].map((l) => (
           <span key={l.tone}>
@@ -799,30 +799,25 @@ export default function WorkflowViewer({
           </span>
         ))}
         <span className="wf-edge-legend">
-          ── Dependency <span>┄┄ Có điều kiện</span>
+          ── Thứ tự xử lý <span>┄┄ Có điều kiện</span>
         </span>
       </div>
       <details className="wf-limitations">
-        <summary>Phạm vi topology và giới hạn preview</summary>
+        <summary>Cách đọc quy trình</summary>
         <p>
           {view === "all"
-            ? "Toàn quy trình gồm các node và Governance checkpoints của các nhánh đã đối chiếu."
+            ? "Sơ đồ thể hiện các bước đánh giá, xử lý và phê duyệt."
             : phases.find((p) => p.id === view)?.description}{" "}
-          Vùng xem chỉ hiển thị edges giữa nodes hiện diện; inspector giữ các
-          connections ngoài vùng.
+          Chi tiết từng bước cho biết cả các bước liên quan ngoài vùng đang xem.
         </p>
         <p>
-          Đã đối chiếu execute, document flow, final decision, negotiation và
-          external readiness ở HEAD 0329574. Không liệt kê mọi milestone enum,
-          retry/evidence-intake helper hoặc nhánh reject như một execution node
-          mới. Applicability chưa xác định được ghi rõ; branch không áp dụng
-          không mang execution status.
+          Bước chưa xác định có áp dụng hay không được ghi rõ. Không áp dụng
+          khác với chưa bắt đầu xử lý.
         </p>
         <p>
-          Artifacts, events, pending requests và validation labels đều minh họa;
-          không có record-level evidence hoặc backend validation thật.
-          Completion không có nghĩa an toàn hoặc đã phê duyệt hợp đồng. Precheck
-          là mô phỏng, không ràng buộc. Không gửi hồ sơ ra bên ngoài.
+          Các kết quả đang được mô phỏng. Hoàn tất xử lý chưa có nghĩa hợp đồng
+          an toàn hoặc đã được phê duyệt. Kiểm tra sơ bộ chưa phải chấp thuận
+          của ngân hàng. Chưa gửi hồ sơ ra ngoài.
         </p>
       </details>
     </section>

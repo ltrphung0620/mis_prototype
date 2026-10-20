@@ -1,0 +1,140 @@
+{
+  "results": [
+    {
+      "check": "raw-status-filter-and-scroll",
+      "before": 100,
+      "after": 100,
+      "status": "Open"
+    },
+    {
+      "check": "company-period-preserved",
+      "period": "recent"
+    },
+    {
+      "check": "active-mobile-tab",
+      "left": 243.59375,
+      "right": 371.6875,
+      "fullyVisible": true
+    },
+    {
+      "width": 390,
+      "scenario": "approval",
+      "overflow": false,
+      "technicalCopy": false
+    },
+    {
+      "width": 390,
+      "scenario": "assessment",
+      "overflow": false,
+      "technicalCopy": false
+    },
+    {
+      "width": 390,
+      "scenario": "banking",
+      "overflow": false,
+      "technicalCopy": false
+    },
+    {
+      "width": 390,
+      "scenario": "document",
+      "overflow": false,
+      "technicalCopy": false
+    },
+    {
+      "width": 390,
+      "scenario": "input",
+      "overflow": false,
+      "technicalCopy": false
+    },
+    {
+      "width": 390,
+      "scenario": "failed",
+      "overflow": false,
+      "technicalCopy": false
+    },
+    {
+      "width": 390,
+      "scenario": "completed",
+      "overflow": false,
+      "technicalCopy": false
+    },
+    {
+      "width": 390,
+      "scenario": "negotiation",
+      "overflow": false,
+      "technicalCopy": false
+    },
+    {
+      "width": 390,
+      "scenario": "release",
+      "overflow": false,
+      "technicalCopy": false
+    },
+    {
+      "width": 1440,
+      "scenario": "approval",
+      "overflow": false,
+      "technicalCopy": false
+    },
+    {
+      "width": 1440,
+      "scenario": "assessment",
+      "overflow": false,
+      "technicalCopy": false
+    },
+    {
+      "width": 1440,
+      "scenario": "banking",
+      "overflow": false,
+      "technicalCopy": false
+    },
+    {
+      "width": 1440,
+      "scenario": "document",
+      "overflow": false,
+      "technicalCopy": false
+    },
+    {
+      "width": 1440,
+      "scenario": "input",
+      "overflow": false,
+      "technicalCopy": false
+    },
+    {
+      "width": 1440,
+      "scenario": "failed",
+      "overflow": false,
+      "technicalCopy": false
+    },
+    {
+      "width": 1440,
+      "scenario": "completed",
+      "overflow": false,
+      "technicalCopy": false
+    },
+    {
+      "width": 1440,
+      "scenario": "negotiation",
+      "overflow": false,
+      "technicalCopy": false
+    },
+    {
+      "width": 1440,
+      "scenario": "release",
+      "overflow": false,
+      "technicalCopy": false
+    },
+    {
+      "check": "diagram-controls",
+      "zoomBefore": "100%",
+      "zoomAfter": "120%",
+      "changed": true
+    },
+    {
+      "check": "reduced-motion-and-narrow-dialog",
+      "technicalCopy": false,
+      "overflow": false
+    }
+  ],
+  "failures": []
+}

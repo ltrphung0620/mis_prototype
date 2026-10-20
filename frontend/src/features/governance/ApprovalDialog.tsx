@@ -47,9 +47,9 @@ function documentLabel(code: string): string {
 function actionExplanation(action: ProtectedAction): ReactElement {
   switch (action) {
     case "CONFIRM_FINAL_CONTRACT_DECISION":
-      return <p>Quyết định này sẽ ghi nhận phê duyệt cuối cùng trên Decision Card để hoàn tất quy trình.</p>;
+      return <p>Quyết định này sẽ ghi nhận phê duyệt cuối cùng trên Phiếu đề xuất quyết định để hoàn tất quy trình.</p>;
     case "CONFIRM_NEGOTIATION_OUTCOME":
-      return <p>Xác nhận bản ghi phản hồi cuối của khách hàng. Nếu có điều kiện bị từ chối, case sẽ được đóng; nếu tất cả được chấp thuận, hợp đồng được ghi nhận là đã đáp ứng điều kiện.</p>;
+      return <p>Xác nhận bản ghi phản hồi cuối của khách hàng. Nếu có điều kiện bị từ chối, hồ sơ sẽ được đóng; nếu tất cả được chấp thuận, hợp đồng được ghi nhận là đã đáp ứng điều kiện.</p>;
     case "SUBMIT_BANKING_PRECHECK":
       return <p>Lưu ý: Đây chỉ là yêu cầu khảo sát thông tin sơ bộ với ngân hàng, không phải chấp thuận cấp tín dụng hay bảo lãnh chính thức.</p>;
     case "SEND_DOCUMENT_TO_EXTERNAL_PARTNER":
@@ -73,7 +73,7 @@ export function ApprovalDialog({
   if (!open) return null;
   if (!request || !subject) {
     return (
-      <div role="dialog" aria-modal="true" aria-label="Phê duyệt của Founder" className="approval-dialog">
+      <div role="dialog" aria-modal="true" aria-label="Xem xét phê duyệt" className="approval-dialog">
         <article>
           <p role="alert">Không thể hiển thị yêu cầu phê duyệt vì thiếu nội dung cần xem xét.</p>
           <footer>
@@ -97,7 +97,7 @@ export function ApprovalDialog({
     <div role="dialog" aria-modal="true" aria-labelledby="approval-title" className="approval-dialog">
       <article>
         <header>
-          <p>Cổng xác nhận và phê duyệt của Founder</p>
+          <p>Xác nhận quyết định</p>
           <h2 id="approval-title">{translateText(subject.title)}</h2>
           <p>Trạng thái: {requestStatus(request.status)}</p>
         </header>

@@ -13,6 +13,8 @@ import {
 import { DecisionCardModal } from "../features/decision";
 import { useDialogFocus } from "../shared/useDialogFocus";
 import { usePreviewData } from "./data";
+import { artifactTypeLabel } from "../shared/artifactLabels";
+import { previewTestingEnabled } from "./testing";
 import {
   Badge,
   Icon,
@@ -33,31 +35,31 @@ const WorkflowViewer = lazy(() => import("./workflow/WorkflowViewer"));
 const views = [
   { key: "overview", label: "Tổng quan" },
   { key: "assessments", label: "Đánh giá" },
-  { key: "workflow", label: "Workflow" },
+  { key: "workflow", label: "Quy trình" },
   { key: "evidence", label: "Bằng chứng" },
   { key: "history", label: "Lịch sử" },
 ];
 const assessments = [
   {
-    name: "Finance",
+    name: "Tài chính",
     icon: "finance",
-    text: "Giá trị nguồn và biên lợi nhuận của hợp đồng được trình bày riêng với dòng tiền công ty.",
+    text: "Giá trị ghi nhận và biên lợi nhuận của hợp đồng được trình bày riêng với dòng tiền công ty.",
   },
   {
-    name: "Operations",
+    name: "Vận hành",
     icon: "operations",
     text: "Lịch triển khai chỉ phản ánh đơn hàng có liên kết rõ ràng. Chưa có dữ liệu năng lực nhân sự.",
   },
   {
-    name: "Risk",
+    name: "Rủi ro",
     icon: "risk",
     text: "Rủi ro còn lại: Trung bình. Cần đối chiếu các giới hạn bằng chứng trước khi quyết định.",
   },
 ];
 const assessmentLabels: Record<string, string> = {
-  FINANCE_ASSESSMENT: "Finance",
-  OPERATIONS_ASSESSMENT: "Operations",
-  FINAL_RISK_ASSESSMENT: "Risk",
+  FINANCE_ASSESSMENT: "Tài chính",
+  OPERATIONS_ASSESSMENT: "Vận hành",
+  FINAL_RISK_ASSESSMENT: "Rủi ro",
 };
 
 export function Contracts({ route }: { route: PreviewRoute }) {
@@ -124,8 +126,8 @@ export function Contracts({ route }: { route: PreviewRoute }) {
       <>
         <PageHeading
           title="Hợp đồng"
-          description="Tìm hợp đồng và tiếp tục công việc trong đúng lượt đánh giá."
-          action={<Badge>5 hợp đồng minh họa</Badge>}
+          description="Tìm hợp đồng và tiếp tục công việc trong đúng lần xử lý."
+          action={<Badge>{contracts.length} hợp đồng</Badge>}
         />
         <Section
           title="Danh sách hợp đồng"
@@ -142,7 +144,7 @@ export function Contracts({ route }: { route: PreviewRoute }) {
                 value={filter}
                 onChange={(e) => setFilter(e.target.value)}
               >
-                <option value="all">Workflow: Tất cả</option>
+                <option value="all">Quy trình: Tất cả</option>
                 {contracts.map((c) => (
                   <option key={c.id} value={c.businessStatus}>
                     {c.statusLabel}
@@ -159,16 +161,14 @@ export function Contracts({ route }: { route: PreviewRoute }) {
             aria-label="Bảng dữ liệu có thể cuộn ngang"
           >
             <table className="pv-contract-table">
-              <caption className="pv-sr-only">
-                Hợp đồng minh họa, không phải dữ liệu backend
-              </caption>
+              <caption className="pv-sr-only">Danh sách hợp đồng</caption>
               <thead>
                 <tr>
                   <th>Hợp đồng / khách hàng</th>
                   <th className="pv-numeric">Giá trị (tỷ VND)</th>
-                  <th>Trạng thái nguồn</th>
-                  <th>Trạng thái workflow</th>
-                  <th>Ngày minh họa</th>
+                  <th>Trạng thái hợp đồng</th>
+                  <th>Trạng thái xử lý</th>
+                  <th>Ngày ghi nhận</th>
                   <th>
                     <span className="pv-sr-only">Mở</span>
                   </th>
@@ -212,7 +212,6 @@ export function Contracts({ route }: { route: PreviewRoute }) {
                     <td className="pv-numeric">{money(c.value)}</td>
                     <td>
                       <span>{sourceStatusLabel(c.sourceStatus)}</span>
-                      <small>{c.sourceStatus}</small>
                     </td>
                     <td>
                       <Badge tone={tone(c.businessStatus)}>
@@ -251,9 +250,8 @@ export function Contracts({ route }: { route: PreviewRoute }) {
         <div className="pv-inline-note">
           <Icon name="contracts" />
           <p>
-            Trạng thái nguồn của hợp đồng và trạng thái xử lý workflow là hai
-            thông tin riêng. Chọn một dòng để mở hợp đồng; dùng liên kết mã hợp
-            đồng khi thao tác bằng bàn phím.
+            Trạng thái hợp đồng là thông tin ghi nhận trong dữ liệu. Trạng thái
+            xử lý cho biết tiến độ đánh giá hợp đồng.
           </p>
         </div>
       </>
@@ -264,7 +262,7 @@ export function Contracts({ route }: { route: PreviewRoute }) {
       <>
         <PageHeading
           title="Không tìm thấy hợp đồng"
-          description="Định danh này không có trong fixtures của preview."
+          description="Không có hợp đồng mang mã này trong danh sách."
         />
         <Link to="/contracts" className="pv-button">
           Về danh sách hợp đồng
@@ -275,9 +273,9 @@ export function Contracts({ route }: { route: PreviewRoute }) {
   const evaluable = contract.id === "CON-004";
   const card = fixtureCard(contract);
   const evidence = artifacts.filter((a) =>
-    `${a.artifact_type} ${a.artifact_id}`
-      .toLowerCase()
-      .includes(search.toLowerCase()),
+    `${artifactTypeLabel(a.artifact_type)} ${a.artifact_type} ${a.artifact_id}`
+      .toLocaleLowerCase("vi")
+      .includes(search.toLocaleLowerCase("vi")),
   );
   const reviewAction = () => {
     setNotice("");
@@ -315,12 +313,12 @@ export function Contracts({ route }: { route: PreviewRoute }) {
       >
         <table>
           <caption className="pv-sr-only">
-            Artifacts minh họa của {contract.id}, cùng lượt xử lý
+            Kết quả mô phỏng của {contract.id}, cùng lần xử lý
           </caption>
           <thead>
             <tr>
-              <th>Artifact</th>
-              <th>Định danh / version</th>
+              <th>Kết quả</th>
+              <th>Mã / phiên bản</th>
               <th>Kiểm tra nội bộ</th>
               <th>
                 <span className="pv-sr-only">Chi tiết</span>
@@ -331,8 +329,8 @@ export function Contracts({ route }: { route: PreviewRoute }) {
             {evidence.map((a) => (
               <tr key={a.artifact_id}>
                 <td>
-                  {assessmentLabels[a.artifact_type] ?? a.artifact_type}
-                  <small>{a.artifact_type}</small>
+                  {assessmentLabels[a.artifact_type] ??
+                    artifactTypeLabel(a.artifact_type)}
                 </td>
                 <td className="pv-id">
                   {a.artifact_id}
@@ -341,7 +339,7 @@ export function Contracts({ route }: { route: PreviewRoute }) {
                   </small>
                 </td>
                 <td>
-                  <Badge>VALID · Minh họa</Badge>
+                  <Badge>Đã kiểm tra · mô phỏng</Badge>
                 </td>
                 <td>
                   <button onClick={() => setArtifact(a)}>Xem bằng chứng</button>
@@ -353,12 +351,11 @@ export function Contracts({ route }: { route: PreviewRoute }) {
       </div>
       {!evidence.length && (
         <p role="status" className="pv-no-results">
-          Không có artifact khớp tìm kiếm.
+          Không có kết quả khớp tìm kiếm.
         </p>
       )}
       <SourceNote>
-        Validation nội bộ minh họa · Không xác minh pháp lý · Giữ artifact
-        ID/version và upstream lineage
+        Kiểm tra dữ liệu nội bộ không thay thế việc xác minh pháp lý.
       </SourceNote>
     </>
   );
@@ -395,7 +392,7 @@ export function Contracts({ route }: { route: PreviewRoute }) {
       />
       <Tabs
         current={view}
-        label="Workspace hợp đồng"
+        label="Thông tin hợp đồng"
         items={views.map((v) => ({
           ...v,
           to: `/contracts/${contract.id}?view=${v.key}`,
@@ -403,13 +400,12 @@ export function Contracts({ route }: { route: PreviewRoute }) {
       />
       <div className="pv-snapshot-context">
         <span>
-          Lượt minh họa: <strong>{contract.runId ?? "Chưa có"}</strong>
+          Lần xử lý: <strong>{contract.runId ?? "Chưa có"}</strong>
         </span>
         <span>
-          Trạng thái nguồn: {sourceStatusLabel(contract.sourceStatus)} (
-          {contract.sourceStatus})
+          Trạng thái hợp đồng: {sourceStatusLabel(contract.sourceStatus)}
         </span>
-        <span>Contract scope</span>
+        <span>Phạm vi hợp đồng</span>
       </div>
       {route.request &&
         !(
@@ -418,8 +414,8 @@ export function Contracts({ route }: { route: PreviewRoute }) {
           (contract.id === "CON-002" && route.request === "UI-INPUT-CON-002")
         ) && (
           <p role="alert" className="pv-inline-note">
-            Không có yêu cầu tương ứng trong preview; không mở review của
-            request khác.
+            Không tìm thấy yêu cầu xem xét này. Hãy mở yêu cầu hiện hành của hợp
+            đồng.
           </p>
         )}
       {view === "overview" && (
@@ -428,8 +424,8 @@ export function Contracts({ route }: { route: PreviewRoute }) {
             <section className="pv-decision-summary">
               <header>
                 <div className="pv-eyebrow">
-                  Decision Card · v1{" "}
-                  <Badge tone="lavender">Chờ Founder xem xét</Badge>
+                  Phiếu đề xuất quyết định · v1{" "}
+                  <Badge tone="lavender">Chờ người phê duyệt xem xét</Badge>
                 </div>
                 <small className="pv-id">{card.artifact_id}</small>
               </header>
@@ -450,8 +446,8 @@ export function Contracts({ route }: { route: PreviewRoute }) {
                 </button>
               </div>
               <footer>
-                <span>Precheck mô phỏng, không ràng buộc.</span>
-                <span>Phê duyệt quyết định ≠ cho phép gửi hồ sơ.</span>
+                <span>Kiểm tra sơ bộ mô phỏng, không ràng buộc.</span>
+                <span>Gửi hồ sơ cần được phê duyệt riêng.</span>
               </footer>
             </section>
           ) : (
@@ -463,8 +459,8 @@ export function Contracts({ route }: { route: PreviewRoute }) {
             >
               <p>
                 {contract.runId
-                  ? "Trạng thái chờ/dừng minh họa; không dùng artifacts hoàn tất của CON-004 để thay thế kết quả hợp đồng này."
-                  : "Chưa có run, artifact hoặc Decision Card. Preview không tạo lượt xử lý mới."}
+                  ? "Hợp đồng này chưa có kết quả đánh giá hoàn tất."
+                  : "Chưa có lần xử lý, kết quả đánh giá hoặc phiếu đề xuất quyết định."}
               </p>
               {contract.id === "CON-002" && (
                 <button
@@ -478,14 +474,14 @@ export function Contracts({ route }: { route: PreviewRoute }) {
               )}
               {contract.businessStatus === "NOT_EVALUABLE" && (
                 <button onClick={() => setDialog("decision")}>
-                  Xem giới hạn Decision Card
+                  Xem giới hạn Phiếu đề xuất quyết định
                 </button>
               )}
             </Section>
           )}
           <dl className="pv-kpi-strip">
             <div>
-              <dt>Giá trị hợp đồng nguồn</dt>
+              <dt>Giá trị hợp đồng</dt>
               <dd>
                 {money(contract.value)} <span>VND</span>
               </dd>
@@ -494,19 +490,19 @@ export function Contracts({ route }: { route: PreviewRoute }) {
             <div>
               <dt>Biên lợi nhuận ghi trên hợp đồng</dt>
               <dd>{contract.margin}%</dd>
-              <small>Trường nguồn · Không tính lại tại browser</small>
+              <small>Theo dữ liệu ghi nhận</small>
             </div>
             <div>
               <dt>Trạng thái xử lý hiện hành</dt>
               <dd className="pv-kpi-text">{contract.statusLabel}</dd>
-              <small>Fixture run · Không suy ra từ animation</small>
+              <small>Tiến độ của lần xử lý đang chọn</small>
             </div>
           </dl>
           {evaluable && (
             <>
               <Section
                 title="Kết quả đánh giá"
-                description="Cùng lượt xử lý · Hoàn tất không đồng nghĩa an toàn"
+                description="Cùng lần xử lý · Hoàn tất không đồng nghĩa an toàn"
                 action={
                   <Link to={`/contracts/${contract.id}?view=assessments`}>
                     Mở đánh giá <Icon />
@@ -532,59 +528,59 @@ export function Contracts({ route }: { route: PreviewRoute }) {
       {view === "assessments" &&
         (evaluable ? (
           <Section
-            title="Finance, Operations & Risk"
+            title="Tài chính, vận hành và rủi ro"
             description="Kết quả minh họa được tách khỏi nhận định và giới hạn"
           >
             {assessmentRows}
             <div className="pv-inline-note">
               <Icon name="risk" />
               <p>
-                Không có Risk Score hoặc confidence phần trăm. Xem chi tiết để
-                đối chiếu facts và limitations.
+                Xem chi tiết để đối chiếu số liệu và những điểm chưa đủ dữ liệu
+                kết luận.
               </p>
             </div>
           </Section>
         ) : (
-          <Section title="Chưa có bộ đánh giá hiện hành trong preview">
+          <Section title="Chưa có kết quả đánh giá">
             <p>
-              Fixtures chỉ cung cấp trạng thái chờ/dừng của hợp đồng này. Không
-              giả định kết quả đã hoàn tất.
+              Hợp đồng đang chờ xử lý hoặc đã dừng. Chưa có kết quả đánh giá
+              hoàn tất.
             </p>
           </Section>
         ))}
       {view === "evidence" &&
         (evaluable ? (
           <Section
-            title="Bằng chứng của lượt xử lý"
-            description="Chỉ các artifacts trong run đang chọn"
+            title="Bằng chứng của lần xử lý"
+            description="Kết quả thuộc lần xử lý đang chọn"
             action={
               <SearchField
                 label="Tìm bằng chứng"
                 value={search}
                 onChange={setSearch}
-                placeholder="Tìm loại artifact hoặc ID…"
+                placeholder="Tìm tên kết quả hoặc mã…"
               />
             }
           >
             {evidenceTable}
           </Section>
         ) : (
-          <Section title="Chưa có artifact để đối chiếu">
-            <p>Không hiển thị artifact của hợp đồng khác.</p>
+          <Section title="Chưa có kết quả để đối chiếu">
+            <p>Không hiển thị kết quả của hợp đồng khác.</p>
           </Section>
         ))}
       {view === "workflow" && (
-        <Suspense fallback={<p role="status">Đang tải Workflow Viewer…</p>}>
+        <Suspense fallback={<p role="status">Đang tải quy trình…</p>}>
           <WorkflowViewer key={contract.id} contract={contract} route={route} />
         </Suspense>
       )}
       {view === "history" && (
         <Section
-          title="Lịch sử của lượt xử lý"
-          description="Các sự kiện dưới đây là minh họa; không phải audit log backend"
+          title="Lịch sử của lần xử lý"
+          description="Lịch sử xử lý mô phỏng"
         >
           {!contract.runId && (
-            <p>Chưa có lượt xử lý hoặc nhật ký để hiển thị.</p>
+            <p>Chưa có lần xử lý hoặc nhật ký để hiển thị.</p>
           )}
           <ol className="pv-history">
             {(!contract.runId
@@ -592,10 +588,10 @@ export function Contracts({ route }: { route: PreviewRoute }) {
               : evaluable
                 ? [
                     "Bắt đầu đánh giá hợp đồng",
-                    "Finance và Operations hoàn tất xử lý",
+                    "Tài chính và Vận hành hoàn tất xử lý",
                     "Kiểm tra bằng chứng nội bộ hoàn tất",
-                    "Tạo Decision Card v1",
-                    "Tạm dừng để chờ Founder xem xét",
+                    "Tạo Phiếu đề xuất quyết định v1",
+                    "Tạm dừng để chờ người phê duyệt xem xét",
                   ]
                 : ["Chọn hợp đồng để đánh giá", contract.statusLabel]
             ).map((event, i) => (
@@ -604,15 +600,14 @@ export function Contracts({ route }: { route: PreviewRoute }) {
                 <div>
                   <h3>{event}</h3>
                   <p>
-                    {contract.runId ?? "Chưa có run"} · Sự kiện minh họa {i + 1}
+                    {contract.runId ?? "Chưa có lần xử lý"} · Sự kiện minh họa{" "}
+                    {i + 1}
                   </p>
                 </div>
               </li>
             ))}
           </ol>
-          <SourceNote>
-            Không tạo timestamp giả để mô tả audit trail thật.
-          </SourceNote>
+          <SourceNote>Chưa có thời điểm ghi nhận sự kiện.</SourceNote>
         </Section>
       )}
       <SourceNote />
@@ -633,38 +628,39 @@ export function Contracts({ route }: { route: PreviewRoute }) {
         context={
           <>
             <div className="pv-modal-demo-note" role="status">
-              <strong>Dữ liệu minh họa</strong> · Tất cả dữ liệu, kể cả nhãn
-              OpenAI, là fixture. Không có model, validation hoặc request
-              backend thật.{notice && <p>{notice}</p>}
+              <strong>Kết quả mô phỏng</strong> · Thao tác tại đây không ghi
+              nhận phê duyệt thực tế.{notice && <p>{notice}</p>}
             </div>
-            <div className="pv-review-scenario">
-              <label>
-                Trạng thái review minh họa{" "}
-                <select
-                  aria-label="Trạng thái review minh họa"
-                  value={reviewState}
-                  onChange={(e) => {
-                    setReviewState(e.target.value);
-                    setNotice("");
-                  }}
-                >
-                  <option value="pending">Pending · Đúng ID/version</option>
-                  <option value="stale">Stale · Version không khớp</option>
-                  <option value="resolved">Resolved · Request đã đóng</option>
-                </select>
-              </label>
-            </div>
+            {previewTestingEnabled() && (
+              <div className="pv-review-scenario">
+                <label>
+                  Tình huống xem xét{" "}
+                  <select
+                    aria-label="Tình huống xem xét"
+                    value={reviewState}
+                    onChange={(e) => {
+                      setReviewState(e.target.value);
+                      setNotice("");
+                    }}
+                  >
+                    <option value="pending">Đang chờ xem xét</option>
+                    <option value="stale">Phiên bản không còn phù hợp</option>
+                    <option value="resolved">Yêu cầu đã được xử lý</option>
+                  </select>
+                </label>
+              </div>
+            )}
           </>
         }
         onClose={close}
         onApprove={() =>
           setNotice(
-            "Đã thử thao tác phê duyệt trong preview. Không gửi request và không thay đổi quyết định backend.",
+            "Đã mô phỏng thao tác phê duyệt. Chưa ghi nhận quyết định thực tế.",
           )
         }
         onReject={() =>
           setNotice(
-            "Đã thử thao tác từ chối trong preview. Không gửi request và không thay đổi quyết định backend.",
+            "Đã mô phỏng thao tác từ chối. Chưa ghi nhận quyết định thực tế.",
           )
         }
       />
@@ -674,8 +670,7 @@ export function Contracts({ route }: { route: PreviewRoute }) {
           runArtifacts={artifacts}
           context={
             <div className="pv-modal-demo-note">
-              Dữ liệu minh họa · Artifact và validation là fixture, không phải
-              kết quả backend.
+              Kết quả và thông tin kiểm tra dữ liệu đều là mô phỏng.
             </div>
           }
           onClose={close}
@@ -689,9 +684,13 @@ export function Contracts({ route }: { route: PreviewRoute }) {
             aria-labelledby="pv-input-title"
           >
             <header>
-              <Badge tone="lavender">Dữ liệu minh họa</Badge>
-              <h2 id="pv-input-title">Bổ sung số tiền yêu cầu precheck</h2>
-              <p>Thử tương tác form. Không lưu vào backend hoặc dataset.</p>
+              <Badge tone="lavender">Dữ liệu mô phỏng</Badge>
+              <h2 id="pv-input-title">
+                Bổ sung số tiền yêu cầu kiểm tra sơ bộ
+              </h2>
+              <p>
+                Thông tin nhập tại đây chỉ dùng để mô phỏng, không được lưu.
+              </p>
             </header>
             <form
               onSubmit={(e) => {
@@ -706,7 +705,7 @@ export function Contracts({ route }: { route: PreviewRoute }) {
                 }
                 setInputError("");
                 setNotice(
-                  "Form hợp lệ trong preview. Không tạo patch, không resume workflow và không gọi ngân hàng.",
+                  "Thông tin nhập hợp lệ. Đây là thao tác mô phỏng; dữ liệu chưa được lưu và chưa gửi ngân hàng.",
                 );
               }}
             >
@@ -739,7 +738,7 @@ export function Contracts({ route }: { route: PreviewRoute }) {
                   className="pv-button--primary"
                   disabled={Boolean(notice)}
                 >
-                  Kiểm tra form minh họa
+                  Kiểm tra thông tin
                 </button>
               </footer>
             </form>

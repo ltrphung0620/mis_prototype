@@ -152,7 +152,7 @@ export function AssessmentIndex({
     if (!payload) return "Kết quả chưa sẵn sàng để xem.";
     const level = payload.residual_risk_level ?? payload.overall_risk_level;
     if (typeof level === "string")
-      return `Mức rủi ro được ghi nhận: ${businessValueLabel(level)}. Xem findings và giới hạn bằng chứng.`;
+      return `Mức rủi ro được ghi nhận: ${businessValueLabel(level)}. Xem các phát hiện và giới hạn dữ liệu.`;
     const narrative = payload.narrative as { headline?: unknown } | undefined;
     if (typeof narrative?.headline === "string")
       return translateText(narrative.headline);
@@ -221,11 +221,11 @@ export function EvidenceIndex({
         <div>
           <h2 id="evidence-index-title">Hồ sơ & bằng chứng</h2>
           <p>
-            Artifacts của lượt xử lý hiện hành. Validation nội bộ không xác nhận
+            Kết quả của lần xử lý hiện hành. Validation nội bộ không xác nhận
             tính pháp lý của tài liệu.
           </p>
         </div>
-        <span>{artifacts.length} artifacts</span>
+        <span>{artifacts.length} kết quả</span>
       </div>
       {artifacts.length ? (
         <div className="table-scroll">
@@ -272,7 +272,7 @@ export function EvidenceIndex({
         </div>
       ) : (
         <p className="empty-copy">
-          Chưa có artifact được xác minh cho lượt xử lý này.
+          Chưa có kết quả được xác minh cho lần xử lý này.
         </p>
       )}
     </section>

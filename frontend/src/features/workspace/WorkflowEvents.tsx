@@ -121,7 +121,7 @@ export function WorkflowEvents({
         </p>
       )}
       {!loading && !error && !events.length && (
-        <p className="empty-copy">Chưa có sự kiện cho lượt xử lý này.</p>
+        <p className="empty-copy">Chưa có sự kiện cho lần xử lý này.</p>
       )}
       {!!events.length && (
         <div className="table-scroll">
